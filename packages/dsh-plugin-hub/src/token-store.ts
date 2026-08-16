@@ -20,8 +20,27 @@ export function dshHome(): string {
   return join(homedir(), '.dsh')
 }
 
+export interface StoredPendingGrant {
+  readonly baseUrl: string
+  readonly deviceCode: string
+  readonly userCode: string
+  readonly verificationUri: string
+  readonly expiresAt: string
+  readonly interval: number
+}
+
 function tokenPath(): string {
   return join(dshHome(), '.dsh-fish-token.json')
+}
+
+function pendingPath(): string {
+  return join(dshHome(), '.dsh-fish-device-pending.json')
+}
+
+async function writeSecret(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  await chmod(path, 0o600)
 }
 
 /**
@@ -45,13 +64,34 @@ export async function readToken(baseUrl: string): Promise<StoredToken | undefine
 }
 
 export async function writeToken(token: StoredToken): Promise<void> {
-  const path = tokenPath()
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, `${JSON.stringify(token, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
-  // `mode` on writeFile only applies at creation; chmod covers an existing file.
-  await chmod(path, 0o600)
+  await writeSecret(tokenPath(), token)
 }
 
 export async function clearToken(): Promise<void> {
   await rm(tokenPath(), { force: true })
+  await rm(pendingPath(), { force: true })
+}
+
+export async function readPendingGrant(baseUrl: string): Promise<StoredPendingGrant | undefined> {
+  try {
+    const raw = await readFile(pendingPath(), 'utf8')
+    const parsed = JSON.parse(raw) as StoredPendingGrant
+    if (parsed.baseUrl !== baseUrl) return undefined
+    if (typeof parsed.deviceCode !== 'string' || parsed.deviceCode === '') return undefined
+    if (Date.parse(parsed.expiresAt) <= Date.now()) {
+      await clearPendingGrant()
+      return undefined
+    }
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
+export async function writePendingGrant(grant: StoredPendingGrant): Promise<void> {
+  await writeSecret(pendingPath(), grant)
+}
+
+export async function clearPendingGrant(): Promise<void> {
+  await rm(pendingPath(), { force: true })
 }

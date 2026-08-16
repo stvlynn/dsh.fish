@@ -39,13 +39,34 @@ export default function DevicePage() {
   const [status, setStatus] = useState<OTPStatus>('idle')
   const [busy, setBusy] = useState(false)
 
-  // A prefilled complete-URI visit should land on the confirmation step rather
-  // than making the user re-type a code the link already carried.
+  // Better Auth binds the pending code to this session on GET /device. Approve
+  // and deny refuse an unclaimed code, so a complete code — typed or prefilled
+  // — has to be claimed before the confirmation step is shown.
   useEffect(() => {
-    if (code.length === CODE_LENGTH && phase === 'entering') setPhase('confirming')
-    // Runs once for the prefilled case; later transitions are driven by input.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!session?.user || code.length !== CODE_LENGTH || phase !== 'entering') return
+    let cancelled = false
+    setBusy(true)
+    void authClient
+      .device({ query: { user_code: code } })
+      .then((result) => {
+        if (cancelled) return
+        if (result.error) {
+          setStatus('error')
+          return
+        }
+        setStatus('idle')
+        setPhase('confirming')
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('error')
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.user, code, phase])
 
   if (isPending) {
     return <Shell>{t('common.loading')}</Shell>
@@ -120,7 +141,6 @@ export default function DevicePage() {
             if (status !== 'idle') setStatus('idle')
             if (value.length < CODE_LENGTH) setPhase('entering')
           }}
-          onComplete={() => setPhase('confirming')}
         />
       </div>
 

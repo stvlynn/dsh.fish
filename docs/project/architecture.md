@@ -121,6 +121,13 @@ yields nothing — the harness would load nothing from it either.
 | `SKILL.md` with `name` + `description` frontmatter | `skill` |
 | `agent.cordis.yml` | `agent-preset` |
 
+Those probes run against the repository root (or an explicit subdirectory on
+submit). A monorepo whose bundle lives under `packages/` — this project's own
+`dsh-hub` plugin included — is therefore submitted as
+`github:<owner>/<repo>/<path>`, and `packageSpec` emits pnpm's
+`#path:<dir>` selector so `dsh plugin add` installs that package rather than
+the root.
+
 Those probes run before anything else is fetched, so a repository that is not a
 plugin costs three reads and no API quota — that ordering is what makes it
 affordable to page deep into a topic of several thousand repositories.

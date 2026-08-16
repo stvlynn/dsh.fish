@@ -162,8 +162,7 @@ export class PlanInstaller {
       }
     }
 
-    const block = `\n${marker}\n- insert:\n${indent(rowYaml, 4)}\n`
-    const next = existing.trimEnd() === '' ? block.trimStart() : `${existing.trimEnd()}\n${block}`
+    const next = composePatchContents(existing, rowId, rowYaml)
 
     await mkdir(dirname(patchPath), { recursive: true })
     await writeFile(patchPath, next, 'utf8')
@@ -174,6 +173,22 @@ export class PlanInstaller {
   private profileDir(): string {
     return join(dshHome(), 'profiles', this.profile)
   }
+}
+
+/**
+ * Append one hub-owned insert to a profile patch file.
+ *
+ * A freshly initialized profile writes `[]` as its user layer. That token is
+ * an empty YAML array, not a prefix we can append to — concatenating
+ * `- insert:` after it is not a valid document, and the harness would drop
+ * the layer. Replace the empty array instead.
+ */
+export function composePatchContents(existing: string, rowId: string, rowYaml: string): string {
+  const marker = `# dsh-hub:${rowId}`
+  const block = `\n${marker}\n- insert:\n${indent(rowYaml, 4)}\n`
+  const trimmed = existing.trim()
+  if (trimmed === '' || trimmed === '[]') return block.trimStart()
+  return `${existing.trimEnd()}\n${block}`
 }
 
 /** Refuse a path that escapes its root — a plan is remote input. */

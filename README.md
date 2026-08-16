@@ -30,7 +30,7 @@ command.
 **From inside your agent** — install the hub's own plugin and let the agent do it:
 
 ```sh
-dsh plugin --profile web add github:stvlynn/dsh.fish#main
+dsh plugin --profile web add github:stvlynn/dsh.fish#path:packages/dsh-plugin-hub
 ```
 
 It registers four tools: `hub_search`, `hub_show`, `hub_install` and

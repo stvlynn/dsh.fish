@@ -6,8 +6,17 @@ your agent.
 ## Install
 
 ```sh
-dsh plugin --profile web add github:stvlynn/dsh.fish#main
+dsh plugin --profile web add github:stvlynn/dsh.fish#path:packages/dsh-plugin-hub
 ```
+
+The bundle lives in `packages/dsh-plugin-hub`. Installing the repository root
+(`github:stvlynn/dsh.fish#main`) pulls the website package, which is not a
+harness bundle and will not load.
+
+A GitHub topic crawl only reads the repository root `package.json`, so this
+bundle is not discovered automatically. Submit it as
+`github:stvlynn/dsh.fish/packages/dsh-plugin-hub` (or the same path on npm
+later) for it to appear in the catalog.
 
 This package is TypeScript, so a git install runs its `prepare` script to build
 `lib/`. pnpm ≥10 refuses that until you allow it — copy the package key pnpm
@@ -36,10 +45,10 @@ so a later push cannot change what runs.
 Reading the catalog needs no account. Signing in attributes installs to you and
 is required for anything account-shaped later.
 
-`hub_account` with `action: "login"` starts an RFC 8628 device grant: the plugin
-requests a code, shows you a URL, and polls until you approve in a browser. The
-token is written to `$DSH_HOME/.dsh-fish-token.json` with mode 0600 and is never
-logged.
+`hub_account` with `action: "login"` starts an RFC 8628 device grant. The first
+call returns a short code and a URL — show those to the user. The second call
+polls until they approve in a browser. The token is written to
+`$DSH_HOME/.dsh-fish-token.json` with mode 0600 and is never logged.
 
 A device token is deliberately weaker than a browser session — it can read the
 catalog and resolve install plans as you, but it cannot submit or claim
