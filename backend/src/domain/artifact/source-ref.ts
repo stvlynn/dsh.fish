@@ -104,10 +104,16 @@ export function packageSpec(source: SourceRef): string | undefined {
   switch (source.origin) {
     case 'npm':
       return `${source.packageName}@${source.latestVersion}`
-    case 'github':
-      return source.commit === undefined
-        ? `github:${source.owner}/${source.repo}`
-        : `github:${source.owner}/${source.repo}#${source.commit}`
+    case 'github': {
+      const name = `github:${source.owner}/${source.repo}`
+      const selectors: string[] = []
+      if (source.commit !== undefined) selectors.push(source.commit)
+      // pnpm's git protocol: `#<commit>&path:<dir>` selects a workspace
+      // package inside the clone. Omitting `path` installs the repository
+      // root, which for a monorepo is usually not the bundle.
+      if (source.path !== undefined) selectors.push(`path:${source.path}`)
+      return selectors.length === 0 ? name : `${name}#${selectors.join('&')}`
+    }
     case 'submission':
       return undefined
   }

@@ -101,11 +101,23 @@ export class HubClient {
 
   /** Step one of the device grant: ask for a code pair. */
   async requestDeviceCode(): Promise<DeviceCodeGrant> {
-    return this.request('/api/auth/device/code', {
+    const grant = await this.request<DeviceCodeGrant>('/api/auth/device/code', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ client_id: CLIENT_ID, scope: 'openid profile email' }),
     })
+    return {
+      ...grant,
+      verification_uri: absoluteUrl(this.baseUrl, grant.verification_uri),
+      ...(grant.verification_uri_complete === undefined
+        ? {}
+        : {
+            verification_uri_complete: absoluteUrl(
+              this.baseUrl,
+              grant.verification_uri_complete,
+            ),
+          }),
+    }
   }
 
   /**
@@ -198,6 +210,15 @@ export class HubClient {
       )
     }
     return body as T
+  }
+}
+
+/** Resolve a possibly-relative verification URI against the hub origin. */
+export function absoluteUrl(baseUrl: string, uri: string): string {
+  try {
+    return new URL(uri).toString()
+  } catch {
+    return new URL(uri, `${baseUrl.replace(/\/+$/, '')}/`).toString()
   }
 }
 

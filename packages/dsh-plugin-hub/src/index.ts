@@ -11,27 +11,21 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { Config as HubConfig } from './config.js'
 import { HubClient, HubError } from './hub-client.js'
 import { InstallRefused, PlanInstaller } from './installer.js'
-import { clearToken, readToken } from './token-store.js'
+import { resolveProfile } from './profile.js'
+import {
+  clearPendingGrant,
+  clearToken,
+  readPendingGrant,
+  readToken,
+  writePendingGrant,
+} from './token-store.js'
 
 export const name = 'dsh-hub'
 export const inject = ['tools']
-
-export interface Config {
-  /** Registry origin. A self-hosted deployment only needs this changed. */
-  baseUrl: string
-  /**
-   * Profile installs are written into. `current` resolves to the profile this
-   * harness booted with, which is almost always what a user means.
-   */
-  targetProfile: string
-}
-
-export const Config = {
-  baseUrl: 'https://dsh.fish',
-  targetProfile: 'current',
-} satisfies Config
+export { Config } from './config.js'
 
 const KINDS = [
   'bundle',
@@ -42,7 +36,7 @@ const KINDS = [
   'hook-bridge',
 ] as const
 
-export function apply(ctx: Context, config: Config = Config): void {
+export function apply(ctx: Context, config: HubConfig): void {
   const baseUrl = config.baseUrl.replace(/\/+$/, '')
   const client = new HubClient(baseUrl)
   const profile = resolveProfile(config.targetProfile)
@@ -150,6 +144,7 @@ export function apply(ctx: Context, config: Config = Config): void {
         schema: { type: 'json' },
         render: (_args, value) => [{ type: 'text', text: renderInstall(value) }],
       },
+      timeoutMs: 5 * 60 * 1000,
       async execute(args, exec) {
         const plan = await client.installPlan({
           artifactId: args.artifactId,
@@ -180,8 +175,9 @@ export function apply(ctx: Context, config: Config = Config): void {
       name: 'hub_account',
       description:
         'Sign in to dsh.fish from this machine, or report who is signed in. Signing in uses the ' +
-        'OAuth device flow: it returns a short code and a URL for the user to open in a browser. ' +
-        'Show both to the user and tell them to approve there — you cannot approve it yourself.',
+        'OAuth device flow. The first login call returns a short code and a URL — show both to ' +
+        'the user and tell them to approve in a browser. Call login again to wait for that ' +
+        'approval. You cannot approve it yourself.',
       parameters: {
         action: {
           type: 'string',
@@ -193,6 +189,7 @@ export function apply(ctx: Context, config: Config = Config): void {
         schema: { type: 'json' },
         render: (_args, value) => [{ type: 'text', text: renderAccount(value) }],
       },
+      timeoutMs: 16 * 60 * 1000,
       async execute(args, exec) {
         const action = args.action ?? 'status'
 
@@ -212,35 +209,54 @@ export function apply(ctx: Context, config: Config = Config): void {
           }
         }
 
-        // Login. The grant is returned to the model so it can show the user the
-        // code and the URL; the poll then blocks until they approve in a browser.
-        const grant = await client.requestDeviceCode()
-        ctx.logger?.info?.(
-          `dsh.fish: open ${grant.verification_uri_complete ?? grant.verification_uri} and enter ${grant.user_code}`,
+        // Login is two calls because a tool result only reaches the model when
+        // execute returns. The first call mints a code and returns it so the
+        // agent can show the user the URL; the second call polls until they
+        // approve in a browser they already trust.
+        const pending = await readPendingGrant(baseUrl)
+        if (pending === undefined) {
+          const grant = await client.requestDeviceCode()
+          const verificationUri = grant.verification_uri_complete ?? grant.verification_uri
+          await writePendingGrant({
+            baseUrl,
+            deviceCode: grant.device_code,
+            userCode: grant.user_code,
+            verificationUri,
+            expiresAt: new Date(Date.now() + grant.expires_in * 1000).toISOString(),
+            interval: grant.interval,
+          })
+          ctx.logger?.info?.(`dsh.fish: open ${verificationUri} and enter ${grant.user_code}`)
+          return {
+            action,
+            signedIn: false,
+            status: 'authorization_pending',
+            userCode: grant.user_code,
+            verificationUri,
+          }
+        }
+
+        const token = await client.pollForToken(
+          {
+            device_code: pending.deviceCode,
+            user_code: pending.userCode,
+            verification_uri: pending.verificationUri,
+            expires_in: Math.max(1, Math.floor((Date.parse(pending.expiresAt) - Date.now()) / 1000)),
+            interval: pending.interval,
+          },
+          exec.signal,
         )
-        const token = await client.pollForToken(grant, exec.signal)
+        await clearPendingGrant()
         const me = await client.whoami()
         return {
           action,
           signedIn: true,
+          status: 'authorized',
           ...(me.account === null ? {} : { account: me.account.displayName }),
           obtainedAt: token.obtainedAt,
         }
       },
     }),
   )
-}
-
-/**
- * `current` means "the profile this process booted with".
- *
- * The launcher exposes it as `DSH_PROFILE`; without it, `web` is the profile
- * `dsh web` auto-initializes, so it is the safest concrete fallback.
- */
-function resolveProfile(configured: string): string {
-  if (configured !== 'current' && configured.trim() !== '') return configured.trim()
-  const fromEnv = process.env['DSH_PROFILE']
-  return fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv.trim() : 'web'
 }
 
 function renderSearch(value: unknown): string {
@@ -299,10 +315,20 @@ function renderInstall(value: unknown): string {
 }
 
 function renderAccount(value: unknown): string {
-  const state = value as { action: string; signedIn: boolean; account?: string }
+  const state = value as {
+    action: string
+    signedIn: boolean
+    account?: string
+    status?: string
+    userCode?: string
+    verificationUri?: string
+  }
   if (state.action === 'logout') return 'Signed out of dsh.fish on this machine.'
+  if (state.status === 'authorization_pending' && state.userCode && state.verificationUri) {
+    return `Open ${state.verificationUri} and enter ${state.userCode}, then run hub_account with action "login" again.`
+  }
   if (!state.signedIn) return 'Not signed in to dsh.fish. Run hub_account with action "login".'
   return `Signed in to dsh.fish as ${state.account ?? 'this account'}.`
 }
 
-export { HubError, InstallRefused }
+export { HubError, InstallRefused, resolveProfile }

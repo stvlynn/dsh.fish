@@ -127,9 +127,13 @@ never reads, which is how a registry ends up with an empty long tail.
   variant, one `buildInstallPlan` branch, one installer branch, and message keys.
   Nothing else changes.
 - The `dsh-hub` plugin binds to `@deepseek-ai/dsh-tools` as a peer dependency and
-  declares its types locally, because that package is not yet installable
-  standalone from npm during the harness's developer preview. When it publishes
-  completely, `packages/dsh-plugin-hub/src/harness.d.ts` should be deleted and
-  the real packages added as devDependencies.
+declares its types locally, because that package is not yet installable
+standalone from npm during the harness's developer preview. When it publishes
+completely, `packages/dsh-plugin-hub/src/harness.d.ts` should be deleted and
+the real packages added as devDependencies. The plugin's `Config` export is a
+Standard Schema (`~standard`), not a defaults object: Cordis rejects a plain
+object and the plugin would not start. Git installs must name the subdirectory
+package (`github:owner/repo#path:packages/dsh-plugin-hub`); the repository root
+is the website, not the bundle.
 - D1 has no cross-statement transactions, so multi-table writes use `db.batch`,
   which D1 applies atomically.

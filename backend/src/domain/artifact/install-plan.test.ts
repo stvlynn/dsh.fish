@@ -78,6 +78,25 @@ describe('buildInstallPlan', () => {
     expect(unpinned.warningKeys).toContain('install.warning.unpinnedGitSpec')
   })
 
+  it('selects a subdirectory bundle with pnpm\'s git path selector', () => {
+    const plan = buildInstallPlan(
+      artifact(
+        'bundle',
+        { kind: 'bundle', requiresBuild: true },
+        githubSource({
+          owner: 'stvlynn',
+          repo: 'dsh.fish',
+          path: 'packages/dsh-plugin-hub',
+          commit: 'c'.repeat(40),
+        }),
+      ),
+      target,
+    )
+    expect(plan.manualCommands[0]).toBe(
+      `dsh plugin --profile web add github:stvlynn/dsh.fish#${'c'.repeat(40)}&path:packages/dsh-plugin-hub`,
+    )
+  })
+
   it('adds every profile bundle in declared order', () => {
     const plan = buildInstallPlan(
       artifact('profile', {

@@ -3,10 +3,9 @@ import { AnimatePresence, motion } from 'motion/react'
 import { AlertTriangle, Check, Copy } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/motion/tabs'
 import type { ArtifactDetail, InstallPlanDto } from '@/entities/artifact/model/types'
+import { HUB_PLUGIN_SPEC } from '@/shared/config/hub'
 import { t } from '@/shared/config/messages'
 import { cn } from '@/shared/lib/utils'
-
-const HUB_PLUGIN_SPEC = 'github:stvlynn/dsh.fish#main'
 
 /**
  * The install surface — the reason the site exists.
