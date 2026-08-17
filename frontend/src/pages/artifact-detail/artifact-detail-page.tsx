@@ -124,7 +124,11 @@ export default function ArtifactDetailPage({ loaderData }: Route.ComponentProps)
       </header>
 
       <div className="grid gap-10 pt-8 lg:grid-cols-[1fr_22rem]">
-        <section>
+        {/* `min-w-0`: a grid item's automatic minimum size is its min-content
+            width, so without this the column widens to fit the readme's widest
+            table row or code line and takes the whole page sideways with it —
+            the `overflow-x-auto` on those blocks never gets to engage. */}
+        <section className="min-w-0">
           <h2 className="text-base font-semibold tracking-tight">
             {t('artifact.readme')}
           </h2>
@@ -144,7 +148,7 @@ export default function ArtifactDetailPage({ loaderData }: Route.ComponentProps)
           )}
         </section>
 
-        <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-24 lg:self-start">
           <InstallPanel artifact={artifact} plan={plan} />
 
           <a

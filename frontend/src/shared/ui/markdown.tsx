@@ -1,7 +1,7 @@
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import type { Components, ExtraProps, UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { CopyButton } from '@/shared/ui/copy-button'
+import { CopyButton, REVEAL_ON_HOVER } from '@/shared/ui/copy-button'
 import { cn } from '@/shared/lib/utils'
 
 type Node = NonNullable<ExtraProps['node']>
@@ -68,7 +68,13 @@ export function Markdown({
  * relationship the `ul` component cannot see either.
  */
 const PROSE = cn(
-  'text-[15px] leading-7 text-foreground/90',
+  // `break-words`: a readme is full of tokens with no break opportunity — bare
+  // URLs, snake_case env names — and on a phone one of them is wider than the
+  // screen. Breaking mid-token is the lesser evil against a line that leaves
+  // the viewport. `overflow-wrap` inherits, but a code fence is unaffected
+  // because `white-space: pre` means it never wraps at all; it scrolls inside
+  // its own box instead, which is what a copyable command wants.
+  'text-[15px] leading-7 text-foreground/90 break-words',
   '[&_p>img:only-child]:my-2 [&_p>img:only-child]:rounded-xl',
   '[&_p>img:only-child]:outline [&_p>img:only-child]:outline-1',
   '[&_p>img:only-child]:outline-black/10 dark:[&_p>img:only-child]:outline-white/10',
@@ -242,13 +248,7 @@ function CodeFence({ code, children }: { code: string; children?: React.ReactNod
         {children}
       </pre>
       {code === '' ? null : (
-        <CopyButton
-          text={code}
-          // Hidden until wanted, but never hidden from the keyboard: focus
-          // brings it back, so tabbing through a readme cannot land on a
-          // control the user has no way of seeing.
-          className="absolute right-2.5 top-2.5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-        />
+        <CopyButton text={code} className={cn('absolute right-2.5 top-2.5', REVEAL_ON_HOVER)} />
       )}
     </div>
   )

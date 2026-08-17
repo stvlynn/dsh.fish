@@ -1,6 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/motion/tabs'
-import { CopyButton } from '@/shared/ui/copy-button'
+import { CopyButton, REVEAL_ON_HOVER } from '@/shared/ui/copy-button'
 import type { ArtifactDetail, InstallPlanDto } from '@/entities/artifact/model/types'
 import { t } from '@/shared/config/messages'
 import { cn } from '@/shared/lib/utils'
@@ -115,10 +115,7 @@ function CopyBlock({ text, muted = false }: { text: string; muted?: boolean }) {
     >
       <pre className="overflow-x-auto whitespace-pre [scrollbar-width:thin]">{text}</pre>
       {isComment ? null : (
-        <CopyButton
-          text={text}
-          className="absolute right-2 top-2 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-        />
+        <CopyButton text={text} className={cn('absolute right-2 top-2', REVEAL_ON_HOVER)} />
       )}
     </div>
   )

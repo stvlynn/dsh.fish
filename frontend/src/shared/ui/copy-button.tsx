@@ -8,6 +8,18 @@ import { cn } from '@/shared/lib/utils'
 const CONFIRM_MS = 1600
 
 /**
+ * Reveal-on-hover for a copy button that sits on top of the content it copies.
+ *
+ * Hiding it until hover keeps a code block clean, but a touch device has no
+ * hover to give — an unconditional `opacity-0` leaves the control permanently
+ * invisible on every phone and tablet. So the hidden state is scoped to
+ * pointers that can hover, and a touch device simply gets the button. Keyboard
+ * users get it back on focus, so tabbing never lands on something unseeable.
+ */
+export const REVEAL_ON_HOVER =
+  'opacity-100 transition-opacity [@media(hover:hover)and(pointer:fine)]:opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+
+/**
  * Copy-to-clipboard affordance for a block of text.
  *
  * The icon swap is the whole interaction, so it gets the full treatment:

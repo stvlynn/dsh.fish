@@ -64,7 +64,27 @@ import { t } from 'shared/i18n';
 - Use Flexbox to partition the screen into stable regions (header, content, footer).
 - Only designated containers scroll. Do not allow the body or arbitrary containers to scroll.
 - Set `min-height: 0` on every flex container that participates in the scroll chain.
+- Set `min-width: 0` (`min-w-0`) on every flex or grid item that can contain
+  wide content — a code block, a table, an unbroken URL. A grid or flex item's
+  automatic minimum size is its *min-content* width, so without it the column
+  widens to fit its widest child and takes the whole page sideways with it; the
+  `overflow-x-auto` on that child never gets to engage. This is the horizontal
+  twin of the `min-height: 0` rule above and it fails the same silent way:
+  invisible at desktop widths, a broken page on a phone.
+- Content of unknown width (anything rendered from a readme or other
+  third-party source) needs `break-words` so an unbreakable token wraps instead
+  of overflowing, and wide blocks scroll inside their own `overflow-x-auto` box.
 - The page root should fill the viewport (`min-h-dvh` / `h-dvh`).
+
+## Affordances must survive touch
+
+- Never hide a control behind `hover` alone. A touch device has no hover, so an
+  unconditional `opacity-0` leaves the control permanently invisible on every
+  phone and tablet.
+- Scope the hidden state to pointers that can hover, and let touch simply have
+  the control: `[@media(hover:hover)and(pointer:fine)]:opacity-0`. Keyboard
+  users get it back with `focus-visible`. `REVEAL_ON_HOVER` in
+  `shared/ui/copy-button.tsx` is the shared form of this.
 
 ## Accessibility
 
