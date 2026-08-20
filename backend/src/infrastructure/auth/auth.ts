@@ -44,7 +44,10 @@ export function createAuth(env?: HubEnv, cf?: IncomingRequestCfProperties, baseU
         ...(env?.KV === undefined ? {} : { kv: env.KV }),
       },
       {
-        emailAndPassword: { enabled: true, requireEmailVerification: false },
+        // Sign-in is GitHub only. A password account has no GitHub identity
+        // for the ownership check to read, so email/password is closed rather
+        // than left as a parallel path.
+        emailAndPassword: { enabled: false },
         socialProviders:
           env?.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
             ? {

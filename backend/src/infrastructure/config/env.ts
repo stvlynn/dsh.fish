@@ -24,6 +24,10 @@ export interface HubEnv {
   /** Absolute origin the site is served from, e.g. `https://dsh.fish`. */
   readonly PUBLIC_BASE_URL: string
   readonly BETTER_AUTH_SECRET: string
+  /**
+   * GitHub OAuth app credentials. Sign-in is GitHub only; without these the
+   * sign-in page has nowhere to send the reader.
+   */
   readonly GITHUB_CLIENT_ID?: string
   readonly GITHUB_CLIENT_SECRET?: string
   /**

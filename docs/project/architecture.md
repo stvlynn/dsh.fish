@@ -22,7 +22,7 @@ an agent drives.
 | Database | Cloudflare D1 (SQLite) via Drizzle ORM |
 | Cache / secondary storage | Cloudflare KV |
 | README localization | Cloudflare Agents SDK + OpenCode Go (`deepseek-v4-flash` → `hy3` → `mimo-v2.5`) |
-| Auth | Better Auth (`better-auth-cloudflare`), GitHub OAuth + email/password + OAuth device grant |
+| Auth | Better Auth (`better-auth-cloudflare`), GitHub OAuth + OAuth device grant |
 | Scheduled work | Workers Cron Triggers |
 
 ## Deployment topology
@@ -82,9 +82,9 @@ is built **per request**, because D1 and KV bindings arrive per request.
 
 The account slot in the header is the whole signed-in affordance: signed out it
 is the sign-in call to action; signed in it is the portrait Better Auth cached
-from the OAuth profile — GitHub's, for most accounts — opening a beui popover
-that carries the dashboard link and sign-out. Nothing about the account is
-duplicated in the navigation, at any width.
+from the GitHub OAuth profile, opening a beui popover that carries the dashboard
+link and sign-out. Nothing about the account is duplicated in the navigation,
+at any width. Sign-in is GitHub only; there is no email/password path.
 
 The plugin page header gives the repository author their own card, in the
 column the install panel occupies below: beui's Avatar, the name the catalog

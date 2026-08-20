@@ -9,7 +9,7 @@ for why the two share one origin.
 - A Cloudflare account with Workers, D1, KV and Durable Objects enabled.
 - An OpenCode Go subscription and API key.
 - `wrangler` authenticated (`pnpm dlx wrangler login`).
-- A GitHub OAuth app, if GitHub sign-in is wanted.
+- A GitHub OAuth app. Sign-in is GitHub only.
 
 ## 1. Create the bindings
 

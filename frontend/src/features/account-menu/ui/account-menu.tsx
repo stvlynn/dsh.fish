@@ -9,10 +9,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/motion/popo
 /**
  * The signed-in identity, and everything that acts on it.
  *
- * GitHub is the sign-in most people here use, so the portrait Better Auth
- * cached from that OAuth profile is what proves, at a glance, which account a
- * page is being read as. It doubles as the trigger for the account actions,
- * which keeps one control in the bar instead of a row of text links.
+ * GitHub is the only sign-in, so the portrait Better Auth cached from that
+ * OAuth profile is what proves, at a glance, which account a page is being
+ * read as. It doubles as the trigger for the account actions, which keeps one
+ * control in the bar instead of a row of text links.
  */
 export function AccountMenu() {
   const t = useT()

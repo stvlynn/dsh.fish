@@ -39,7 +39,6 @@ export {
 
   // Account, and the places the project and its maintainer can be reached.
   SignInIcon as SignInIcon,
-  UserPlusIcon as SignUpIcon,
   SignOutIcon as SignOutIcon,
   GithubLogoIcon as GithubIcon,
   DiscordLogoIcon as DiscordIcon,
