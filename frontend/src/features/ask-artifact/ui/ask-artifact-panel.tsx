@@ -117,6 +117,8 @@ export function AskArtifactPanel({
         onSubmit={(value) => void send(value)}
         loading={busy}
         disabled={false}
+        submitLabel={t('ask.send')}
+        stopLabel={t('ask.stop')}
         placeholder={t('ask.placeholder')}
         aria-label={t('ask.placeholder')}
         minRows={2}

@@ -234,6 +234,8 @@
   "ask.collapse": "收起问答",
   "ask.title": "询问此项目",
   "ask.placeholder": "问问这个仓库…",
+  "ask.send": "发送提问",
+  "ask.stop": "停止生成",
   "ask.close": "关闭",
   "ask.unavailable.not_github": "仅 GitHub 来源的插件支持提问。",
   "ask.rateLimited": "提问过于频繁，请稍后再试。",

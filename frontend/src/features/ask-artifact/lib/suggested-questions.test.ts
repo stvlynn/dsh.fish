@@ -23,6 +23,12 @@ describe('pickSuggestedQuestions', () => {
     expect(a).not.toEqual(b)
   })
 
+  it('redraws the kitchen-sink plugin used in e2e', () => {
+    expect(pickSuggestedQuestions('dsh-postgres-mcp:0')).not.toEqual(
+      pickSuggestedQuestions('dsh-postgres-mcp:1'),
+    )
+  })
+
   it('reaches every question in the pool across enough seeds', () => {
     const seen = new Set<string>()
     for (let round = 0; round < 200; round += 1) {

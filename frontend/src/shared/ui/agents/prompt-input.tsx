@@ -59,6 +59,8 @@ export interface PromptInputProps extends Omit<
   onSubmit?: (value: string, model?: string) => void | Promise<void>;
   loading?: boolean;
   onStop?: () => void;
+  submitLabel: string;
+  stopLabel: string;
   minRows?: number;
   maxRows?: number;
   leadingAction?: ReactNode;
@@ -78,6 +80,8 @@ export function PromptInput({
   onSubmit,
   loading = false,
   onStop,
+  submitLabel,
+  stopLabel,
   minRows = 2,
   maxRows = 8,
   leadingAction,
@@ -102,6 +106,7 @@ export function PromptInput({
     (option) => option.value === currentModelValue,
   );
   const canSubmit = Boolean(currentValue.trim()) && !disabled && !loading;
+  const sendName = loading ? stopLabel : submitLabel;
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -300,13 +305,15 @@ export function PromptInput({
           type={loading ? "button" : "submit"}
           size="icon"
           disabled={loading ? !onStop : !canSubmit}
-          aria-label={loading ? "Stop generating" : "Send prompt"}
+          aria-label={sendName}
           onClick={loading ? onStop : undefined}
           className="ml-auto size-8 rounded-full"
         >
+          <span className="sr-only">{sendName}</span>
           <AnimatePresence initial={false} mode="popLayout">
             <motion.span
               key={loading ? "stop" : "send"}
+              aria-hidden="true"
               initial={reduce ? { opacity: 1 } : { opacity: 0, y: 3, scale: 0.8 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3, scale: 0.8 }}

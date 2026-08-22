@@ -234,6 +234,8 @@
   "ask.collapse": "Q&A を閉じる",
   "ask.title": "このプロジェクトに聞く",
   "ask.placeholder": "このリポジトリについて質問…",
+  "ask.send": "質問を送る",
+  "ask.stop": "生成を停止",
   "ask.close": "閉じる",
   "ask.unavailable.not_github": "質問は GitHub 由来のプラグインでのみ利用できます。",
   "ask.rateLimited": "質問が多すぎます。しばらくしてから再試行してください。",

@@ -234,6 +234,8 @@
   "ask.collapse": "Q&A 숨기기",
   "ask.title": "이 프로젝트에 묻기",
   "ask.placeholder": "이 저장소에 대해 질문…",
+  "ask.send": "질문 보내기",
+  "ask.stop": "생성 중지",
   "ask.close": "닫기",
   "ask.unavailable.not_github": "질문은 GitHub에서 온 플러그인에서만 사용할 수 있습니다.",
   "ask.rateLimited": "질문이 너무 많습니다. 잠시 후 다시 시도하세요.",

@@ -109,10 +109,11 @@ test.describe('plugin detail readme on a phone', () => {
     test.skip(!SCREENSHOT_DEVICES.has(info.project.name), 'Baselines are stored for iPhone SE (3rd gen) and Pixel 7')
 
     const readme = page.locator('#readme')
-    await readme.scrollIntoViewIfNeeded()
-    // Snap to a whole-pixel scroll offset: how far "into view" lands depends on
-    // load timing, and a fractional scrollY shifts text rasterisation across
-    // the whole fold, which flakes the snapshot.
+    await readme.evaluate((node) => {
+      node.scrollIntoView({ block: 'start', inline: 'nearest' })
+    })
+    // Snap to a whole-pixel scroll offset: a fractional scrollY shifts text
+    // rasterisation across the whole fold, which flakes the snapshot.
     await page.evaluate(() => window.scrollTo(0, Math.round(window.scrollY)))
     const clip = await firstFoldClip(page)
     await expect(page).toHaveScreenshot('readme-fold.png', {

@@ -91,7 +91,7 @@ export function ArtifactAsk({
 
   return (
     <AskChannel.Provider value={askQuestion}>
-      <div className="lg:flex lg:min-h-0">
+      <div className="lg:flex lg:min-h-0" data-ask-layout={desktop ? 'column' : 'sheet'}>
         <div
           className={cn(
             'relative min-w-0 flex-1 bg-background',
@@ -156,26 +156,27 @@ function AskTopBar({ open, onToggle }: { open: boolean; onToggle: () => void }) 
   const label = open ? t('ask.collapse') : t('ask.open')
 
   return (
-    <div className="sticky top-16 z-10 h-0">
-      <div className="flex justify-end px-3 pt-3 sm:px-6">
-        <Button
-          type="button"
-          variant={open ? 'secondary' : 'ghost'}
-          size="icon"
-          aria-expanded={open}
-          aria-controls="ask-panel"
-          aria-label={label}
-          onClick={onToggle}
-        >
-          <IconSwap swapKey={open ? 'open' : 'closed'}>
-            {open ? (
-              <AskPanelOpenIcon className="size-4" weight="bold" />
-            ) : (
-              <AskPanelClosedIcon className="size-4" weight="bold" />
-            )}
-          </IconSwap>
-        </Button>
-      </div>
+    // A real row, pulled back with negative margin, so the control has a
+    // hit box Playwright can see. `h-0` plus overflow left the button
+    // clipped after the page scrolled to the reviews rail.
+    <div className="sticky top-16 z-10 -mb-11 flex justify-end px-3 pt-3 sm:px-6">
+      <Button
+        type="button"
+        variant={open ? 'secondary' : 'ghost'}
+        size="icon"
+        aria-expanded={open}
+        aria-controls="ask-panel"
+        aria-label={label}
+        onClick={onToggle}
+      >
+        <IconSwap swapKey={open ? 'open' : 'closed'}>
+          {open ? (
+            <AskPanelOpenIcon className="size-4" weight="bold" />
+          ) : (
+            <AskPanelClosedIcon className="size-4" weight="bold" />
+          )}
+        </IconSwap>
+      </Button>
     </div>
   )
 }
@@ -241,9 +242,7 @@ function AskColumn({
 }
 
 function useMinWidthLg(): boolean {
-  const [matches, setMatches] = useState(() =>
-    typeof window === 'undefined' ? false : window.matchMedia(LG_QUERY).matches,
-  )
+  const [matches, setMatches] = useState(false)
 
   useEffect(() => {
     const media = window.matchMedia(LG_QUERY)

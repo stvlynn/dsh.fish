@@ -234,6 +234,8 @@
   "ask.collapse": "Hide Q&A",
   "ask.title": "Ask this project",
   "ask.placeholder": "Ask about this repository…",
+  "ask.send": "Send prompt",
+  "ask.stop": "Stop generating",
   "ask.close": "Close",
   "ask.unavailable.not_github": "Ask is available for GitHub-sourced plugins.",
   "ask.rateLimited": "Too many questions right now. Try again in a few minutes.",

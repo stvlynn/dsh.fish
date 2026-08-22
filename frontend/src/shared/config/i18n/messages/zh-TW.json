@@ -234,6 +234,8 @@
   "ask.collapse": "收起問答",
   "ask.title": "詢問此專案",
   "ask.placeholder": "問問這個儲存庫…",
+  "ask.send": "發送提問",
+  "ask.stop": "停止產生",
   "ask.close": "關閉",
   "ask.unavailable.not_github": "僅 GitHub 來源的外掛支援提問。",
   "ask.rateLimited": "提問過於頻繁，請稍後再試。",
