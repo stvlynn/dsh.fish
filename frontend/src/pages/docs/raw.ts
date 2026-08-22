@@ -32,6 +32,28 @@ function rawDocument(relative: string): string | undefined {
   return key === undefined ? undefined : RAW[key]
 }
 
+/**
+ * Unlocalized `/docs…` paths that have a bundled English MDX file.
+ *
+ * Derived from the same glob `productDocsMarkdown` reads, so a guide added
+ * to `content/docs` appears here without a second list. Locale-suffixed
+ * files (`cli.ja.mdx`) are translations of an English path, not extra slugs.
+ */
+export function productDocsPaths(): readonly string[] {
+  const translationSuffixes = LOCALE_CODES.filter((locale) => locale !== DEFAULT_LOCALE).map(
+    (locale) => `.${locale}`,
+  )
+  const paths = new Set<string>()
+  for (const key of Object.keys(RAW)) {
+    const match = /\/content\/docs\/(.+)\.mdx$/.exec(key)
+    if (match === null) continue
+    const relative = match[1]!
+    if (translationSuffixes.some((suffix) => relative.endsWith(suffix))) continue
+    paths.add(relative === 'index' ? '/docs' : `/docs/${relative}`)
+  }
+  return [...paths].sort((left, right) => left.localeCompare(right))
+}
+
 export function productDocsMarkdown(
   unlocalizedPath: string,
   locale: Locale = DEFAULT_LOCALE,

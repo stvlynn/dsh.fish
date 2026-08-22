@@ -22,4 +22,9 @@ describe('robotsText', () => {
     expect(body).toContain('User-agent: GPTBot\nDisallow: /')
     expect(body).toContain('User-agent: ClaudeBot\nDisallow: /')
   })
+
+  it('points agents at llms.txt', () => {
+    expect(body).toContain('/llms.txt')
+    expect(body).toContain('/docs/llms.txt')
+  })
 })

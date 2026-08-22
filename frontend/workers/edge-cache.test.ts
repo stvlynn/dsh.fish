@@ -64,6 +64,9 @@ describe('isMachineReadablePath', () => {
     '/robots.txt',
     '/openapi.json',
     '/.well-known/api-catalog',
+    '/llms.txt',
+    '/docs/llms.txt',
+    '/docs/llms-full.txt',
     '/indexnow-abc123.txt',
     '/api/v1/catalog/snapshot',
   ])('matches %s', (pathname) => {

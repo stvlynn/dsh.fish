@@ -193,8 +193,8 @@ frontend/src/widgets/docs-media/     controlled video + localized transcript
 
 `source.ts` lives next to the docs page, not in `shared/`. Nothing outside
 the docs slice imports Fumadocs. `pages/seo` and `pages/markdown` may import
-docs helpers so the sitemap and `Accept: text/markdown` stay generated from
-the same tree — see [`../frontend/import-rules.md`](../frontend/import-rules.md).
+docs helpers so the sitemap, `Accept: text/markdown`, and `/docs/llms.txt`
+stay generated from the same tree — see [`../frontend/import-rules.md`](../frontend/import-rules.md).
 
 ### Indexation
 

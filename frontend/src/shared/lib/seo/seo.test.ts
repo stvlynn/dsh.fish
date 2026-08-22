@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { LOCALE_CODES } from '@/shared/config/i18n'
 import { pageMeta } from './meta'
 import { organizationLd } from './structured-data'
-import { alternates, clampDescription } from './url'
+import {
+  alternates,
+  clampDescription,
+  coveringLlmsTxt,
+  hasMarkdownAlternate,
+  htmlPathFromMarkdownAlias,
+  markdownPath,
+} from './url'
 
 const ORIGIN = 'https://dsh.fish'
 
@@ -88,6 +95,22 @@ describe('pageMeta', () => {
     expect(feeds[0]!.href).toBe(`${ORIGIN}/ja/feed.xml`)
   })
 
+  it('points at the covering llms.txt and the markdown alias', () => {
+    const describedby = find(
+      indexed,
+      (entry) => entry.rel === 'describedby' && entry.type === 'text/markdown',
+    )
+    expect(describedby).toHaveLength(1)
+    expect(describedby[0]!.href).toBe(`${ORIGIN}/llms.txt`)
+
+    const markdown = find(
+      indexed,
+      (entry) => entry.rel === 'alternate' && entry.type === 'text/markdown',
+    )
+    expect(markdown).toHaveLength(1)
+    expect(markdown[0]!.href).toBe(`${ORIGIN}/ja/a/dsh-hello.md`)
+  })
+
   it('names its own og:locale once and every other as an alternate', () => {
     expect(content(indexed, 'property', 'og:locale')).toBe('ja_JP')
     expect(find(indexed, (entry) => entry.property === 'og:locale:alternate')).toHaveLength(
@@ -144,6 +167,7 @@ describe('pageMeta', () => {
     it('claims neither a canonical nor alternates, which would contradict it', () => {
       expect(find(excluded, (entry) => entry.rel === 'canonical')).toHaveLength(0)
       expect(find(excluded, (entry) => entry.rel === 'alternate')).toHaveLength(0)
+      expect(find(excluded, (entry) => entry.rel === 'describedby')).toHaveLength(0)
     })
   })
 
@@ -170,6 +194,17 @@ describe('pageMeta', () => {
       ).toHaveLength(0)
       expect(find(englishOnly, (entry) => entry.property === 'og:locale:alternate')).toHaveLength(0)
     })
+
+    it('points docs pages at /docs/llms.txt and /docs/index.md', () => {
+      expect(
+        find(englishOnly, (entry) => entry.rel === 'describedby' && entry.type === 'text/markdown')[0]
+          ?.href,
+      ).toBe(`${ORIGIN}/docs/llms.txt`)
+      expect(
+        find(englishOnly, (entry) => entry.rel === 'alternate' && entry.type === 'text/markdown')[0]
+          ?.href,
+      ).toBe(`${ORIGIN}/docs/index.md`)
+    })
   })
 
   it('attaches structured data blocks verbatim', () => {
@@ -195,5 +230,43 @@ describe('organizationLd', () => {
       width: 256,
       height: 256,
     })
+  })
+})
+
+describe('markdownPath', () => {
+  it('appends .md, using index.md for directory URLs', () => {
+    expect(markdownPath('/')).toBe('/index.md')
+    expect(markdownPath('/docs')).toBe('/docs/index.md')
+    expect(markdownPath('/docs/cli')).toBe('/docs/cli.md')
+    expect(markdownPath('/a/dsh-hello')).toBe('/a/dsh-hello.md')
+    expect(markdownPath('/browse')).toBe('/browse.md')
+  })
+
+  it('round-trips through the alias stripper', () => {
+    for (const path of ['/', '/docs', '/docs/cli', '/a/dsh-hello', '/kind/skill']) {
+      expect(htmlPathFromMarkdownAlias(markdownPath(path))).toBe(path)
+    }
+    expect(htmlPathFromMarkdownAlias('/browse')).toBeUndefined()
+  })
+})
+
+describe('coveringLlmsTxt', () => {
+  it('uses the docs file under /docs, otherwise the origin file', () => {
+    expect(coveringLlmsTxt('/')).toBe('/llms.txt')
+    expect(coveringLlmsTxt('/browse')).toBe('/llms.txt')
+    expect(coveringLlmsTxt('/a/dsh-hello')).toBe('/llms.txt')
+    expect(coveringLlmsTxt('/docs')).toBe('/docs/llms.txt')
+    expect(coveringLlmsTxt('/docs/cli')).toBe('/docs/llms.txt')
+  })
+})
+
+describe('hasMarkdownAlternate', () => {
+  it('covers content pages and withholds UI-only paths', () => {
+    expect(hasMarkdownAlternate('/')).toBe(true)
+    expect(hasMarkdownAlternate('/browse')).toBe(true)
+    expect(hasMarkdownAlternate('/docs/cli')).toBe(true)
+    expect(hasMarkdownAlternate('/submit')).toBe(false)
+    expect(hasMarkdownAlternate('/docs/search')).toBe(false)
+    expect(hasMarkdownAlternate('/dashboard')).toBe(false)
   })
 })

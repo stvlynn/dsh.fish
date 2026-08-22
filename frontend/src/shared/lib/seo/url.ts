@@ -55,6 +55,58 @@ export function hreflangFor(locale: Locale): string {
 }
 
 /**
+ * The conventional markdown alias for an HTML path (llms.txt v2).
+ *
+ * Paths here have no filename extension, so the alias appends `.md`. Directory
+ * URLs (`/` and `/docs`) use `index.md` so the docs tree stays under `/docs/`
+ * and `/docs/llms.txt` covers it.
+ */
+export function markdownPath(unlocalizedPath: string): string {
+  if (unlocalizedPath === '/') return '/index.md'
+  if (unlocalizedPath === '/docs') return '/docs/index.md'
+  return `${unlocalizedPath}.md`
+}
+
+/**
+ * The HTML path a `.md` alias maps back to, or `undefined` when the path is
+ * not an alias. `/index.md` is the home page; any other `…/index.md` drops
+ * that last segment.
+ */
+export function htmlPathFromMarkdownAlias(unlocalizedPath: string): string | undefined {
+  if (unlocalizedPath === '/index.md') return '/'
+  if (unlocalizedPath.endsWith('/index.md')) {
+    const parent = unlocalizedPath.slice(0, -'/index.md'.length)
+    return parent === '' ? '/' : parent
+  }
+  if (unlocalizedPath.endsWith('.md')) return unlocalizedPath.slice(0, -'.md'.length)
+  return undefined
+}
+
+/**
+ * The llms.txt file that covers this HTML path (v2: most specific wins).
+ * `/docs/llms.txt` covers the product-docs tree; `/llms.txt` covers the rest.
+ */
+export function coveringLlmsTxt(unlocalizedPath: string): string {
+  return unlocalizedPath === '/docs' || unlocalizedPath.startsWith('/docs/')
+    ? '/docs/llms.txt'
+    : '/llms.txt'
+}
+
+/**
+ * Whether this HTML path has a markdown representation — either via
+ * `Accept: text/markdown` or the `.md` alias. Taxonomy membership is not
+ * checked: an unknown kind 404s before `pageMeta` runs.
+ */
+export function hasMarkdownAlternate(unlocalizedPath: string): boolean {
+  if (unlocalizedPath === '/' || unlocalizedPath === '/browse') return true
+  if (/^\/a\/[^/]+$/.test(unlocalizedPath)) return true
+  if (/^\/kind\/[^/]+$/.test(unlocalizedPath)) return true
+  if (/^\/category\/[^/]+$/.test(unlocalizedPath)) return true
+  if (unlocalizedPath === '/docs') return true
+  return unlocalizedPath.startsWith('/docs/') && unlocalizedPath !== '/docs/search'
+}
+
+/**
  * Trim a description to something an engine will show whole.
  *
  * Cuts on a word boundary and adds an ellipsis, so a clamped summary reads as

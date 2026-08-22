@@ -6,7 +6,7 @@ import { hubContext } from '@/shared/api/hub-context'
  *
  * One linkset that tells a machine where every machine-readable door into the
  * catalog is: the OpenAPI description of the JSON API, the human documentation,
- * the health check, and the whole-catalog snapshot. HTML pages advertise this
+ * the health check, the whole-catalog snapshot, and `/llms.txt`. HTML pages advertise this
  * URL in a `Link: …; rel="api-catalog"` header (RFC 8288), so an agent learns
  * it without parsing any markup.
  */
@@ -42,6 +42,10 @@ export function apiCatalogDocument(baseUrl: string): string {
             {
               href: `${baseUrl}/api/v1/catalog/snapshot`,
               type: 'application/json',
+            },
+            {
+              href: `${baseUrl}/llms.txt`,
+              type: 'text/markdown',
             },
           ],
         },

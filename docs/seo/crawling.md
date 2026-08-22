@@ -157,32 +157,69 @@ child sitemap, and submits the full URL set to `https://api.indexnow.org` in
 batches of 10,000 (the protocol cap). URLs come from the sitemap rather than
 the database so the submitted set is by definition the set we want indexed.
 
+## llms.txt
+
+[llmstxt.org v2](https://llmstxt.org/) is a curated markdown overview for
+inference-time agents, not a sitemap and not a training opt-out. Chrome
+Lighthouse's agentic-browsing audit fetches `GET /llms.txt`; coding agents
+then follow the links.
+
+```
+/llms.txt                 origin coverage — kinds, API, pointer at the docs index
+/docs/llms.txt            product-docs coverage, generated from the Fumadocs nav
+/docs/llms-full.txt       every English guide concatenated (community convention)
+```
+
+The root file is English and deliberately small. It does not enumerate
+plugins: that is the JSON API and the catalog snapshot. Kind landings are
+generated from `ARTIFACT_KINDS` the same way the sitemap is, so a kind added
+to the domain appears in `/llms.txt` in the same commit. `/docs/llms.txt`
+is generated from `docsNav('en')` and the loader throws if a sitemap slug is
+missing. `/docs/llms-full.txt` concatenates `productDocsPaths()` through
+`productDocsMarkdown`; the plugin catalog is not dumped.
+
+There is no `/:locale/llms.txt` and no `/.well-known/llms.txt`. Agents fetch
+the conventional filename at the origin; other languages are a path prefix
+on the pages the file points at.
+
+Routes live in `frontend/src/pages/seo/` next to robots and the api-catalog.
+Responses are `text/markdown; charset=utf-8` with `public, max-age=86400`.
+
 ## Markdown for agents
 
-Agents can ask for any content page as markdown instead of HTML:
+Agents can ask for any content page as markdown instead of HTML, either by
+content type or by the v2 `.md` alias:
 
 ```sh
 curl https://dsh.fish/a/<artifact-id> -H "Accept: text/markdown"
+curl https://dsh.fish/a/<artifact-id>.md
+curl https://dsh.fish/docs/cli.md
+curl https://dsh.fish/index.md
 ```
+
+Directory URLs use `index.md` (`/` → `/index.md`, `/docs` → `/docs/index.md`)
+so the docs tree stays under `/docs/` and `/docs/llms.txt` covers it. Artifact
+ids are kebab-case with no dots, so `/a/foo.md` cannot collide with an id.
 
 The negotiation lives in the Worker entry (`frontend/workers/app.ts` →
 `frontend/src/pages/markdown/`). When `Accept` prefers `text/markdown`
-(q-values honoured, wildcard ignored), the handler answers from the same use
-cases the SSR loaders use; anything else — browsers, UI pages like `/submit`,
-unknown paths — falls through to React Router unchanged. Responses carry
-`Content-Type: text/markdown`, `Vary: Accept`, an `x-markdown-tokens` estimate,
-and a `content-signal` header.
+(q-values honoured, wildcard ignored), or the path is a `.md` alias, the
+handler answers from the same use cases the SSR loaders use; anything else —
+browsers on HTML URLs, UI pages like `/submit`, unknown paths — falls through
+to React Router unchanged. Responses carry `Content-Type: text/markdown`,
+an `x-markdown-tokens` estimate, and a `content-signal` header. HTML URLs
+that also negotiate markdown send `Vary: Accept`.
 
 Covered paths: `/`, `/browse` (filters included), `/kind/<kind>`,
-`/category/<category>` and `/a/<id>`, in every locale. The plugin page variant
-is the strongest one: frontmatter from the page meta, the metadata row, the
-install commands, the artifact's own readme verbatim (already markdown in the
-catalog — no HTML scrape involved), and the page's JSON-LD as a fenced block,
-matching the layout agents are taught to expect.
+`/category/<category>`, `/a/<id>`, and `/docs/*`, in every locale. The plugin
+page variant is the strongest one: frontmatter from the page meta, the metadata
+row, the install commands, the artifact's own readme verbatim (already markdown
+in the catalog — no HTML scrape involved), and the page's JSON-LD as a fenced
+block, matching the layout agents are taught to expect.
 
 ## Link headers for agent discovery
 
-Every 200 HTML response carries `Link` headers (RFC 8288) naming the
+Every 200 HTML or markdown response carries `Link` headers (RFC 8288) naming the
 machine-readable doors into the catalog, so an agent learns them without
 parsing any markup:
 
@@ -191,25 +228,31 @@ Link: </.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+j
 Link: </openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"
 Link: </docs>; rel="service-doc"; type="text/html"
 Link: </api/v1/catalog/snapshot>; rel="describedby"; type="application/json"
+Link: </llms.txt>; rel="describedby"; type="text/markdown"
 ```
 
-Pages that answer `Accept: text/markdown` add a fifth link pointing back at
-themselves: `<url>; rel="alternate"; type="text/markdown"` — the representation
-is negotiated on the same URL, so the href is the page's own. The Worker entry
-decides this through `supportsMarkdownNegotiation`
-(`frontend/src/pages/markdown/handler.ts`), which mirrors the markdown route
-table; error pages and UI-only pages (`/submit`, `/dashboard`, …) carry no
-links, and the decorator itself (`frontend/src/shared/api/agent-discovery.ts`)
-skips non-HTML and non-200 responses.
+Pages under `/docs` point `describedby` at `/docs/llms.txt` instead of the
+origin file (v2: the most specific covering file wins). Indexable HTML pages
+repeat both relations in `<head>` via `pageMeta`.
 
-The two documents those headers point at are resource routes under
+Pages that have a markdown representation add an `alternate` link pointing at
+the `.md` alias: `<https://dsh.fish/ja/browse.md>; rel="alternate"; type="text/markdown"`.
+`Accept: text/markdown` still works on the HTML URL; the alias is what an
+agent following llms.txt actually GET. The Worker entry decides this through
+`supportsMarkdownNegotiation` (`frontend/src/pages/markdown/handler.ts`),
+which mirrors the markdown route table; error pages and UI-only pages
+(`/submit`, `/dashboard`, …) carry no markdown alternate, and the decorator
+itself (`frontend/src/shared/api/agent-discovery.ts`) skips non-document and
+non-200 responses.
+
+The documents those headers point at are resource routes under
 `frontend/src/pages/seo/`:
 
 - `/.well-known/api-catalog` — the RFC 9727 api-catalog linkset
   (`application/linkset+json`). It anchors the JSON API at `/api/v1` with its
   `service-desc` (the OpenAPI document), `service-doc` (`/docs`) and `status`
   (`/api/health`), and anchors the origin with `describedby` pointing at the
-  whole-catalog snapshot.
+  whole-catalog snapshot and `/llms.txt`.
 - `/openapi.json` — an OpenAPI 3.1 description of the anonymous read surface:
   search, artifact detail, install-plan resolution, facets, the scoring model
   and the versioned snapshot with its ETag/304 contract. Submissions, admin

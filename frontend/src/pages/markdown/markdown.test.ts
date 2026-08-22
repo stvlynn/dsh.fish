@@ -155,6 +155,31 @@ describe('maybeMarkdownResponse', () => {
     expect(await localizedDocs!.text()).toContain('启动 Web UI')
   })
 
+  it('serves v2 .md aliases without an Accept header', async () => {
+    const docs = await maybeMarkdownResponse(request('/docs/cli.md'), stubContainer())
+    expect(docs).not.toBeNull()
+    expect(docs!.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+    expect(await docs!.text()).toContain('npx @dsh-fish/cli')
+
+    const home = await maybeMarkdownResponse(request('/index.md'), stubContainer())
+    expect(home).not.toBeNull()
+
+    const docsIndex = await maybeMarkdownResponse(request('/docs/index.md'), stubContainer())
+    expect(docsIndex).not.toBeNull()
+
+    const artifact = await maybeMarkdownResponse(request('/a/dsh-hello.md'), stubContainer())
+    expect(artifact).not.toBeNull()
+    expect(await artifact!.text()).toContain('# @acme/dsh-hello')
+
+    const localized = await maybeMarkdownResponse(request('/ja/docs/cli.md'), stubContainer())
+    expect(localized).not.toBeNull()
+  })
+
+  it('still requires Accept on the HTML URL', async () => {
+    expect(await maybeMarkdownResponse(request('/docs/cli'), stubContainer())).toBeNull()
+    expect(await maybeMarkdownResponse(request('/a/dsh-hello'), stubContainer())).toBeNull()
+  })
+
   it('falls through for unknown paths and unknown artifacts', async () => {
     const container = stubContainer()
     expect(await maybeMarkdownResponse(request('/submit', 'text/markdown'), container)).toBeNull()

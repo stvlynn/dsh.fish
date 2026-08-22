@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LOCALE_CODES } from '@/shared/config/i18n'
-import { productDocsLocales, productDocsMarkdown, supportsProductDocsMarkdown } from './raw'
+import { productDocsLocales, productDocsMarkdown, productDocsPaths, supportsProductDocsMarkdown } from './raw'
 
 const DOC_PATHS = [
   '/docs',
@@ -47,5 +47,9 @@ describe('productDocsMarkdown', () => {
     for (const path of DOC_PATHS) {
       expect(productDocsLocales(path), path).toEqual(LOCALE_CODES)
     }
+  })
+
+  it('enumerates every English guide from the bundled glob', () => {
+    expect(productDocsPaths()).toEqual([...DOC_PATHS].sort((left, right) => left.localeCompare(right)))
   })
 })

@@ -25,9 +25,15 @@ describe('apiCatalogDocument', () => {
     })
 
     const origin = document.linkset[1] as Record<string, { href: string; type: string }[]>
-    expect(origin['describedby']![0]).toEqual({
-      href: 'https://dsh.fish/api/v1/catalog/snapshot',
-      type: 'application/json',
-    })
+    expect(origin['describedby']).toEqual([
+      {
+        href: 'https://dsh.fish/api/v1/catalog/snapshot',
+        type: 'application/json',
+      },
+      {
+        href: 'https://dsh.fish/llms.txt',
+        type: 'text/markdown',
+      },
+    ])
   })
 })

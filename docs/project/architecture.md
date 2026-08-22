@@ -149,10 +149,9 @@ existing cookie on `<html>`, and the palette stays hue 263.
 
 Two same-layer imports are allowed so the slug list exists once:
 
-- `pages/markdown` → `pages/docs` public API (`productDocsMarkdown`)
-- `pages/seo` → `pages/docs/source` (`docsSitemapEntries`) — that helper
-  cannot sit on the public API, because `defineDocs` is a Vite macro and
-  the markdown unit tests import `@/pages/docs` without the plugin
+- `pages/markdown` → `pages/docs` public API (`productDocsMarkdown`, `productDocsPaths`)
+- `pages/seo` → `pages/docs` public API (`productDocsMarkdown`, `productDocsPaths`) for `/docs/llms-full.txt`
+- `pages/seo` → `pages/docs/source` (`docsSitemapEntries`, `docsNav`, `docsSitemapPaths`) — those helpers cannot sit on the public API, because `defineDocs` is a Vite macro and the markdown unit tests import `@/pages/docs` without the plugin
 
 Fumadocs uses dot-suffix locale files and React Router owns the URL prefix.
 `productDocsLocales` checks physical MDX files so page metadata and the sitemap
@@ -180,11 +179,14 @@ cookie, so a later bare-URL visit is forwarded to the reader's prefix with a 302
 pages, not query strings, because that is the form an engine will rank and the
 form the footer can link from every page on the site.
 
-**Four resource routes.** `/robots.txt`, `/sitemap.xml` and the two sitemap
-files it indexes are React Router routes with a `loader` and no component, so
-they resolve their data through the same container as every page — the artifact
-sitemap reads `ListSitemapEntries`, an application use case over a dedicated
-`ArtifactRepository.listForSitemap` projection rather than over search.
+**Resource routes.** `/robots.txt`, `/sitemap.xml` and the two sitemap files
+it indexes, plus `/llms.txt`, `/docs/llms.txt` and `/docs/llms-full.txt`, are
+React Router routes with a `loader` and no component, so they resolve their
+data through the same container as every page — the artifact sitemap reads
+`ListSitemapEntries`, an application use case over a dedicated
+`ArtifactRepository.listForSitemap` projection rather than over search. The
+llms.txt files are curated agent overviews (llmstxt.org v2); they do not
+enumerate the catalog.
 
 Full treatment in [`../seo/README.md`](../seo/README.md); language conventions
 in [`../frontend/i18n.md`](../frontend/i18n.md).

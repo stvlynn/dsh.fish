@@ -48,6 +48,7 @@ export function robotsText(baseUrl: string): string {
     '',
     '# Atom feeds live at /feed.xml and /<locale>/feed.xml; the IndexNow key',
     '# file at /indexnow-<key>.txt. Both are crawlable by design.',
+    '# Agents: /llms.txt (site), /docs/llms.txt (guides). Markdown mirrors append .md.',
     '',
     `Sitemap: ${baseUrl}/sitemap.xml`,
     '',

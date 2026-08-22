@@ -6,6 +6,7 @@ import {
   isCategory,
   kindPluralKey,
 } from '@/entities/artifact/model/types'
+import { htmlPathFromMarkdownAlias } from '@/shared/lib/seo'
 import { prefersMarkdown } from './negotiate'
 import { markdownResponse } from './response'
 import { artifactMarkdown, listingItemMarkdown } from './artifact'
@@ -36,18 +37,21 @@ export function supportsMarkdownNegotiation(pathname: string): boolean {
  * The markdown side of content negotiation.
  *
  * Returns a markdown Response for the catalog's content pages when the client
- * asks for `text/markdown`, and `null` for everything else — browsers, pages
+ * asks for `text/markdown`, or when the path is a v2 `.md` alias
+ * (`/docs/cli.md`, `/index.md`). Anything else — browsers on HTML URLs, pages
  * whose value is their UI (submit, dashboard, auth), and unknown or invalid
- * paths all fall through to the React Router handler unchanged.
+ * paths — falls through to the React Router handler unchanged.
  */
 export async function maybeMarkdownResponse(
   request: Request,
   container: Container,
 ): Promise<Response | null> {
-  if (!prefersMarkdown(request.headers.get('accept'))) return null
-
   const url = new URL(request.url)
-  const { locale, path } = splitLocalePath(url.pathname)
+  const { locale, path: rawPath } = splitLocalePath(url.pathname)
+  const alias = htmlPathFromMarkdownAlias(rawPath)
+  if (alias === undefined && !prefersMarkdown(request.headers.get('accept'))) return null
+
+  const path = alias ?? rawPath
   const origin = container.config.baseUrl
 
   const artifactMatch = /^\/a\/([^/]+)$/.exec(path)

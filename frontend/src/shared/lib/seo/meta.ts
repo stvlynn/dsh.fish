@@ -8,7 +8,14 @@ import {
   type Locale,
 } from '@/shared/config/i18n'
 import { OG_IMAGE } from '@/shared/config/site'
-import { absoluteUrl, alternates, clampDescription } from './url'
+import {
+  absoluteUrl,
+  alternates,
+  clampDescription,
+  coveringLlmsTxt,
+  hasMarkdownAlternate,
+  markdownPath,
+} from './url'
 
 export interface PageMetaInput {
   readonly origin: string
@@ -138,6 +145,23 @@ export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
       title: translate(locale, 'feed.title'),
       href: absoluteUrl(origin, locale, '/feed.xml'),
     })
+    // llms.txt v2: the covering overview, and the markdown alias when this
+    // path has one. Headers on the response repeat the same relations so an
+    // agent that never parses `<head>` still finds them.
+    descriptors.push({
+      tagName: 'link',
+      rel: 'describedby',
+      type: 'text/markdown',
+      href: `${origin.replace(/\/+$/, '')}${coveringLlmsTxt(path)}`,
+    })
+    if (hasMarkdownAlternate(path)) {
+      descriptors.push({
+        tagName: 'link',
+        rel: 'alternate',
+        type: 'text/markdown',
+        href: absoluteUrl(origin, locale, markdownPath(path)),
+      })
+    }
   } else {
     // `follow` still: a signed-in-only page is not worth indexing, but the links
     // out of it lead to pages that are.

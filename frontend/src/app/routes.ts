@@ -45,6 +45,10 @@ export default [
   // straight here with the code prefilled.
   route(':locale?/device', './pages/device/device-page.tsx'),
   route(':locale?/docs/search', './pages/docs/search.ts'),
+  // Agent overviews for the docs tree. Before the splat so `llms.txt` is not
+  // treated as a missing MDX slug.
+  route('docs/llms.txt', './pages/seo/docs-llms-txt.ts'),
+  route('docs/llms-full.txt', './pages/seo/docs-llms-full.ts'),
   route(':locale?/docs', './pages/docs/docs-page.tsx'),
   route(':locale?/docs/*', './pages/docs/docs-page.tsx', { id: 'docs-splat' }),
 
@@ -57,10 +61,12 @@ export default [
   // Atom feeds are localized: the default language is unprefixed like every
   // other reader-facing route, the other nine live under their prefix.
   route(':locale?/feed.xml', './pages/seo/feed.ts'),
-  // Agent-discovery resources. The api-catalog (RFC 9727) and the OpenAPI
-  // document are what the HTML pages' `Link` headers point at.
+  // Agent-discovery resources. The api-catalog (RFC 9727), the OpenAPI
+  // document, and llms.txt (llmstxt.org v2) are what the HTML pages' `Link`
+  // headers point at.
   route('.well-known/api-catalog', './pages/seo/api-catalog.ts'),
   route('openapi.json', './pages/seo/openapi.ts'),
+  route('llms.txt', './pages/seo/llms-txt.ts'),
 
   route('*', './pages/not-found/not-found-page.tsx'),
 ] satisfies RouteConfig

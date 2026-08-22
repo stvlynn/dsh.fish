@@ -42,7 +42,7 @@ That produces three requirements the rest of the product does not have:
 | Head tags: canonical, hreflang, OG, Twitter | `frontend/src/shared/lib/seo/meta.ts` |
 | schema.org nodes (site, breadcrumb, collection) | `frontend/src/shared/lib/seo/structured-data.ts` |
 | schema.org node for an artifact | `frontend/src/entities/artifact/lib/artifact-ld.ts` |
-| robots.txt, sitemaps | `frontend/src/pages/seo/` |
+| robots.txt, sitemaps, llms.txt | `frontend/src/pages/seo/` |
 | Sitemap read model | `backend/src/application/use-case/list-sitemap-entries.ts` |
 | Social card generator | `frontend/scripts/build-og-image.mjs` |
 | Per-artifact social card, README badge | `frontend/src/pages/artifact-og/`, `frontend/src/pages/artifact-badge/` |
@@ -70,6 +70,9 @@ Then, against `http://localhost:5173`:
 
 ```sh
 curl -s /robots.txt
+curl -s /llms.txt
+curl -s /docs/llms.txt
+curl -s /docs/cli.md | head
 curl -s /sitemap.xml
 curl -s /sitemaps/artifacts/0.xml | head
 curl -sI /sitemaps/artifacts/0   # expect 301 → /sitemaps/artifacts/0.xml

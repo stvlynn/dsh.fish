@@ -87,11 +87,12 @@ async function handleRequest(
     supportedLocales: LOCALE_CODES,
   })
 
-  // Agents get the catalog as markdown when they ask for it; browsers never
-  // send `Accept: text/markdown`, so nothing changes for them.
+  // Agents get the catalog as markdown when they ask for it (`Accept:
+  // text/markdown`) or follow a `.md` alias; browsers on HTML URLs never
+  // send that type, so nothing changes for them.
   const markdown = await maybeMarkdownResponse(request, container)
   if (markdown !== null) {
-    return markdown
+    return withDiscoveryLinks(markdown, request.url, false)
   }
 
   const routerContext = new RouterContextProvider()
@@ -103,10 +104,10 @@ async function handleRequest(
 
   const response = await requestHandler(request, routerContext)
 
-  // Agent discovery (RFC 8288 / RFC 9727): HTML documents name their
-  // machine-readable counterparts in Link headers, so an agent never has to
-  // parse markup to find the api-catalog, the OpenAPI document, or the
-  // markdown representation of the page it is already reading.
+  // Agent discovery (RFC 8288 / RFC 9727 / llms.txt v2): HTML documents name
+  // their machine-readable counterparts in Link headers, so an agent never
+  // has to parse markup to find the api-catalog, the OpenAPI document, the
+  // covering llms.txt, or the markdown alias of the page it is already reading.
   return withDiscoveryLinks(response, request.url, supportsMarkdownNegotiation(url.pathname))
 }
 

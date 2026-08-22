@@ -59,6 +59,9 @@ export function isMachineReadablePath(pathname: string): boolean {
     pathname === '/robots.txt' ||
     pathname === '/openapi.json' ||
     pathname === '/.well-known/api-catalog' ||
+    pathname === '/llms.txt' ||
+    pathname === '/docs/llms.txt' ||
+    pathname === '/docs/llms-full.txt' ||
     pathname.startsWith('/indexnow-') ||
     pathname === '/api/v1/catalog/snapshot'
   )
