@@ -94,7 +94,7 @@ export default defineConfig({
     },
     {
       name: 'docs',
-      testMatch: /docs\/docs-section\.spec\.ts/,
+      testMatch: /docs\/(docs-section|llms-txt)\.spec\.ts/,
       use: {
         viewport: { width: 1280, height: 900 },
         defaultBrowserType: 'chromium',

@@ -50,9 +50,12 @@ deterministic unit test.
 **Product docs** (`e2e/docs/`) covers the Fumadocs section at one desktop
 viewport (1280×900) and one phone (Pixel 7). It asserts the sidebar, nested
 guides, live scoring, sidebar filter, indexable Japanese MDX, controlled video
-with a localized transcript, `/docs/search` JSON (not `/api/search`), and
-localized `Accept: text/markdown`. Unit tests also require every guide to have
-a physical file in every public locale. Fold
+with a localized transcript, `/docs/search` JSON (not `/api/search`),
+localized `Accept: text/markdown`, and the llms.txt v2 surface
+(`e2e/docs/llms-txt.spec.ts`): `/llms.txt`, `/docs/llms.txt`,
+`/docs/llms-full.txt`, `.md` aliases, covering `describedby` headers, and that
+every markdown link in the docs index is fetchable. Unit tests also require
+every guide to have a physical file in every public locale. Fold
 screenshots are written for inspection; they are not visual baselines.
 
 **Plugin-detail markdown** is an exception to "journeys only": a third-party
