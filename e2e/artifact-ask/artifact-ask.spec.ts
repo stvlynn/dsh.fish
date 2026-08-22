@@ -160,7 +160,6 @@ test.describe('artifact ask', () => {
     await expect(surface.getByText('It exposes Postgres as tools.')).toBeVisible()
     const deepWiki = surface.getByRole('link', { name: /DeepWiki/ })
     await expect(deepWiki).toHaveAttribute('href', `https://deepwiki.com/search/${QUERY_ID}`)
-    await expect(deepWiki.locator('img')).toHaveAttribute('src', 'https://deepwiki.com/favicon.ico')
     expect(posts[0]?.queryId).toBeUndefined()
 
     await composer.fill('And the license?')

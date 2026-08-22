@@ -164,7 +164,8 @@ do not depend on that host. Each test waits for hydration and for
 `data-ask-layout` (column vs sheet) before clicking the toggle: the split is an
 effect, and opening too early puts the composer on the mobile sheet at 1280px.
 Assertions: GitHub toggle vs npm absence; stream then
-DeepWiki citation; follow-up reuses `queryId`; 429 copy; right column vs bottom sheet;
+DeepWiki citation (the search URL; the favicon is decorative and CI stubs
+`https://deepwiki.com/**` so a 403 there cannot drop the `<img>`); follow-up reuses `queryId`; 429 copy; right column vs bottom sheet;
 `skipHtml` on a script delta; no transform drift under reduced motion; a
 suggested opener redraws on shuffle and posts the question it displays.
 
