@@ -200,15 +200,18 @@ describe('maybeMarkdownResponse', () => {
     expect(await maybeMarkdownResponse(request('/a/missing', 'text/markdown'), missing)).toBeNull()
   })
 
-  it('gives the homepage an H1, H2 and H3 outline in raw markdown', async () => {
+  it('gives the homepage a title, catalog doors and a trending rail, without glossary copy', async () => {
     const response = await maybeMarkdownResponse(request('/', 'text/markdown'), stubContainer())
     expect(response).not.toBeNull()
     const body = await response!.text()
     expect(body).toMatch(/^# /m)
     expect(body).toMatch(/^## /m)
-    expect(body).toMatch(/^### /m)
-    expect(body.length).toBeGreaterThan(500)
-    expect(body).toContain('dsh.fish developer resources')
+    expect(body).not.toMatch(/^### /m)
+    expect(body).not.toContain('What dsh.fish is')
+    expect(body).not.toContain('Plugin kinds')
+    expect(body).not.toContain('For agents')
+    expect(body).not.toContain('dsh.fish developer resources')
+    expect(body).toContain('Trending')
   })
 })
 

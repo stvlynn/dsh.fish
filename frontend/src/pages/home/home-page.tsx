@@ -3,7 +3,7 @@ import type { Route } from './+types/home-page'
 import { hubContext } from '@/shared/api/hub-context'
 import { CatalogGrid } from '@/widgets/catalog-grid/catalog-grid'
 import { KindIcon } from '@/entities/artifact/ui/kind-icon'
-import { ARTIFACT_KINDS, kindDescriptionKey, kindPluralKey } from '@/entities/artifact/model/types'
+import { kindDescriptionKey, kindPluralKey } from '@/entities/artifact/model/types'
 import { ForwardIcon, SearchIcon } from '@/shared/ui/icon'
 import { requireLocale, translate, useT } from '@/shared/config/i18n'
 import { LocaleLink, useLocalePath } from '@/shared/ui/locale-link'
@@ -130,58 +130,6 @@ export default function HomePage({ loaderData }: Route.ComponentProps) {
                 <span className="tabular-nums opacity-60">{facet.count}</span>
               </LocaleLink>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-3xl space-y-10 px-6 py-16">
-          <div className="space-y-3">
-            <h2 className="text-xl font-semibold tracking-tight">{t('home.aboutTitle')}</h2>
-            <p className="text-pretty leading-relaxed text-muted-foreground">{t('home.aboutBody')}</p>
-          </div>
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">{t('home.kindsTitle')}</h2>
-            <div className="grid gap-6 sm:grid-cols-2">
-              {ARTIFACT_KINDS.map((kind) => (
-                <div key={kind} className="space-y-1">
-                  <h3 className="text-sm font-semibold tracking-tight">
-                    <LocaleLink to={`/kind/${kind}`} className="hover:underline">
-                      {t(kindPluralKey(kind))}
-                    </LocaleLink>
-                  </h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {t(kindDescriptionKey(kind))}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-3">
-            <h2 className="text-xl font-semibold tracking-tight">{t('home.agentsTitle')}</h2>
-            <p className="text-pretty leading-relaxed text-muted-foreground">{t('home.agentsBody')}</p>
-            <ul className="space-y-1 text-sm">
-              <li>
-                <a href="/llms.txt" className="underline-offset-4 hover:underline">
-                  {t('home.agentsLlms')}
-                </a>
-              </li>
-              <li>
-                <a href="/openapi.json" className="underline-offset-4 hover:underline">
-                  {t('home.agentsOpenapi')}
-                </a>
-              </li>
-              <li>
-                <LocaleLink to="/docs/developers" className="underline-offset-4 hover:underline">
-                  {t('home.agentsDevelopers')}
-                </LocaleLink>
-              </li>
-              <li>
-                <a href="/api/v1/artifacts" className="underline-offset-4 hover:underline">
-                  {t('home.agentsApi')}
-                </a>
-              </li>
-            </ul>
           </div>
         </div>
       </section>

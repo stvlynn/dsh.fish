@@ -29,6 +29,7 @@ import { t } from 'shared/i18n';
 - Do not repeat information already shown by a title, icon, selected state, or surrounding section.
 - Prefer concise labels over explanatory text when the state is self-evident.
 - Remove disabled placeholder actions unless they teach a real next step.
+- The home page is a catalog: search, type chips, and rails. Do not restate the product pitch, a kind glossary, or agent discovery docs — those live on `/docs`, `/kind/:kind`, and `/llms.txt`.
 
 ```tsx
 // ❌ Bad
