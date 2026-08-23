@@ -23,7 +23,7 @@ export function prefersMarkdown(acceptHeader: string | null): boolean {
     const q = qParam === undefined ? 1 : Number(qParam.slice(2))
     if (Number.isNaN(q)) continue
 
-    if (type === 'text/markdown') markdownQ = q
+    if (type === 'text/markdown' || type === 'text/x-markdown') markdownQ = q
     else if (type === 'text/html') htmlQ = q
     else if (type === '*/*') anyQ = q
   }
@@ -34,6 +34,21 @@ export function prefersMarkdown(acceptHeader: string | null): boolean {
   if (htmlQ !== undefined && htmlQ > markdownQ) return false
   void anyQ
   return true
+}
+
+/**
+ * Whether a 404 should be served as markdown rather than the HTML error page.
+ *
+ * Browsers send `text/html` and keep the HTML 404. curl's default Accept
+ * wildcard (and an empty Accept) get a short markdown recovery map, which is
+ * what agent auditors fetch when they probe a missing path.
+ */
+export function wantsMarkdownNotFound(acceptHeader: string | null): boolean {
+  if (prefersMarkdown(acceptHeader)) return true
+  if (acceptHeader !== null && /application\/json/i.test(acceptHeader)) return false
+  if (acceptHeader !== null && /text\/html/i.test(acceptHeader)) return false
+  const trimmed = acceptHeader?.trim() ?? ''
+  return trimmed === '' || trimmed === '*/*' || trimmed.toLowerCase().startsWith('*/*')
 }
 
 /** Rough token estimate, matching the four-characters-per-token convention. */

@@ -25,6 +25,7 @@ import { documentLanguage } from '@/shared/lib/seo'
 import { analyticsIdForDocument, GoogleAnalytics } from '@/shared/lib/analytics'
 import { hubContext } from '@/shared/api/hub-context'
 import { HomeIcon, IconDefaults } from '@/shared/ui/icon'
+import { NotFoundRecovery } from '@/pages/not-found/not-found-recovery'
 import './styles/app.css'
 
 export const links: Route.LinksFunction = () => [
@@ -160,6 +161,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         <HomeIcon className="size-4" weight="bold" />
         {translate(locale, 'notFound.home')}
       </a>
+      {isNotFound ? <NotFoundRecovery /> : null}
     </div>
   )
 }

@@ -54,6 +54,8 @@ test.describe('llms.txt for agents', () => {
     expect(body).toContain('/docs/llms.txt')
     expect(body).toContain('/openapi.json')
     expect(body).toContain('/api/v1/catalog/snapshot')
+    expect(body).toContain('/docs/developers')
+    expect(body).toContain('dsh.fish developer resources')
     expect(body).not.toMatch(/\/a\/[a-z0-9]+/)
     for (const kind of KINDS) {
       expect(body).toContain(`/kind/${kind}.md`)

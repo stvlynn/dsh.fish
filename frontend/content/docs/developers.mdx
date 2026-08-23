@@ -1,0 +1,68 @@
+---
+title: dsh.fish developer resources
+description: OpenAPI, REST catalog endpoints, markdown negotiation, JSON errors, and auth for agents and developers integrating with dsh.fish.
+---
+
+# dsh.fish developer resources
+
+dsh.fish is the public plugin hub for DeepSeek Harness. This page is the named developer index: REST catalog API, OpenAPI, machine-readable files, markdown negotiation, JSON error codes, and how authentication applies.
+
+There is no hosted hub MCP server and no webhook product. MCP servers appear in the catalog as the `mcp-server` artifact kind.
+
+## OpenAPI and REST
+
+Machine-readable contract:
+
+- OpenAPI 3.1: `/openapi.json`
+- API catalog (RFC 9727): `/.well-known/api-catalog`
+
+Anonymous JSON endpoints (no session cookie):
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Liveness `{ "status": "ok" }` |
+| `GET` | `/api/v1/artifacts` | Search. Query: `q`, `kind`, `category`, `topic`, `sort`, `verified`, `limit`, `offset` |
+| `GET` | `/api/v1/artifacts/{id}` | Artifact detail |
+| `GET` | `/api/v1/catalog/snapshot` | Full catalog JSON (ETag / 304) |
+| `GET` | `/api/v1/catalog/version` | Snapshot version |
+| `GET` | `/api/v1/facets` | Kind and tag counts |
+| `GET` | `/api/v1/scoring` | Ranking weights |
+| `GET` | `/api/v1/artifacts/{id}/reviews` | Public reviews |
+| `GET` | `/api/v1/artifacts/{id}/install-plan` | Install plan |
+| `POST` | `/api/v1/artifacts/{id}/ask` | SSE Q&A over the artifact |
+
+See [dsh.fish REST API](/docs/api) for query examples. The site map for agents is `/llms.txt`.
+
+## JSON errors
+
+Failed `/api/*` responses use `application/json` (including unknown paths, HTTP 404):
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers.",
+    "details": {}
+  }
+}
+```
+
+`code` is machine-readable (`NOT_FOUND`, `INVALID_ARGUMENT`, `UNAUTHENTICATED`, `FORBIDDEN`, `RATE_LIMITED`, `UNAVAILABLE`, `CONFLICT`, `ALREADY_EXISTS`, `UNSUPPORTED`, `INTERNAL`). `hint` is a short recovery string. The OpenAPI schema is `components.schemas.Error`.
+
+## Markdown without JavaScript
+
+Send `Accept: text/markdown` (or `text/x-markdown`, or a `.md` URL alias) for catalog pages: home, browse, kind, category, artifact, and docs. Agents that send `*/*` without `text/html` receive markdown on HTTP 404 pages so a missing URL still lists `/llms.txt`, `/sitemap.xml`, and this page.
+
+## Authentication
+
+Public catalog reads above do not require a session.
+
+Publisher write routes (submit, versions, moderation) use a GitHub OAuth session cookie in the browser. Headless clients use the GitHub device authorization grant: the human approves at `/device`, then the client sends `Authorization: Bearer <access_token>`. See [Submit a plugin](/docs/submit). Do not send API keys in query strings.
+
+## Start here for agents
+
+1. `/llms.txt` — site map for language models
+2. `/openapi.json` — typed REST contract
+3. `/docs/developers` — this page
+4. `/sitemap.xml` — HTML URL inventory

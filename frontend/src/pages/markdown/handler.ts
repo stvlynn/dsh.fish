@@ -1,9 +1,11 @@
 import type { Container } from '@dsh-fish/backend/infrastructure/container.js'
 import { localizedPath, splitLocalePath, translate, type Locale } from '@/shared/config/i18n'
 import {
+  ARTIFACT_KINDS,
   CATEGORIES,
   isArtifactKind,
   isCategory,
+  kindDescriptionKey,
   kindPluralKey,
 } from '@/entities/artifact/model/types'
 import { htmlPathFromMarkdownAlias } from '@/shared/lib/seo'
@@ -141,8 +143,29 @@ async function homeResponse(
     '',
     translate(locale, 'app.description'),
     '',
+    `## ${translate(locale, 'home.aboutTitle')}`,
+    '',
+    translate(locale, 'home.aboutBody'),
+    '',
+    `## ${translate(locale, 'home.kindsTitle')}`,
+    '',
+    ...ARTIFACT_KINDS.flatMap((kind) => [
+      `### ${translate(locale, kindPluralKey(kind))}`,
+      '',
+      translate(locale, kindDescriptionKey(kind)),
+      '',
+      `${origin}${localizedPath(locale, `/kind/${kind}`)}`,
+      '',
+    ]),
+    `## ${translate(locale, 'home.agentsTitle')}`,
+    '',
+    translate(locale, 'home.agentsBody'),
+    '',
+    `- ${translate(locale, 'home.agentsLlms')}: ${origin}/llms.txt`,
+    `- ${translate(locale, 'home.agentsOpenapi')}: ${origin}/openapi.json`,
+    `- ${translate(locale, 'home.agentsDevelopers')}: ${origin}/docs/developers`,
+    `- ${translate(locale, 'home.agentsApi')}: ${origin}/api/v1/artifacts`,
     `- ${translate(locale, 'markdown.browseAll')}: ${origin}${localizedPath(locale, '/browse')}`,
-    `- API: ${origin}/api/v1/artifacts`,
     `- ${translate(locale, 'markdown.catalogSnapshot')}: ${origin}/api/v1/catalog/snapshot`,
     '',
     `## ${translate(locale, 'home.trending')}`,

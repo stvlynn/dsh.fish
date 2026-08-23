@@ -21,6 +21,7 @@ const DOC_PATHS = [
   '/docs/submit',
   '/docs/scoring',
   '/docs/api',
+  '/docs/developers',
 ] as const
 
 describe('productDocsMarkdown', () => {
@@ -30,6 +31,7 @@ describe('productDocsMarkdown', () => {
     expect(supportsProductDocsMarkdown('/docs/publish/hook-bridge')).toBe(true)
     expect(productDocsMarkdown('/docs/cli')).toContain('npx @dsh-fish/cli')
     expect(productDocsMarkdown('/docs/publish/hook-bridge')).toContain('hook-bridge')
+    expect(productDocsMarkdown('/docs/developers')).toContain('dsh.fish developer resources')
   })
 
   it('does not treat the search index as a document', () => {

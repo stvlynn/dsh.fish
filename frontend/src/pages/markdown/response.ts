@@ -8,12 +8,14 @@ import { estimateTokens } from './negotiate'
  * context window without tokenizing first, and a content signal naming the
  * uses the catalog explicitly welcomes.
  */
-export function markdownResponse(markdown: string): Response {
+export function markdownResponse(markdown: string, init?: { status?: number }): Response {
+  const status = init?.status ?? 200
   return new Response(markdown, {
+    status,
     headers: {
       'content-type': 'text/markdown; charset=utf-8',
       vary: 'accept',
-      'cache-control': 'public, max-age=300',
+      'cache-control': status >= 400 ? 'no-store' : 'public, max-age=300',
       'x-markdown-tokens': String(estimateTokens(markdown)),
       'content-signal': 'ai-train=no, search=yes, ai-input=yes, use=reference',
     },

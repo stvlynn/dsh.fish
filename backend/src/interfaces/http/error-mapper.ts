@@ -12,7 +12,32 @@ export interface ApiErrorBody {
   readonly error: {
     readonly code: string
     readonly message: string
+    readonly hint: string
     readonly details?: Readonly<Record<string, unknown>>
+  }
+}
+
+export function hintFor(code: DomainErrorCode | 'INTERNAL'): string {
+  switch (code) {
+    case 'NOT_FOUND':
+      return 'List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers.'
+    case 'INVALID_ARGUMENT':
+      return 'Compare the request to the matching operation in GET /openapi.json.'
+    case 'UNAUTHENTICATED':
+      return 'Sign in with GitHub for a browser session, or complete the device grant for a bearer token. See /docs/developers.'
+    case 'FORBIDDEN':
+      return 'This action needs a browser session or an admin account. See /docs/developers.'
+    case 'CONFLICT':
+    case 'ALREADY_EXISTS':
+      return 'The resource already exists or the request conflicts with current state. See GET /openapi.json.'
+    case 'UNSUPPORTED':
+      return 'This operation is not available for this artifact or configuration. See GET /openapi.json and /docs/developers.'
+    case 'RATE_LIMITED':
+      return 'Wait for the Retry-After header, then retry. See GET /openapi.json.'
+    case 'UNAVAILABLE':
+      return 'Retry shortly. Check GET /api/health.'
+    case 'INTERNAL':
+      return 'Retry shortly. If it persists, check GET /api/health or /docs/developers.'
   }
 }
 
@@ -39,6 +64,7 @@ export function toApiError(error: unknown): {
         error: {
           code: error.code,
           message: error.message,
+          hint: hintFor(error.code),
           ...(Object.keys(error.details).length === 0 ? {} : { details: error.details }),
         },
       },
@@ -54,6 +80,7 @@ export function toApiError(error: unknown): {
         error: {
           code: 'INVALID_ARGUMENT',
           message: 'The request did not match the expected shape.',
+          hint: hintFor('INVALID_ARGUMENT'),
           details: { issues: error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`) },
         },
       },
@@ -64,6 +91,12 @@ export function toApiError(error: unknown): {
   // a query fragment, or an upstream token.
   return {
     status: 500,
-    body: { error: { code: 'INTERNAL', message: 'Unexpected server error.' } },
+    body: {
+      error: {
+        code: 'INTERNAL',
+        message: 'Unexpected server error.',
+        hint: hintFor('INTERNAL'),
+      },
+    },
   }
 }

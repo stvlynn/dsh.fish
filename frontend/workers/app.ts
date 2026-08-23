@@ -4,9 +4,19 @@ import { createContainer } from '@dsh-fish/backend/infrastructure/container.js'
 import { AgentsReadmeLocalizationScheduler } from '@dsh-fish/backend/infrastructure/agents/agents-readme-localization-scheduler.js'
 import type { HubEnv } from '@dsh-fish/backend/infrastructure/config/env.js'
 import { hubContext } from '@/shared/api/hub-context'
-import { canonicalLocaleRedirect, LOCALE_CODES, preferredLocaleRedirect } from '@/shared/config/i18n'
+import {
+  canonicalLocaleRedirect,
+  LOCALE_CODES,
+  preferredLocaleRedirect,
+  splitLocalePath,
+} from '@/shared/config/i18n'
 import { withDiscoveryLinks } from '@/shared/api/agent-discovery'
-import { maybeMarkdownResponse, supportsMarkdownNegotiation } from '@/pages/markdown'
+import {
+  maybeMarkdownResponse,
+  notFoundMarkdownResponse,
+  shouldServeMarkdownNotFound,
+  supportsMarkdownNegotiation,
+} from '@/pages/markdown'
 import { withEdgeCache } from './edge-cache'
 
 /**
@@ -103,6 +113,18 @@ async function handleRequest(
   })
 
   const response = await requestHandler(request, routerContext)
+
+  // A missing HTML path stays a real 404. Agents that asked for markdown —
+  // or that sent curl's default `*/*` — get a short recovery map instead of
+  // the HTML error page, so they can find llms.txt, the sitemap, and the API.
+  if (response.status === 404 && shouldServeMarkdownNotFound(request)) {
+    const { locale } = splitLocalePath(url.pathname)
+    return withDiscoveryLinks(
+      notFoundMarkdownResponse(container.config.baseUrl, locale),
+      request.url,
+      false,
+    )
+  }
 
   // Agent discovery (RFC 8288 / RFC 9727 / llms.txt v2): HTML documents name
   // their machine-readable counterparts in Link headers, so an agent never

@@ -8,28 +8,29 @@ The default transport is HTTP/REST. If the project uses gRPC, GraphQL, or events
 
 ## Response envelope
 
-All responses follow a consistent envelope:
+Successful JSON payloads are endpoint-specific (an object, a list, a snapshot).
+They are not wrapped in a `success`/`data` envelope.
+
+Failed `/api/*` responses, including unknown paths, use `application/json` and
+this error object:
 
 ```json
 {
-  "success": true,
-  "data": { ... },
-  "error": null
-}
-```
-
-For errors:
-
-```json
-{
-  "success": false,
-  "data": null,
   "error": {
-    "code": "ORDER_EMPTY",
-    "message": "Cannot submit an empty order"
+    "code": "NOT_FOUND",
+    "message": "No API route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers.",
+    "details": {}
   }
 }
 ```
+
+`code` is the switch key (`NOT_FOUND`, `INVALID_ARGUMENT`, `UNAUTHENTICATED`,
+`FORBIDDEN`, `CONFLICT`, `ALREADY_EXISTS`, `UNSUPPORTED`, `RATE_LIMITED`,
+`UNAVAILABLE`, `INTERNAL`). `hint` tells an agent what to try next. `details`
+is omitted when empty. The OpenAPI document at `/openapi.json` names this
+shape `components.schemas.Error` and `$ref`s it from 4xx and 5xx responses.
+Do not advertise `application/problem+json`; the runtime does not send it.
 
 ## HTTP status codes
 

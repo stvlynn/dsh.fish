@@ -1,0 +1,41 @@
+---
+title: dsh.fish developer resources
+description: dsh.fish 的 OpenAPI、REST、JSON 錯誤、Markdown 協商與認證。
+---
+
+# dsh.fish developer resources
+
+dsh.fish 是 DeepSeek Harness 的公開外掛中心。本頁是開發者入口。沒有託管的 hub MCP 伺服器，也沒有 webhook 產品。MCP 伺服器在目錄裡是 `mcp-server` 類型。
+
+## OpenAPI 與 REST
+
+- OpenAPI 3.1：`/openapi.json`
+- API catalog（RFC 9727）：`/.well-known/api-catalog`
+
+匿名 JSON（無需工作階段）：`GET /api/health`、`GET /api/v1/artifacts`、`GET /api/v1/artifacts/{id}`、`GET /api/v1/catalog/snapshot`、`GET /api/v1/catalog/version`、`GET /api/v1/facets`、`GET /api/v1/scoring`、`GET /api/v1/artifacts/{id}/reviews`、`GET /api/v1/artifacts/{id}/install-plan`、`POST /api/v1/artifacts/{id}/ask`（SSE）。
+
+示例見 [dsh.fish REST API](/docs/api)。
+
+## JSON 錯誤
+
+失敗的 `/api/*` 回傳 `application/json`（未知路徑也是 HTTP 404）：
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No API route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers."
+  }
+}
+```
+
+模式為 `components.schemas.Error`。
+
+## Markdown
+
+傳送 `Accept: text/markdown` 或使用 `.md` 別名。curl 預設 `*/*`（不含 `text/html`）時，HTTP 404 會给出 Markdown 指引。
+
+## 認證
+
+公開讀取不需要工作階段。發布者寫入使用 GitHub OAuth 工作階段；無頭用戶端在 `/device` 完成裝置授權。見 [提交外掛](/docs/submit)。

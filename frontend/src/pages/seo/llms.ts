@@ -77,6 +77,7 @@ export function rootLlmsTxt(baseUrl: string): string {
     item(name, md(baseUrl, '/'), 'The hub home page.'),
     item('Browse the catalog', md(baseUrl, '/browse'), 'Full listing; page through the API for more than the first fifty rows.'),
     item('Product docs', href(baseUrl, '/docs/llms.txt'), 'Guides for the CLI, publishing, scoring, and the REST API.'),
+    item('dsh.fish developer resources', href(baseUrl, '/docs/developers'), 'OpenAPI, REST, JSON errors, markdown negotiation, and auth.'),
     item('Submit a plugin', href(baseUrl, '/submit'), 'How a repository becomes a catalog row.'),
     '',
     '## Catalog',

@@ -2,6 +2,7 @@ import type { Route } from './+types/not-found-page'
 import { useT } from '@/shared/config/i18n'
 import { LocaleLink } from '@/shared/ui/locale-link'
 import { HomeIcon, UnknownPageIcon } from '@/shared/ui/icon'
+import { NotFoundRecovery } from './not-found-recovery'
 
 export function meta(): Route.MetaDescriptors {
   // No canonical, no alternates, no title pattern: this URL is not a document.
@@ -33,6 +34,7 @@ export default function NotFoundPage() {
         <HomeIcon className="size-4" weight="bold" />
         {t('notFound.home')}
       </LocaleLink>
+      <NotFoundRecovery />
     </div>
   )
 }

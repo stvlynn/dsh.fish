@@ -5,7 +5,7 @@ import { createContainer } from '../../infrastructure/container.js'
 import type { Container } from '../../infrastructure/container.js'
 import type { HubEnv } from '../../infrastructure/config/env.js'
 import type { ReadmeLocalizationScheduler } from '../../application/port/readme-localization.js'
-import { toApiError } from './error-mapper.js'
+import { hintFor, toApiError, type ApiErrorBody } from './error-mapper.js'
 import { isDomainError } from '../../domain/shared/error.js'
 import { catalogRoutes } from './route/catalog-routes.js'
 import { askRoutes } from './route/ask-routes.js'
@@ -75,6 +75,17 @@ export function createApiApp(options: {
   app.route('/v1', reviewRoutes())
   app.route('/v1', submissionRoutes())
   app.route('/v1/admin', adminRoutes())
+
+  app.notFound((context) => {
+    const body: ApiErrorBody = {
+      error: {
+        code: 'NOT_FOUND',
+        message: 'No API route matches this path.',
+        hint: hintFor('NOT_FOUND'),
+      },
+    }
+    return context.json(body, 404)
+  })
 
   return app
 }

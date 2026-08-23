@@ -46,6 +46,8 @@ describe('rootLlmsTxt', () => {
     expect(body).toContain(`${ORIGIN}/docs/llms.txt`)
     expect(body).toContain(`${ORIGIN}/api/v1/catalog/snapshot`)
     expect(body).toContain(`${ORIGIN}/openapi.json`)
+    expect(body).toContain(`${ORIGIN}/docs/developers`)
+    expect(body).toContain('dsh.fish developer resources')
     expect(body).not.toMatch(/\/a\/[a-z0-9]+/)
   })
 })

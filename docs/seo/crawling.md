@@ -205,10 +205,26 @@ The negotiation lives in the Worker entry (`frontend/workers/app.ts` →
 `frontend/src/pages/markdown/`). When `Accept` prefers `text/markdown`
 (q-values honoured, wildcard ignored), or the path is a `.md` alias, the
 handler answers from the same use cases the SSR loaders use; anything else —
-browsers on HTML URLs, UI pages like `/submit`, unknown paths — falls through
-to React Router unchanged. Responses carry `Content-Type: text/markdown`,
+browsers on HTML URLs, UI pages like `/submit` — falls through
+to React Router unchanged. Unknown HTML paths still return HTTP 404 (never
+200 with the app shell). If `Accept` is `text/markdown`, `text/x-markdown`,
+empty, or `*/*` without `text/html` or `application/json`, the Worker replaces
+the HTML 404 with a short markdown recovery map that links `/llms.txt`,
+`/sitemap.xml`, `/docs/developers`, and `/openapi.json`. Browsers that send
+`text/html` keep the HTML 404. Verify with:
+
+```sh
+curl -s -o /dev/null -w "%{http_code}" https://dsh.fish/some-path-that-does-not-exist
+# 404
+curl -s https://dsh.fish/some-path-that-does-not-exist | head
+# markdown recovery map
+```
+
+Responses carry `Content-Type: text/markdown`,
 an `x-markdown-tokens` estimate, and a `content-signal` header. HTML URLs
-that also negotiate markdown send `Vary: Accept`.
+that also negotiate markdown send `Vary: Accept`. `.md` aliases with no
+matching page are the same 404 markdown map. `/submit` and other real UI
+routes stay 200 HTML even when `Accept: text/markdown`.
 
 Covered paths: `/`, `/browse` (filters included), `/kind/<kind>`,
 `/category/<category>`, `/a/<id>`, and `/docs/*`, in every locale. The plugin

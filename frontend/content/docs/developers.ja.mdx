@@ -1,0 +1,41 @@
+---
+title: dsh.fish developer resources
+description: dsh.fish の OpenAPI、REST、JSON エラー、Markdown ネゴシエーション、認証。
+---
+
+# dsh.fish developer resources
+
+dsh.fish は DeepSeek Harness の公開プラグインハブです。このページは開発者向けの入口です。ホストされたハブ MCP サーバーや webhook 製品はありません。MCP サーバーはカタログ上の `mcp-server` 種別です。
+
+## OpenAPI と REST
+
+- OpenAPI 3.1: `/openapi.json`
+- API catalog (RFC 9727): `/.well-known/api-catalog`
+
+匿名 JSON（セッション不要）: `GET /api/health`、`GET /api/v1/artifacts`、`GET /api/v1/artifacts/{id}`、`GET /api/v1/catalog/snapshot`、`GET /api/v1/catalog/version`、`GET /api/v1/facets`、`GET /api/v1/scoring`、`GET /api/v1/artifacts/{id}/reviews`、`GET /api/v1/artifacts/{id}/install-plan`、`POST /api/v1/artifacts/{id}/ask`（SSE）。
+
+例は [dsh.fish REST API](/docs/api) を参照。
+
+## JSON エラー
+
+失敗した `/api/*` は `application/json` です（未知のパスも HTTP 404）:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No API route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers."
+  }
+}
+```
+
+スキーマは `components.schemas.Error` です。
+
+## Markdown
+
+`Accept: text/markdown` または `.md` エイリアス。curl の `*/*`（`text/html` なし）では HTTP 404 が Markdown の案内になります。
+
+## 認証
+
+公開の読み取りにセッションは不要です。公開者の書き込みは GitHub OAuth セッション、ヘッドレスは `/device` のデバイス認可です。詳しくは [プラグインを登録する](/docs/submit)。

@@ -1,0 +1,41 @@
+---
+title: dsh.fish developer resources
+description: dsh.fish OpenAPI, REST, JSON 오류, 마크다운 협상, 인증.
+---
+
+# dsh.fish developer resources
+
+dsh.fish는 DeepSeek Harness의 공개 플러그인 허브입니다. 이 페이지는 개발자 입구입니다. 호스팅된 허브 MCP 서버나 웹훅 제품은 없습니다. MCP 서버는 카탈로그의 `mcp-server` 종류입니다.
+
+## OpenAPI와 REST
+
+- OpenAPI 3.1: `/openapi.json`
+- API catalog (RFC 9727): `/.well-known/api-catalog`
+
+익명 JSON(세션 불필요): `GET /api/health`, `GET /api/v1/artifacts`, `GET /api/v1/artifacts/{id}`, `GET /api/v1/catalog/snapshot`, `GET /api/v1/catalog/version`, `GET /api/v1/facets`, `GET /api/v1/scoring`, `GET /api/v1/artifacts/{id}/reviews`, `GET /api/v1/artifacts/{id}/install-plan`, `POST /api/v1/artifacts/{id}/ask` (SSE).
+
+예시는 [dsh.fish REST API](/docs/api)를 보세요.
+
+## JSON 오류
+
+실패한 `/api/*`는 `application/json`입니다(없는 경로도 HTTP 404):
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No API route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers."
+  }
+}
+```
+
+스키마는 `components.schemas.Error`입니다.
+
+## 마크다운
+
+`Accept: text/markdown` 또는 `.md` 별칭. curl 기본 `*/*`(`text/html` 없음)이면 HTTP 404가 마크다운 안내를 줍니다.
+
+## 인증
+
+공개 읽기는 세션이 필요 없습니다. 게시자 쓰기는 GitHub OAuth 세션, 헤드리스는 `/device`에서 디바이스 그랜트입니다. [플러그인 제출](/docs/submit)을 보세요.

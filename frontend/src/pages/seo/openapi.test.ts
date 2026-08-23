@@ -53,4 +53,19 @@ describe('openApiDocument', () => {
     expect(get.responses['304']).toBeDefined()
     expect(get.responses['200'].headers?.ETag).toBeDefined()
   })
+
+  it('declares a typed Error schema and $ref it from 4xx and 5xx responses', () => {
+    const schema = document.components.schemas.Error
+    expect(schema.required).toEqual(['error'])
+    expect(schema.properties.error.required).toEqual(['code', 'message', 'hint'])
+
+    const ref = { $ref: '#/components/schemas/Error' }
+    expect(document.paths['/api/v1/artifacts'].get.responses['400'].content['application/json'].schema).toEqual(
+      ref,
+    )
+    expect(document.paths['/api/v1/artifacts/{id}'].get.responses['404'].content['application/json'].schema).toEqual(
+      ref,
+    )
+    expect(document.paths['/api/health'].get.responses['500'].content['application/json'].schema).toEqual(ref)
+  })
 })

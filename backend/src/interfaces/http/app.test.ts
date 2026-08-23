@@ -42,6 +42,19 @@ describe('API routing', () => {
     expect((await call('/health')).status).toBe(404)
   })
 
+  it('returns the JSON error envelope for an unmatched API path', async () => {
+    const response = await call('/api/v1/does-not-exist')
+    expect(response.status).toBe(404)
+    expect(response.headers.get('content-type')).toMatch(/json/)
+    const body = (await response.json()) as {
+      error: { code: string; message: string; hint: string }
+    }
+    expect(body.error.code).toBe('NOT_FOUND')
+    expect(body.error.message).toMatch(/route/i)
+    expect(body.error.hint).toMatch(/openapi\.json/)
+    expect(body.error.hint).toMatch(/llms\.txt|\/docs\/developers/)
+  })
+
   it('exposes the versioned catalog namespace', async () => {
     // Reaching the handler is what matters: with no D1 binding in this test the
     // read fails, and that failure must arrive as the standard error envelope

@@ -1,0 +1,41 @@
+---
+title: dsh.fish developer resources
+description: dsh.fish 的 OpenAPI、REST、JSON 错误、Markdown 协商与认证。
+---
+
+# dsh.fish developer resources
+
+dsh.fish 是 DeepSeek Harness 的公开插件中心。本页是开发者入口。没有托管的 hub MCP 服务器，也没有 webhook 产品。MCP 服务器在目录里是 `mcp-server` 类型。
+
+## OpenAPI 与 REST
+
+- OpenAPI 3.1：`/openapi.json`
+- API catalog（RFC 9727）：`/.well-known/api-catalog`
+
+匿名 JSON（无需会话）：`GET /api/health`、`GET /api/v1/artifacts`、`GET /api/v1/artifacts/{id}`、`GET /api/v1/catalog/snapshot`、`GET /api/v1/catalog/version`、`GET /api/v1/facets`、`GET /api/v1/scoring`、`GET /api/v1/artifacts/{id}/reviews`、`GET /api/v1/artifacts/{id}/install-plan`、`POST /api/v1/artifacts/{id}/ask`（SSE）。
+
+示例见 [dsh.fish REST API](/docs/api)。
+
+## JSON 错误
+
+失败的 `/api/*` 返回 `application/json`（未知路径也是 HTTP 404）：
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No API route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers."
+  }
+}
+```
+
+模式为 `components.schemas.Error`。
+
+## Markdown
+
+发送 `Accept: text/markdown` 或使用 `.md` 别名。curl 默认 `*/*`（不含 `text/html`）时，HTTP 404 会给出 Markdown 指引。
+
+## 认证
+
+公开读取不需要会话。发布者写入使用 GitHub OAuth 会话；无头客户端在 `/device` 完成设备授权。见 [提交插件](/docs/submit)。

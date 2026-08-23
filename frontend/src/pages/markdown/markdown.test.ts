@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { Container } from '@dsh-fish/backend/infrastructure/container.js'
 import type { ArtifactDetail, InstallPlanDto } from '@/entities/artifact/model/types'
 import { mockArtifact } from '@/entities/artifact/model/artifact.fixture'
-import { prefersMarkdown, estimateTokens } from './negotiate'
+import { prefersMarkdown, wantsMarkdownNotFound, estimateTokens } from './negotiate'
 import { artifactMarkdown, listingItemMarkdown } from './artifact'
 import { maybeMarkdownResponse, supportsMarkdownNegotiation } from './handler'
+import { notFoundMarkdown, shouldServeMarkdownNotFound } from './not-found'
 
 const ORIGIN = 'https://dsh.fish'
 
@@ -198,6 +199,17 @@ describe('maybeMarkdownResponse', () => {
     } as unknown as Container
     expect(await maybeMarkdownResponse(request('/a/missing', 'text/markdown'), missing)).toBeNull()
   })
+
+  it('gives the homepage an H1, H2 and H3 outline in raw markdown', async () => {
+    const response = await maybeMarkdownResponse(request('/', 'text/markdown'), stubContainer())
+    expect(response).not.toBeNull()
+    const body = await response!.text()
+    expect(body).toMatch(/^# /m)
+    expect(body).toMatch(/^## /m)
+    expect(body).toMatch(/^### /m)
+    expect(body.length).toBeGreaterThan(500)
+    expect(body).toContain('dsh.fish developer resources')
+  })
 })
 
 describe('supportsMarkdownNegotiation', () => {
@@ -223,5 +235,42 @@ describe('supportsMarkdownNegotiation', () => {
     expect(supportsMarkdownNegotiation('/ja/docs')).toBe(true)
     expect(supportsMarkdownNegotiation('/docs/cli')).toBe(true)
     expect(supportsMarkdownNegotiation('/zh-CN/docs/publish/hook-bridge')).toBe(true)
+  })
+})
+
+describe('wantsMarkdownNotFound', () => {
+  it('is true for curl defaults and explicit markdown', () => {
+    expect(wantsMarkdownNotFound(null)).toBe(true)
+    expect(wantsMarkdownNotFound('*/*')).toBe(true)
+    expect(wantsMarkdownNotFound('text/markdown')).toBe(true)
+    expect(wantsMarkdownNotFound('text/x-markdown')).toBe(true)
+  })
+
+  it('is false for browsers and JSON clients', () => {
+    expect(wantsMarkdownNotFound('text/html,application/xhtml+xml')).toBe(false)
+    expect(wantsMarkdownNotFound('application/json')).toBe(false)
+  })
+})
+
+describe('notFoundMarkdown', () => {
+  it('points agents at the sitemap, llms.txt, docs and API', () => {
+    const body = notFoundMarkdown('https://dsh.fish', 'en')
+    expect(body).toContain('/sitemap.xml')
+    expect(body).toContain('/llms.txt')
+    expect(body).toContain('/docs/developers')
+    expect(body).toContain('/openapi.json')
+    expect(body).toContain('/api/v1/artifacts')
+  })
+})
+
+describe('shouldServeMarkdownNotFound', () => {
+  it('rewrites .md aliases and curl Accept, not browser HTML', () => {
+    expect(shouldServeMarkdownNotFound(new Request('https://dsh.fish/missing.md'))).toBe(true)
+    expect(shouldServeMarkdownNotFound(new Request('https://dsh.fish/missing'))).toBe(true)
+    expect(
+      shouldServeMarkdownNotFound(
+        new Request('https://dsh.fish/missing', { headers: { accept: 'text/html' } }),
+      ),
+    ).toBe(false)
   })
 })

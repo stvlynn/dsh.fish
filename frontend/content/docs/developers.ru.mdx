@@ -1,0 +1,41 @@
+---
+title: dsh.fish developer resources
+description: OpenAPI, REST, JSON-ошибки, markdown-согласование и аутентификация dsh.fish.
+---
+
+# dsh.fish developer resources
+
+dsh.fish — открытый хаб плагинов для DeepSeek Harness. Эта страница — вход для разработчиков. Хостинг MCP-сервера хаба и webhooks нет. MCP-серверы в каталоге — вид `mcp-server`.
+
+## OpenAPI и REST
+
+- OpenAPI 3.1: `/openapi.json`
+- API catalog (RFC 9727): `/.well-known/api-catalog`
+
+Анонимный JSON (без сессии): `GET /api/health`, `GET /api/v1/artifacts`, `GET /api/v1/artifacts/{id}`, `GET /api/v1/catalog/snapshot`, `GET /api/v1/catalog/version`, `GET /api/v1/facets`, `GET /api/v1/scoring`, `GET /api/v1/artifacts/{id}/reviews`, `GET /api/v1/artifacts/{id}/install-plan`, `POST /api/v1/artifacts/{id}/ask` (SSE).
+
+Примеры — в [dsh.fish REST API](/docs/api).
+
+## JSON-ошибки
+
+Неуспешные `/api/*` — `application/json` (включая неизвестные пути, HTTP 404):
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No API route matches this path.",
+    "hint": "List endpoints with GET /openapi.json. Start at /llms.txt or /docs/developers."
+  }
+}
+```
+
+Схема — `components.schemas.Error`.
+
+## Markdown
+
+`Accept: text/markdown` или алиас `.md`. У curl по умолчанию `*/*` (без `text/html`) HTTP 404 отдаёт markdown-подсказку.
+
+## Аутентификация
+
+Публичное чтение без сессии. Запись издателя — сессия GitHub OAuth; безголовые клиенты подтверждают device grant на `/device`. См. [отправка плагина](/docs/submit).

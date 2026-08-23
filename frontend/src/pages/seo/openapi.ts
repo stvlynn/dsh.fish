@@ -85,16 +85,28 @@ const artifactSummarySchema = {
 } as const
 
 const errorSchema = {
+  $ref: '#/components/schemas/Error',
+} as const
+
+const errorComponentSchema = {
   type: 'object',
   required: ['error'],
   properties: {
     error: {
       type: 'object',
-      required: ['code', 'message'],
+      required: ['code', 'message', 'hint'],
       properties: {
-        code: { type: 'string', description: 'Machine-readable error code; switch on this, not the HTTP status.' },
+        code: {
+          type: 'string',
+          description: 'Machine-readable error code; switch on this, not the HTTP status.',
+        },
         message: { type: 'string' },
-        details: { type: 'object' },
+        hint: {
+          type: 'string',
+          description:
+            'How to recover: a next request, a docs URL, or a header to wait on.',
+        },
+        details: { type: 'object', additionalProperties: true },
       },
     },
   },
@@ -161,6 +173,8 @@ function jsonResponse(description: string, schema: unknown) {
   }
 }
 
+const internalError = jsonResponse('Unexpected server error.', errorSchema)
+
 export function openApiDocument(baseUrl: string) {
   return {
     openapi: '3.1.0',
@@ -171,6 +185,11 @@ export function openApiDocument(baseUrl: string) {
         'Read-only access to the dsh plugin registry: search, artifact detail, install plans, facets, the public scoring model, a versioned whole-catalog snapshot, and (when enabled) a streaming ask against GitHub-sourced artifacts. All endpoints listed here are anonymous. Agents can also request any HTML page as markdown via `Accept: text/markdown`. Ask is omitted from the snapshot contract and is never cached: it is a POST that streams `text/event-stream`.',
     },
     servers: [{ url: baseUrl }],
+    components: {
+      schemas: {
+        Error: errorComponentSchema,
+      },
+    },
     paths: {
       '/api/health': {
         get: {
@@ -182,6 +201,7 @@ export function openApiDocument(baseUrl: string) {
               required: ['status'],
               properties: { status: { type: 'string', enum: ['ok'] } },
             }),
+            '500': internalError,
           },
         },
       },
@@ -243,6 +263,7 @@ export function openApiDocument(baseUrl: string) {
               },
             }),
             '400': jsonResponse('Invalid query parameters.', errorSchema),
+            '500': internalError,
           },
         },
       },
@@ -279,6 +300,7 @@ export function openApiDocument(baseUrl: string) {
               },
             }),
             '404': jsonResponse('No artifact with that id.', errorSchema),
+            '500': internalError,
           },
         },
       },
@@ -328,6 +350,7 @@ export function openApiDocument(baseUrl: string) {
             '422': jsonResponse('Ask is disabled or the artifact is not GitHub-sourced.', errorSchema),
             '429': jsonResponse('Caller or artifact budget exhausted (RATE_LIMITED).', errorSchema),
             '503': jsonResponse('Ada or the Worker circuit is unavailable (UNAVAILABLE).', errorSchema),
+            '500': internalError,
           },
         },
       },
@@ -366,6 +389,7 @@ export function openApiDocument(baseUrl: string) {
               },
             }),
             '404': jsonResponse('No artifact with that id.', errorSchema),
+            '500': internalError,
           },
         },
       },
@@ -387,6 +411,7 @@ export function openApiDocument(baseUrl: string) {
           responses: {
             '200': jsonResponse('The rating scale, the aggregate, and the most recent reviews.', artifactReviewsSchema),
             '404': jsonResponse('No artifact with that id.', errorSchema),
+            '500': internalError,
           },
         },
       },
@@ -431,6 +456,7 @@ export function openApiDocument(baseUrl: string) {
                 },
               },
             }),
+            '500': internalError,
           },
         },
       },
@@ -477,6 +503,7 @@ export function openApiDocument(baseUrl: string) {
                 grades: { type: 'object', properties: { S: { type: 'integer' }, A: { type: 'integer' }, B: { type: 'integer' } } },
               },
             }),
+            '500': internalError,
           },
         },
       },
@@ -486,7 +513,10 @@ export function openApiDocument(baseUrl: string) {
           summary: 'Cheap poll: has the catalog changed?',
           description:
             'Metadata-only read. A sync client compares dataVersion with the one it holds and skips the snapshot download when nothing changed.',
-          responses: { '200': jsonResponse('Current catalog metadata.', catalogMetaSchema()) },
+          responses: {
+            '200': jsonResponse('Current catalog metadata.', catalogMetaSchema()),
+            '500': internalError,
+          },
         },
       },
       '/api/v1/catalog/snapshot': {
@@ -517,6 +547,7 @@ export function openApiDocument(baseUrl: string) {
               },
             },
             '304': { description: 'Unchanged since the presented ETag.' },
+            '500': internalError,
           },
         },
       },
