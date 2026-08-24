@@ -23,6 +23,7 @@ build/
 .dev.vars
 node-compile-cache/
 packages/*/lib/
+*.tgz
 
 # Playwright
 test-results/

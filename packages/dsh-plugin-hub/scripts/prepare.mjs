@@ -19,10 +19,9 @@ if (existsSync(join(packageRoot, 'lib', 'index.js'))) {
   process.exit(0)
 }
 
-const result = spawnSync('tsdown', [], {
+const result = spawnSync(process.execPath, [join(packageRoot, 'scripts', 'build.mjs')], {
   cwd: packageRoot,
   stdio: 'inherit',
-  shell: process.platform === 'win32',
 })
 
 process.exit(result.status ?? 1)

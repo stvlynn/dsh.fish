@@ -315,8 +315,10 @@ command or push a `hub-v*` tag. The plugin's Cordis row names the package
 (`name: '@dsh-fish/hub'`), so the published name and the patch cannot be
 renamed independently.
 
-`0.3.0` was first published from a laptop (`pnpm run publish:hub` + OTP). Later
-releases should go through `publish-hub.yml`. On
+`0.3.0` was first published from a laptop (`pnpm run publish:hub` + OTP).
+`0.3.1` loads on Cordis 4 (Standard Schema `Config`) and registers its
+settings section with the harness module loader. Later releases should go
+through `publish-hub.yml`. On
 [npm access for @dsh-fish/hub](https://www.npmjs.com/package/@dsh-fish/hub/access),
 under **Trusted Publisher → GitHub Actions**, set:
 

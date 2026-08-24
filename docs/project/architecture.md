@@ -433,6 +433,9 @@ agent-driven install cannot drift apart.
 plugin and a browser one. The host half registers the `hub_*` tools and, in a
 composition that serves a client, a same-origin API under `/api/dsh-fish`; the
 browser half is a settings section (Browse, Installed, Account) that calls it.
+That file is CJS wrapped in `window.__ModuleLoader__.load`, which is how the
+harness client loads plugin UI — a published ESM `client.js` never registers
+and the whole client fails to boot.
 
 Every write in that section goes through the same `PlanInstaller` the tools and
 `@dsh-fish/cli` use, so there is one installer and one lockfile no matter which

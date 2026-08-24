@@ -1,6 +1,6 @@
 {
   "name": "@dsh-fish/hub",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Search dsh.fish and install any harness artifact from inside your agent, authenticated with your hub account.",
   "keywords": [
     "dsh-plugin",
@@ -52,11 +52,11 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "prepare": "node scripts/prepare.mjs",
-    "prepublishOnly": "tsdown"
+    "prepublishOnly": "node scripts/build.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4",

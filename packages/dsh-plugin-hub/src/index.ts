@@ -12,30 +12,19 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { Config, DEFAULT_CONFIG, type Config as HubConfig } from './config.js'
 import { HubClient, HubError } from './hub-client.js'
 import type { ArtifactReviews } from './hub-client.js'
 import { registerHttpApi } from './http.js'
 import { InstallRefused, PlanInstaller } from './installer.js'
+import { resolveProfile } from './profile.js'
 import { renderArtifactReviews } from './review-text.js'
 import { clearToken, readToken } from './token-store.js'
 
 export const name = '@dsh-fish/hub'
 export const inject = ['tools']
-
-export interface Config {
-  /** Registry origin. A self-hosted deployment only needs this changed. */
-  baseUrl: string
-  /**
-   * Profile installs are written into. `current` resolves to the profile this
-   * harness booted with, which is almost always what a user means.
-   */
-  targetProfile: string
-}
-
-export const Config = {
-  baseUrl: 'https://dsh.fish',
-  targetProfile: 'current',
-} satisfies Config
+export { Config, DEFAULT_CONFIG }
+export type { HubConfig }
 
 const KINDS = [
   'bundle',
@@ -46,7 +35,7 @@ const KINDS = [
   'hook-bridge',
 ] as const
 
-export function apply(ctx: Context, config: Config = Config): void {
+export function apply(ctx: Context, config: HubConfig = DEFAULT_CONFIG): void {
   const baseUrl = config.baseUrl.replace(/\/+$/, '')
   const client = new HubClient(baseUrl)
   const profile = resolveProfile(config.targetProfile)
@@ -420,18 +409,6 @@ export function apply(ctx: Context, config: Config = Config): void {
       },
     }),
   )
-}
-
-/**
- * `current` means "the profile this process booted with".
- *
- * The launcher exposes it as `DSH_PROFILE`; without it, `web` is the profile
- * `dsh web` auto-initializes, so it is the safest concrete fallback.
- */
-function resolveProfile(configured: string): string {
-  if (configured !== 'current' && configured.trim() !== '') return configured.trim()
-  const fromEnv = process.env['DSH_PROFILE']
-  return fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv.trim() : 'web'
 }
 
 function renderSearch(value: unknown): string {

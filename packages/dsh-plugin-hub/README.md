@@ -126,7 +126,7 @@ read. The same lockfile is shared with `@dsh-fish/cli`.
   name: '@dsh-fish/hub'
   config:
     baseUrl: https://dsh.fish   # a self-hosted deployment only changes this
-    targetProfile: current      # or a specific profile name
+    targetProfile: current      # $DSH_PROFILE, else --profile, else web
 ```
 
 ## License
