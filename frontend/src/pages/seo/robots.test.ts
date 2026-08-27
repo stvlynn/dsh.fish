@@ -16,6 +16,14 @@ describe('robotsText', () => {
     expect(body).not.toContain('Disallow: /*/')
   })
 
+  it('keeps query-string views and markdown aliases off the generic crawler', () => {
+    expect(body).toContain('User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /*?\nDisallow: /*.md$')
+    // Retrieval agents keep their own Allow: / group, so they still reach
+    // `.md` aliases and filtered listings. The rules above must not leak into it.
+    expect(body).toContain('User-agent: OAI-SearchBot\nAllow: /\nAllow: /api/v1/catalog/snapshot\nDisallow: /api/\n')
+    expect(body).not.toContain('User-agent: OAI-SearchBot\nAllow: /\nAllow: /api/v1/catalog/snapshot\nDisallow: /api/\nDisallow: /*?')
+  })
+
   it('allows retrieval agents but denies training crawlers', () => {
     expect(body).toContain('User-agent: OAI-SearchBot\nAllow: /')
     expect(body).toContain('Allow: /api/v1/catalog/snapshot')

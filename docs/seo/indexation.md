@@ -33,7 +33,7 @@ The catalog can mint effectively unlimited URLs: any combination of `kind`,
 `category`, `sort`, `verified`, `q` and `offset` is a distinct query string
 over the same rows. This is the classic way a directory burns its crawl budget.
 
-Three mechanisms, together:
+Three mechanisms in HTML, plus one in robots.txt:
 
 1. **Any query at all makes `/browse` `noindex`.** The loader reports
    `filtered: [...url.searchParams.keys()].length > 0`.
@@ -42,9 +42,15 @@ Three mechanisms, together:
    and the sitemap carries. A combination filter is a view of it.
 3. **The single-facet listings get real paths**, so the terms worth ranking for
    have a stable, linkable, canonical document instead of a query string.
+4. **`robots.txt` `Disallow: /*?` for `User-agent: *`.** `nofollow` is a hint;
+   Google still fetched ~100k `noindex` query URLs in the first coverage
+   export. Blocking the fetch keeps that budget for sitemap URLs. Retrieval
+   agents keep `Allow: /` in their own group.
 
 Keyword links on a plugin page point at `/browse?q=<keyword>` and are
-`nofollow` for the same reason.
+`nofollow` for the same reason. Pagination stays `noindex, follow` in HTML so
+a client that ignores robots.txt can still walk it; the artifact sitemap is
+how Google is supposed to find those rows.
 
 ## Locale quality gate
 

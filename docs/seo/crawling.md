@@ -2,23 +2,33 @@
 
 ## robots.txt
 
-Served from `frontend/src/pages/seo/robots.ts` at `/robots.txt`. It disallows
-`/api/` and names the sitemap index.
+Served from `frontend/src/pages/seo/robots.ts` at `/robots.txt`. The generic
+crawler (`User-agent: *`, Googlebot included) is allowed the HTML catalog and
+disallowed three classes of URL:
+
+| Rule | Why |
+|---|---|
+| `Disallow: /api/` | Machine-only JSON. There is no HTML `noindex` to read, so blocking it saves crawl budget without hiding an indexation instruction. |
+| `Disallow: /*?` | Every query string is a view of a path that already has a canonical home (`/browse?q=`, `?offset=`, `?profile=`). The HTML of those views is `noindex, follow`; fetching them still costs the budget. Plugin rows on listing page two onwards stay in the artifact sitemap. |
+| `Disallow: /*.md$` | Agent markdown aliases of the same HTML documents. Retrieval user-agents keep `Allow: /` in their own group, so they still reach `.md`. `/llms.txt` does not end in `.md` and stays crawlable. |
 
 Account pages remain crawlable even though they are `noindex, follow`. A search
 engine must fetch a page to read that directive; blocking `/dashboard`,
 `/device`, or `/sign-in` in robots.txt can leave the URL indexed without a
 snippet because the crawler knows the URL exists but cannot see its `noindex`.
-The API is different: it is machine-only JSON with no HTML directive to read,
-so blocking it saves crawl budget without hiding an indexation instruction.
+Query-string views are the opposite case: they were never supposed to enter
+the index, and the coverage export in [`search-console.md`](search-console.md)
+showed Google spending the budget confirming `noindex` on ~100k of them.
 
 Nothing there is a security boundary. robots.txt is a request, and the paths it
 names are exactly the paths anyone can read in it.
 
 Search/retrieval agents (`OAI-SearchBot`, `ChatGPT-User`, `Claude-SearchBot`,
-`Claude-User`) may crawl public pages and the catalog snapshot; training
-crawlers (`GPTBot`, `ClaudeBot`) are denied. Public responses also send
+`Claude-User`) may crawl public pages, `.md` aliases, and the catalog snapshot;
+training crawlers (`GPTBot`, `ClaudeBot`) are denied. Public responses also send
 `Content-Signal: ai-train=no, search=yes, ai-input=yes, use=reference`.
+Markdown responses add `X-Robots-Tag: noindex, follow` so a crawler that
+fetches them anyway does not treat the alias as a second document.
 
 ## ads.txt
 
@@ -339,7 +349,8 @@ serves every language variant, same as the site card. It has to be a PNG:
 Slack, X and the other link-preview fetchers do not rasterise SVG `og:image`s,
 so an SVG route would preview as nothing. The Wasm cost (~1 MB of bundle,
 ~150–300 ms cold) lands only on link-preview fetches, never on the HTML path;
-responses carry the same `public, max-age=3600` contract as the sitemap XML.
+responses carry `public, max-age=86400` and are stored in the Worker Cache API
+so a crawler wave does not re-render every card.
 
 A sibling route, `/a/:artifactId/badge.svg`, serves the shields-style README
 badge (`dsh.fish | A · 78`, or the star count with `?metric=stars`). The

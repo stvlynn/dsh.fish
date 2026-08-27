@@ -18,6 +18,11 @@ export function markdownResponse(markdown: string, init?: { status?: number }): 
       'cache-control': status >= 400 ? 'no-store' : 'public, max-age=300',
       'x-markdown-tokens': String(estimateTokens(markdown)),
       'content-signal': 'ai-train=no, search=yes, ai-input=yes, use=reference',
+      // Markdown is the agent mirror, not a second document for the HTML index.
+      // robots.txt already Disallows `*.md` for Googlebot; this header covers
+      // crawlers that fetch anyway, including `Accept: text/markdown` on the
+      // HTML URL.
+      'x-robots-tag': 'noindex, follow',
     },
   })
 }
