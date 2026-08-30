@@ -51,7 +51,7 @@ test.describe('destination marks', () => {
     await page.goto('/browse', { waitUntil: 'domcontentloaded' })
 
     const bar = page.locator('header nav').first()
-    await expect(bar.getByRole('link')).toHaveCount(3)
+    await expect(bar.getByRole('link')).toHaveCount(4)
     for (const label of ['Browse', 'Docs', 'Blog', 'Submit']) {
       await expect(bar.getByRole('link', { name: label }).locator('svg')).toHaveCount(1)
     }
