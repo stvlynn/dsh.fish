@@ -47,6 +47,15 @@ export default defineConfig({
   projects: [
     ...mobileProjects(),
     {
+      name: 'install-panel',
+      testMatch: /install-panel\/.*\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        viewport: { width: 1280, height: 900 },
+        defaultBrowserType: 'chromium',
+      },
+    },
+    {
       name: 'catalog-pagination',
       testMatch: /catalog-pagination\/.*\.spec\.ts/,
       use: {

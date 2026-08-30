@@ -19,6 +19,28 @@ describe('extractAwesomeDshPlugin', () => {
       { url: 'https://github.com/acme/skip' },
     ])
   })
+
+  it('keeps a curated npm name and Release tarball when the list recorded them', () => {
+    expect(
+      extractAwesomeDshPlugin({
+        plugins: [
+          {
+            url: 'https://github.com/acme/hud',
+            npm: 'dsh-hud',
+            tarball: 'https://github.com/acme/hud/releases/download/v1.0.0/hud.tgz',
+          },
+          { url: 'https://github.com/acme/skip', npm: null },
+        ],
+      }),
+    ).toEqual([
+      {
+        url: 'https://github.com/acme/hud',
+        npm: 'dsh-hud',
+        tarball: 'https://github.com/acme/hud/releases/download/v1.0.0/hud.tgz',
+      },
+      { url: 'https://github.com/acme/skip' },
+    ])
+  })
 })
 
 describe('extractOhMyDsh', () => {

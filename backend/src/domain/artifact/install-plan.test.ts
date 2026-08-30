@@ -73,6 +73,124 @@ describe('buildInstallPlan', () => {
     expect(plan.warningKeys).toEqual([])
   })
 
+  it('installs a GitHub-indexed package by its verified npm name, not a git spec', () => {
+    const published = Artifact.create({
+      id: 'dsh-context',
+      kind: 'bundle',
+      displayName: 'dsh-context',
+      summary: 'Context insight.',
+      source: githubSource({
+        owner: 'bowenliang123',
+        repo: 'dsh-context',
+        commit: 'a'.repeat(40),
+        npm: { packageName: 'dsh-context', latestVersion: '0.8.0' },
+      }),
+      payload: { kind: 'bundle', requiresBuild: true },
+    })
+
+    const plan = buildInstallPlan(published, installTarget('local-dsh'))
+    expect(plan.steps).toEqual([
+      {
+        type: 'add-package',
+        profile: 'local-dsh',
+        spec: 'dsh-context',
+        requiresBuildAllowance: false,
+      },
+    ])
+    expect(plan.manualCommands).toEqual([
+      'npx @dsh-fish/cli add dsh-context --profile local-dsh',
+      'dsh plugin --profile local-dsh add dsh-context',
+    ])
+    expect(plan.warningKeys).not.toContain('install.warning.buildAllowance')
+  })
+
+  it('does not treat a legal display name as an npm package', () => {
+    // The display name is a legal package.json name, but nothing verified it
+    // is published under this repository. Guessing would 404 and leave a
+    // ghost dependency that bricks later installs.
+    const unpublished = Artifact.create({
+      id: 'dsh-inline-comments',
+      kind: 'bundle',
+      displayName: 'dsh-inline-comments',
+      summary: 'Inline comments.',
+      source: githubSource({
+        owner: 'acme',
+        repo: 'dsh-inline-comments',
+        commit: 'a'.repeat(40),
+      }),
+      payload: { kind: 'bundle', requiresBuild: true },
+    })
+
+    const plan = buildInstallPlan(unpublished, target)
+    expect(plan.steps[0]).toMatchObject({
+      spec: `github:acme/dsh-inline-comments#${'a'.repeat(40)}`,
+      requiresBuildAllowance: true,
+    })
+    expect(plan.warningKeys).toContain('install.warning.buildAllowance')
+  })
+
+  it('prefers a same-repo Release tarball over a git checkout', () => {
+    const tarball =
+      'https://github.com/acme/thing/releases/download/v1.0.0/thing-1.0.0.tgz'
+    const prebuilt = Artifact.create({
+      id: 'thing',
+      kind: 'bundle',
+      displayName: 'thing',
+      summary: 'A prebuilt plugin.',
+      source: githubSource({
+        owner: 'acme',
+        repo: 'thing',
+        commit: 'a'.repeat(40),
+        releaseTarball: tarball,
+      }),
+      payload: { kind: 'bundle', requiresBuild: true },
+    })
+
+    const plan = buildInstallPlan(prebuilt, target)
+    expect(plan.steps[0]).toMatchObject({ spec: tarball, requiresBuildAllowance: false })
+    expect(plan.warningKeys).not.toContain('install.warning.buildAllowance')
+  })
+
+  it('prefers verified npm over a Release tarball', () => {
+    const tarball = 'https://github.com/acme/thing/releases/download/v1.0.0/thing-1.0.0.tgz'
+    const published = Artifact.create({
+      id: 'thing',
+      kind: 'bundle',
+      displayName: 'thing',
+      summary: 'Published and prebuilt.',
+      source: githubSource({
+        owner: 'acme',
+        repo: 'thing',
+        commit: 'a'.repeat(40),
+        npm: { packageName: 'thing', latestVersion: '1.0.0' },
+        releaseTarball: tarball,
+      }),
+      payload: { kind: 'bundle', requiresBuild: false },
+    })
+
+    expect(buildInstallPlan(published, target).steps[0]).toMatchObject({ spec: 'thing' })
+  })
+
+  it('pins a monorepo subdirectory onto the git spec', () => {
+    const nested = Artifact.create({
+      id: 'theme-gallery',
+      kind: 'bundle',
+      displayName: 'theme-gallery',
+      summary: 'A package inside a collection repo.',
+      source: githubSource({
+        owner: 'acme',
+        repo: 'dsh-plugins',
+        path: 'packages/theme-gallery',
+        commit: 'a'.repeat(40),
+      }),
+      payload: { kind: 'bundle', requiresBuild: false },
+    })
+
+    expect(buildInstallPlan(nested, target).steps[0]).toMatchObject({
+      spec: `github:acme/dsh-plugins#${'a'.repeat(40)}&path:/packages/theme-gallery`,
+    })
+  })
+
   it('pins a git bundle to a commit and warns when one is missing', () => {
     const pinned = buildInstallPlan(
       artifact(

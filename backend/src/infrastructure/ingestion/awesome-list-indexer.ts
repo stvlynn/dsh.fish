@@ -110,12 +110,7 @@ export class AwesomeListIndexer implements SourceIndexer {
         seen.add(key)
         scanned += 1
         try {
-          const snapshot = await this.indexCandidate(
-            repo.owner,
-            repo.repo,
-            list.id,
-            candidate.category,
-          )
+          const snapshot = await this.indexCandidate(repo.owner, repo.repo, list.id, candidate)
           if (snapshot) snapshots.push(snapshot)
         } catch {
           // One unreadable repository never fails the sweep.
@@ -145,7 +140,7 @@ export class AwesomeListIndexer implements SourceIndexer {
     owner: string,
     repo: string,
     listId: string,
-    curatedCategory: string | undefined,
+    candidate: ListCandidate,
   ): Promise<IndexedSnapshot | undefined> {
     const descriptor = await this.prober.fetchRepo(owner, repo)
     if (!descriptor) return undefined
@@ -153,7 +148,11 @@ export class AwesomeListIndexer implements SourceIndexer {
       descriptor,
       undefined,
       undefined,
-      curatedCategory === undefined ? [] : [curatedCategory],
+      candidate.category === undefined ? [] : [candidate.category],
+      {
+        ...(candidate.npm === undefined ? {} : { npm: candidate.npm }),
+        ...(candidate.tarball === undefined ? {} : { tarball: candidate.tarball }),
+      },
     )
     if (snapshot === undefined || snapshot.source.origin !== 'github') return snapshot
     return { ...snapshot, source: { ...snapshot.source, via: [listId] } }
