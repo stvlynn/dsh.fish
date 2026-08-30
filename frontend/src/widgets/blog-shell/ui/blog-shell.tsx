@@ -109,11 +109,11 @@ export function BlogPostList({ posts }: { posts: readonly BlogPostCard[] }) {
               <img
                 src={post.cover}
                 alt=""
-                width={1200}
-                height={2000}
+                width={1600}
+                height={900}
                 loading={index < 2 ? 'eager' : 'lazy'}
                 fetchPriority={index === 0 ? 'high' : 'auto'}
-                className="aspect-[3/5] w-full object-cover transition-opacity duration-150 group-hover:opacity-90"
+                className="aspect-video w-full object-cover transition-opacity duration-150 group-hover:opacity-90"
               />
             </div>
             <p className="mt-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">

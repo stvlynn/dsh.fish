@@ -17,7 +17,7 @@ not create a language mismatch.
 
 The covers follow `gc-minimal-zine-poster-v0-3`:
 
-- 3:5 portrait WebP at 1200×2000.
+- 16:9 landscape WebP at 1600×900.
 - Warm, visibly fibrous paper with matte scan noise.
 - Roughly 70–90% negative space.
 - One small visual metaphor occupying roughly 8–25% of the canvas.
@@ -41,12 +41,14 @@ Use this production prompt as the fixed family description, then replace the
 bracketed metaphor and accent with the row above:
 
 ```text
-Create a sparse 3:5 vertical editorial zine cover on warm fibrous paper.
+Create a sparse 16:9 horizontal editorial zine cover on warm fibrous paper.
 Keep 70–90% of the page empty. Place one small [visual metaphor] near the
 optical center, assembled from flat torn-paper fragments with xerox softness
 and slight print misregistration. Use grayscale ink plus one clear [accent]
 accent visible at thumbnail size. Add only tiny archival microtype near an
-edge. The image must feel scanned, matte, quiet, and technical. No logo, CTA,
+edge. Keep the focal cluster inside the central 80% safe area and leave one
+side open for responsive cropping. The image must feel scanned, matte, quiet,
+and technical. No logo, CTA,
 commercial headline, glossy mockup, hard shadow, 3D, neon, full-bleed scene,
 busy scrapbook, or multicolor palette.
 ```

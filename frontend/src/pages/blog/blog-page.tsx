@@ -248,8 +248,8 @@ export default function BlogPage({ loaderData }: Route.ComponentProps) {
 
   return (
     <BlogShell seriesNav={nav} currentSeries={currentSeries} toc={toc}>
-      <header className="grid items-end gap-8 md:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)]">
-        <div className="min-w-0">
+      <header>
+        <div className="max-w-3xl">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {seriesTitle}
           </p>
@@ -268,10 +268,10 @@ export default function BlogPage({ loaderData }: Route.ComponentProps) {
         <img
           src={cover}
           alt=""
-          width={1200}
-          height={2000}
+          width={1600}
+          height={900}
           fetchPriority="high"
-          className="aspect-[3/5] w-full max-w-72 justify-self-center rounded-xl border border-border bg-muted object-cover md:justify-self-end"
+          className="mt-8 aspect-video w-full rounded-xl border border-border bg-muted object-cover"
         />
       </header>
       <div className="mt-8">{blogContent.useContent(contentPath)}</div>

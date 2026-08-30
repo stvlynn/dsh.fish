@@ -129,7 +129,7 @@ Harder:
 | Source loader     | `frontend/src/pages/blog/source.ts` — `toFumadocsSource(blog, [])`                                             |
 | Routes            | `:locale?/blog`, `:locale?/blog/*`, `:locale?/blog/feed.xml`, `blog/llms.txt`                                  |
 | Shell             | `widgets/blog-shell` — series pills + post TOC                                                                 |
-| Covers            | `frontend/public/blog/covers/` — one 3:5 editorial poster per post, referenced by required `cover` frontmatter |
+| Covers            | `frontend/public/blog/covers/` — one 16:9 landscape editorial poster per post, referenced by required `cover` frontmatter |
 | Markdown          | `pages/blog/raw.ts` glob; listings generated from frontmatter                                                  |
 | Atom              | `/blog/feed.xml` and `/<locale>/blog/feed.xml`                                                                 |
 
