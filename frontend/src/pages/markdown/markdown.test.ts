@@ -120,6 +120,7 @@ describe('maybeMarkdownResponse', () => {
     expect(response).not.toBeNull()
     expect(response!.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
     expect(response!.headers.get('vary')).toBe('accept')
+    expect(response!.headers.get('x-robots-tag')).toBe('noindex, follow')
     expect(Number(response!.headers.get('x-markdown-tokens'))).toBeGreaterThan(0)
     expect(await response!.text()).toContain('# @acme/dsh-hello')
   })

@@ -155,10 +155,21 @@ async function handleRequest(
 
 export default {
   async fetch(request, env, ctx) {
-    return withPublicSignals(
-      await withEdgeCache(request, ctx, () => handleRequest(request, env, ctx)),
-      request,
-    )
+    try {
+      return withPublicSignals(
+        await withEdgeCache(request, ctx, () => handleRequest(request, env, ctx)),
+        request,
+      )
+    } catch (error) {
+      // An uncaught loader failure is an origin 500. Google records that as a
+      // hard server error; 503 + Retry-After is the honest signal when D1 or
+      // CPU is saturated, which is what a coverage burst does.
+      console.error('worker_fetch_failed', String(error))
+      return new Response(null, {
+        status: 503,
+        headers: { 'retry-after': '60' },
+      })
+    }
   },
 
   /**

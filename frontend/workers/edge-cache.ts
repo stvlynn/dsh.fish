@@ -71,8 +71,9 @@ export function isMachineReadablePath(pathname: string): boolean {
 
 /**
  * True when a response may be stored: a 200 without `Set-Cookie`, on either a
- * machine-readable route or an anonymous page (`text/html` / `text/markdown`
- * outside `/api/`). Redirects, errors, and the rest of the API are never stored.
+ * machine-readable route, an artifact social card (`/a/:id/og.png`), or an
+ * anonymous page (`text/html` / `text/markdown` outside `/api/`). Redirects,
+ * errors, and the rest of the API are never stored.
  */
 export function isStorableResponse(pathname: string, response: Response): boolean {
   if (response.status !== 200 || response.headers.has('set-cookie')) {
@@ -85,6 +86,9 @@ export function isStorableResponse(pathname: string, response: Response): boolea
     return false
   }
   const contentType = response.headers.get('content-type') ?? ''
+  if (pathname.endsWith('/og.png') && contentType.includes('image/png')) {
+    return true
+  }
   return contentType.includes('text/html') || contentType.includes('text/markdown')
 }
 

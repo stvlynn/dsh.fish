@@ -9,7 +9,7 @@ every page the site owns, including every plugin it indexes.
 - [`indexation.md`](indexation.md) — what is offered to the index and what is withheld.
 - [`structured-data.md`](structured-data.md) — the schema.org graph and where each node comes from.
 - [`crawling.md`](crawling.md) — robots.txt, ads.txt, the sitemap set, internal link graph.
-- [`search-console.md`](search-console.md) — first Google Search Console export, and what it changed.
+- [`search-console.md`](search-console.md) — Search Console exports, and what they changed.
 - [`recommendations.md`](recommendations.md) — prioritised follow-up work (P0/P1/P2).
 
 Language conventions for writing code — adding a locale, adding a key — are in

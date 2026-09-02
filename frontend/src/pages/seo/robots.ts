@@ -11,6 +11,16 @@ import { hubContext } from '@/shared/api/hub-context'
  * `/api/` is disallowed for the same reason: it answers JSON, and a crawler
  * enumerating it learns nothing the HTML pages do not already say.
  *
+ * Query strings and `.md` aliases are disallowed for the generic crawler
+ * (`User-agent: *`, which is Googlebot). Every `?` URL is a view of a path
+ * that already has a canonical home — `/browse?q=`, `?offset=`, `?profile=` —
+ * and the Pages coverage export showed Google spending the
+ * crawl budget fetching ~100k of those `noindex` views instead of the ~36k
+ * sitemap URLs. `.md` aliases are the agent mirror of those same pages;
+ * retrieval bots keep `Allow: /` in their own group so they still reach them.
+ * Plugin pages on listing page two onwards stay discoverable through the
+ * artifact sitemap, so blocking `?offset=` does not hide the catalog.
+ *
  * Nothing here is a security boundary. robots.txt is a request, and the paths
  * it names are exactly the paths anyone can read in it.
  */
@@ -45,6 +55,11 @@ export function robotsText(baseUrl: string): string {
     'User-agent: *',
     'Allow: /',
     'Disallow: /api/',
+    // Faceted views and pagination. The sitemap already lists every artifact;
+    // these URLs are `noindex, follow` in HTML and must not spend crawl budget.
+    'Disallow: /*?',
+    // Agent markdown aliases. Retrieval user-agents above keep Allow: /.
+    'Disallow: /*.md$',
     '',
     '# Atom feeds live at /feed.xml and /<locale>/feed.xml; the IndexNow key',
     '# file at /indexnow-<key>.txt. Both are crawlable by design.',

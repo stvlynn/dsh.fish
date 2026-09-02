@@ -95,3 +95,100 @@ only thing Korea can be shown.
 
 The backlog that follows from this export is in
 [`recommendations.md`](recommendations.md).
+
+---
+
+# Coverage export, 27 August 2026
+
+Pages report, property `dsh.fish`, sitemap "All known pages". Chart through
+21 August (typical reporting delay). This is the inventory counterpart of the
+traffic export above.
+
+## Totals
+
+| Slice | Pages |
+|---|---|
+| Indexed | 2,445 |
+| Not indexed | 118,540 |
+| Impressions (21 Aug) | 735 |
+
+The jump on 18 August — 11 indexed / 3 not indexed the day before, then 2,445 /
+118,540 — is the sitemap being ingested, not a traffic trend. Impressions then
+grew 17 → 735 over three days **without** more URLs entering the index: Google
+spent the rest of the budget elsewhere.
+
+Live catalog at the time of the reading: 5,985 artifacts. Sitemap invitation:
+
+| File | `<loc>` count |
+|---|---|
+| `/sitemaps/pages.xml` | 264 |
+| `/sitemaps/artifacts/0.xml` … `4.xml` | 6,000 each (1,000 artifacts × 6 locales) |
+| `/sitemaps/artifacts/5.xml` | 5,910 |
+| **Offered** | **~36,174** |
+
+GSC knew ~120,985 URLs. The extra ~85k were not in the sitemap.
+
+## Why the extra URLs were `noindex`
+
+| Reason | Source | Pages |
+|---|---|---|
+| Excluded by `noindex` tag | Website | 103,428 |
+| Discovered – currently not indexed | Google systems | 12,919 |
+| Server error (5xx) | Website | 1,306 |
+| Crawled – currently not indexed | Google systems | 853 |
+| Not found (404) | Website | 20 |
+| Page with redirect | Website | 12 |
+| Soft 404 | Website | 1 |
+| Duplicate, Google chose different canonical | Google systems | 1 |
+
+Production HTML for `/ja/a/dsh-better-edit` is `index, follow` with
+`SEO_LOCALE_GATING=false`. The 103k `noindex` rows are not untranslated plugin
+pages. They match the URL classes that already emit `noindex, follow`:
+
+- `/browse?q=<keyword>` from the twelve keyword chips on each plugin page
+  (`rel="nofollow"` is a hint; Google still fetched them)
+- `/browse?offset=`, `/kind/…?offset=`, `/category/…?offset=`
+- other query views (`?sort=`, `?profile=`, combined filters)
+
+~5,985 artifacts × up to 12 keywords, plus locale-prefixed copies and
+pagination, is the right order of magnitude. Each fetch is a D1 search. A
+wave of 100k of those is also the 1,306 5xx: the origin was saturating, not
+returning a broken document.
+
+The 12,919 "discovered, not indexed" and the 853 "crawled, not indexed" are
+the leftover **wanted** URLs — sitemap plugin pages waiting because the budget
+went to the `noindex` views. Locale shells with English README body and a
+translated frame are a quality reason some crawled pages stay out; do not
+turn on `SEO_LOCALE_GATING` until the Korean cluster from the first export
+is associated.
+
+12 redirects (HTTP, `/en/`, retired `/de` `/fr` `/es` `/pt-BR`) and 20 404s
+are residual. Do not add a second redirect.
+
+## What changed in code
+
+Generic crawler (`User-agent: *`):
+
+- `Disallow: /*?` — stop fetching query-string views; the artifact sitemap
+  remains the inventory for rows past listing page one.
+- `Disallow: /*.md$` — stop fetching agent markdown aliases. Retrieval
+  user-agents keep `Allow: /` in their own group.
+
+Markdown responses send `X-Robots-Tag: noindex, follow`. Social cards cache
+for a day and sit in the Worker Cache API. An uncaught origin failure is 503
+with `Retry-After`, not a hard 500.
+
+## Operator follow-up
+
+1. After deploy, Search Console → Pages → "Excluded by `noindex`" → Validate
+   fix. The count should move toward "Blocked by robots.txt" as Google recrawls
+   `robots.txt`, then drop.
+2. URL Inspection on `https://dsh.fish/`, `/browse`, `/docs`, a head plugin
+   page, and `/ko/a/dsh-better-edit`. Confirm `robots.txt` is fetched and the
+   HTML URL is allowed.
+3. Leave `SEO_LOCALE_GATING` off until the Korean CTR test from the first
+   export has a second crawl to compare.
+4. Do not request indexing of `/browse?q=` or `*.md` URLs.
+
+The backlog that follows from this export is in
+[`recommendations.md`](recommendations.md).

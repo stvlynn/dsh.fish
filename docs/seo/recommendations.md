@@ -25,12 +25,14 @@ Then, in Search Console, check the **International Targeting** report. It is the
 only place a broken `hreflang` cluster shows up as an error rather than as
 silence.
 
-The domain property is verified and the sitemap is submitted. The first export
-is in [`search-console.md`](search-console.md). Remaining operator work from
-that export: URL Inspection on `/`, `/browse`, `/docs`, and
-`/ko/a/dsh-better-edit`; the International Targeting report for `hreflang`
-errors. HTTP and retired-locale URLs already 301 — do not add a second
-redirect, wait for them to leave the page report.
+The domain property is verified and the sitemap is submitted. Exports are in
+[`search-console.md`](search-console.md). Remaining operator work: URL
+Inspection on `/`, `/browse`, `/docs`, and `/ko/a/dsh-better-edit`; the
+International Targeting report for `hreflang` errors; after the coverage-fix
+deploy, validate the "Excluded by `noindex`" set so those URLs move to
+"Blocked by robots.txt" instead of being refetched. HTTP and retired-locale
+URLs already 301 — do not add a second redirect, wait for them to leave the
+page report.
 
 ### Confirm `PUBLIC_BASE_URL` is the production origin
 

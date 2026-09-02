@@ -136,4 +136,16 @@ describe('isStorableResponse', () => {
       false,
     )
   })
+
+  it('stores artifact social cards so a crawler wave does not re-render Wasm', () => {
+    expect(
+      isStorableResponse(
+        '/a/dsh-hello/og.png',
+        response({ contentType: 'image/png' }),
+      ),
+    ).toBe(true)
+    expect(
+      isStorableResponse('/a/dsh-hello/og.png', response({ status: 503, contentType: 'image/png' })),
+    ).toBe(false)
+  })
 })
