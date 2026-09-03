@@ -648,7 +648,8 @@ function displayableLocalizedProse() {
 
 /**
  * Card/snapshot projection: payload is small JSON, README is the wide column
- * a listing must not pull. `hasReadme` keeps the quality-score bit honest.
+ * a listing must not pull. `hasReadme` uses `readme_hash` so SQLite does not
+ * visit `readme_markdown` overflow pages to answer a null-check.
  */
 const listingColumns = {
   id: artifacts.id,
@@ -678,7 +679,7 @@ const listingColumns = {
   publishedAt: artifacts.publishedAt,
   updatedAt: artifacts.updatedAt,
   indexedAt: artifacts.indexedAt,
-  hasReadme: sql<number>`(${artifacts.readmeMarkdown} is not null)`.as('has_readme'),
+  hasReadme: sql<number>`(${artifacts.readmeHash} is not null)`.as('has_readme'),
 }
 
 function toListingEntity(row: Omit<ArtifactRow, 'readmeMarkdown'> & { hasReadme: number }): Artifact {

@@ -18,6 +18,7 @@ import {
   supportsMarkdownNegotiation,
 } from '@/pages/markdown'
 import { withEdgeCache } from './edge-cache'
+import { scrapeShedResponse, catalogSearchBudgetShed } from './catalog-scrape-gate'
 import { retiredCategoryRedirect } from '@/shared/lib/retired-category-path'
 import { retiredKindRedirect, retiredPublishDocsRedirect } from '@/shared/lib/retired-kind-path'
 
@@ -155,6 +156,12 @@ async function handleRequest(
 
 export default {
   async fetch(request, env, ctx) {
+    const shed =
+      scrapeShedResponse(request.cf?.asn) ??
+      (await catalogSearchBudgetShed(new URL(request.url), env.KV))
+    if (shed !== undefined) {
+      return withPublicSignals(shed, request)
+    }
     return withPublicSignals(
       await withEdgeCache(request, ctx, () => handleRequest(request, env, ctx)),
       request,

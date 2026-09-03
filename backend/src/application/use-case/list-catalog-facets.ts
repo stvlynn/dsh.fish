@@ -1,3 +1,4 @@
+import type { CatalogFacetCache } from '../port/catalog-facet-cache.js'
 import type { ArtifactRepository } from '../../domain/artifact/artifact-repository.js'
 import { ARTIFACT_KIND_META, ARTIFACT_KINDS } from '../../domain/artifact/artifact-kind.js'
 import type { ArtifactKind } from '../../domain/artifact/artifact-kind.js'
@@ -21,9 +22,20 @@ export interface FacetsDto {
  * show the taxonomy honestly rather than hiding a type nobody has published yet.
  */
 export class ListCatalogFacets {
-  constructor(private readonly artifacts: ArtifactRepository) {}
+  constructor(
+    private readonly artifacts: ArtifactRepository,
+    private readonly cache?: CatalogFacetCache,
+  ) {}
 
   async execute(): Promise<FacetsDto> {
+    const cached = await this.cache?.read()
+    if (cached !== undefined) return cached
+    const facets = await this.loadFromCatalog()
+    await this.cache?.write(facets)
+    return facets
+  }
+
+  private async loadFromCatalog(): Promise<FacetsDto> {
     const [counts, categoryCounts, topicCounts] = await Promise.all([
       this.artifacts.countByKind(),
       this.artifacts.countByCategory?.() ?? Promise.resolve([]),

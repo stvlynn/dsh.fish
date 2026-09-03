@@ -78,6 +78,13 @@
       "when": 1788436800000,
       "tag": "0010_artifact_facet_covering_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788439200000,
+      "tag": "0011_artifact_recent_covering_index",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,9 @@ The infrastructure layer implements the abstractions that the domain layer defin
   `Content-Encoding: none` so the edge does not gzip-buffer the stream.
   Timeouts: connect 10s, idle 30s, total 60s. Upstream 429/5xx become
   `UNAVAILABLE`.
+- **Catalog facet cache** — `KvCatalogFacetCache` on the existing `KV` binding.
+  Home, browse, and `GET /api/v1/facets` share one 60s snapshot of the facet
+  DTO so unique search URLs do not each re-run the three aggregations.
 - **Ask rate limiter** — `KvAskRateLimiter` on the existing `KV` binding:
   12 asks / IP / 10 min, 4 concurrent streams / IP, 30 asks / artifact / hour,
   60 asks / Worker / minute. Consume/release is serialized inside one Worker

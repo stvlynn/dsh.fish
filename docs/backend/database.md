@@ -72,7 +72,12 @@ This document describes database conventions. Fill in concrete technology choice
   `deprecated` reads every README. Kind counts use the first index; category
   and topic counts semi-join live ids from the second. Production search uses
   FTS5 (`CATALOG_FTS_SEARCH=true`); `%LIKE%` on documents is the rollback path
-  for queries shorter than three characters or when the flag is off.
+  for queries shorter than three characters or when the flag is off. Assembled
+  facet DTOs live in KV for 60s so browse query strings do not each re-count.
+- Index `artifacts_deprecated_updated_idx` `(deprecated, updated_at)` (migration
+  `0011_artifact_recent_covering_index`) — `sort=recent`. The older
+  `(updated_at)` index cannot satisfy `WHERE deprecated = 0 ORDER BY updated_at`,
+  so SQLite scanned the wide table (~15k rows_read).
 
 ## Migrations
 

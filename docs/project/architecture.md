@@ -403,16 +403,22 @@ README/payload columns and sorting on an expression, billed as rows-read.
 Listings now:
 
 1. `ORDER BY artifacts.popularity` (indexed with `deprecated`, and with `kind`
-   for `/kind/:kind`).
-2. Select a card projection that omits `readme_markdown`.
+   for `/kind/:kind`). `sort=recent` uses `(deprecated, updated_at)`.
+2. Select a card projection that omits `readme_markdown`. `hasReadme` is
+   derived from `readme_hash`, not a null-check on the wide column.
 3. Issue `COUNT(*)` and the page as one D1 `batch`, because the Worker-to-D1
    hop dominates.
 4. Facet counts never join the wide `artifacts` row. Kind counts use covering
    index `(deprecated, kind)`. Category and topic counts semi-join live ids
-   from `(deprecated, id)`.
+   from `(deprecated, id)`. The assembled facet DTO is stored in KV for 60s
+   (`catalog:facets:v1`) so unique `/browse?q=` URLs share one aggregation.
 5. Text search of three or more characters uses FTS5 (`CATALOG_FTS_SEARCH`).
    `%LIKE%` on `artifact_search_documents` is a full table scan and is only
    the short-query / rollback path.
+6. The Worker sheds catalog reads from known scrape ASNs (currently RapidSeedbox
+   `214483`) with HTTP 429 before opening D1. Unique `q=` searches also share a
+   Worker-wide KV budget (10 / minute) so a residential-proxy crawl cannot
+   re-queue D1 after the seedbox is blocked.
 
 `GET /api/v1/catalog/snapshot` still returns the whole public catalog as one
 KV-cached document — that is the third-party sync contract, not a browse

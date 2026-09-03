@@ -49,7 +49,11 @@ Replace these with real commands when the stack is selected.
 4. `CATALOG_FTS_SEARCH=true` is the production default in
    `frontend/wrangler.jsonc`. Revert the variable if D1 errors or query quality
    regress. Apply `0010_artifact_facet_covering_indexes` so home/browse facet
-   counts do not scan `readme_markdown`.
+   counts do not scan `readme_markdown`. Unique `/browse?q=` crawls miss the
+   HTML cache; the Worker sheds known scrape ASNs with 429, unique `q=` searches
+   share a 10/minute KV budget, and facet counts are reused from KV for 60s.
+   Apply `0011_artifact_recent_covering_index` so home `sort=recent` does not
+   scan `readme_markdown`.
 5. Check current locale coverage, then set `SEO_LOCALE_GATING=true`; this switch
    is independently reversible.
 6. Purge the edge cache, sample the sitemap files, and submit the sitemap index

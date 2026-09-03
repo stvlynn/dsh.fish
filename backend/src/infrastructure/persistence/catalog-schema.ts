@@ -73,6 +73,10 @@ export const artifacts = sqliteTable(
     // live-id semi-join used by category/topic counts.
     index('artifacts_deprecated_kind_idx').on(table.deprecated, table.kind),
     index('artifacts_deprecated_id_idx').on(table.deprecated, table.id),
+    // Home `sort=recent` is `WHERE deprecated = 0 ORDER BY updated_at DESC`.
+    // `artifacts_updated_idx` is only `(updated_at)`, so SQLite scanned the
+    // wide table (15k rows_read / ~700ms) instead of walking an index.
+    index('artifacts_deprecated_updated_idx').on(table.deprecated, table.updatedAt),
   ],
 )
 
