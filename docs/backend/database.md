@@ -65,6 +65,14 @@ This document describes database conventions. Fill in concrete technology choice
   `artifact_topics` stores the curated intent taxonomy independently from broad
   categories. `artifacts.summary_hash` / `readme_hash` pin locale availability
   to current source content and translation policy.
+- Covering indexes `artifacts_deprecated_kind_idx` `(deprecated, kind)` and
+  `artifacts_deprecated_id_idx` `(deprecated, id)` (migration
+  `0010_artifact_facet_covering_indexes`) — facet `COUNT` queries. SQLite
+  stores `readme_markdown` on the table row, so a `JOIN artifacts` to filter
+  `deprecated` reads every README. Kind counts use the first index; category
+  and topic counts semi-join live ids from the second. Production search uses
+  FTS5 (`CATALOG_FTS_SEARCH=true`); `%LIKE%` on documents is the rollback path
+  for queries shorter than three characters or when the flag is off.
 
 ## Migrations
 

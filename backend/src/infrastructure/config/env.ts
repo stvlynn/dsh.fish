@@ -63,8 +63,12 @@ export interface HubEnv {
   readonly ARTIFACT_ASK_ENABLED?: string
   /** Override the per-IP ask budget (default 12 / 10 minutes). */
   readonly ARTIFACT_ASK_MAX_PER_IP?: string
-  /** Rollout switches: default off until the migration and backfill are verified. */
+  /**
+   * Catalog FTS5 search. `"true"` uses the derived `artifact_search_fts` index.
+   * Production is on; set `"false"` to roll back to `%LIKE%` on documents.
+   */
   readonly CATALOG_FTS_SEARCH?: string
+  /** Locale-gated sitemap/index URLs. Default off until coverage is verified. */
   readonly SEO_LOCALE_GATING?: string
 }
 

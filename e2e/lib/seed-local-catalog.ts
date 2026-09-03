@@ -57,6 +57,7 @@ function ensureDevVars(frontend: string): void {
     PUBLIC_BASE_URL: E2E_ORIGIN,
     BETTER_AUTH_SECRET: 'e2e-test-secret-not-for-production',
     ARTIFACT_ASK_ENABLED: 'true',
+    CATALOG_FTS_SEARCH: 'true',
   }
   let existing = ''
   try {
@@ -72,7 +73,7 @@ function ensureDevVars(frontend: string): void {
     if (pattern.test(next)) {
       // The ask feature and canonical origin must match this test run. Other
       // developer-owned values remain untouched.
-      if (key === 'ARTIFACT_ASK_ENABLED' || key === 'PUBLIC_BASE_URL') {
+      if (key === 'ARTIFACT_ASK_ENABLED' || key === 'PUBLIC_BASE_URL' || key === 'CATALOG_FTS_SEARCH') {
         next = next.replace(pattern, line)
       }
       continue

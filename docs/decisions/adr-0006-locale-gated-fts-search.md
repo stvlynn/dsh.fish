@@ -28,3 +28,8 @@ Search understands Unicode-normalized topic vocabulary and can use FTS ranking,
 while short queries retain a predictable fallback. Translation backfill also
 refreshes hashes and search projections. Enabling the locale gate reduces URL
 count until translation coverage catches up; that reduction is intentional.
+
+Production search is on (`CATALOG_FTS_SEARCH=true` in `frontend/wrangler.jsonc`).
+The flag remains independently reversible. `%LIKE%` on search documents is the
+rollback path and must not stay on for crawler traffic: a leading wildcard is a
+full D1 scan.

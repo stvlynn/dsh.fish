@@ -68,6 +68,11 @@ export const artifacts = sqliteTable(
     index('artifacts_popularity_idx').on(table.deprecated, table.popularity),
     index('artifacts_kind_popularity_idx').on(table.kind, table.deprecated, table.popularity),
     index('artifacts_rising_idx').on(table.deprecated, table.starVelocity7d, table.popularity),
+    // Facet COUNTs must not visit the wide row (readme_markdown). These two
+    // covering indexes satisfy `WHERE deprecated = 0 GROUP BY kind` and the
+    // live-id semi-join used by category/topic counts.
+    index('artifacts_deprecated_kind_idx').on(table.deprecated, table.kind),
+    index('artifacts_deprecated_id_idx').on(table.deprecated, table.id),
   ],
 )
 

@@ -71,6 +71,13 @@
       "when": 1787304505313,
       "tag": "0009_flimsy_machine_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788436800000,
+      "tag": "0010_artifact_facet_covering_indexes",
+      "breakpoints": true
     }
   ]
 }

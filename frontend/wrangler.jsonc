@@ -38,8 +38,9 @@
     // local/e2e builds do not request ads.
     "ADSENSE_PUBLISHER_ID": "ca-pub-4028911961301674",
     "ARTIFACT_ASK_ENABLED": "true",
-    // Deploy migration/backfill first, then enable independently for rollback.
-    "CATALOG_FTS_SEARCH": "false",
+    // Derived FTS5 index is populated; `%LIKE%` on search documents is the
+    // D1 CPU-limit path. Revert to "false" if query quality regresses.
+    "CATALOG_FTS_SEARCH": "true",
     "SEO_LOCALE_GATING": "false",
   },
   "d1_databases": [

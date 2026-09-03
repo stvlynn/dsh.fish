@@ -49,6 +49,20 @@ INSERT INTO artifact_search (artifact_id, haystack)
 SELECT id, lower(display_name || ' ' || summary) FROM artifacts
 WHERE id LIKE 'e2e-page-%';
 
+INSERT INTO artifact_search_documents (
+  artifact_id, locale, display_name, summary, keywords, topics, summary_hash
+)
+SELECT
+  id,
+  'und',
+  lower(display_name),
+  lower(summary),
+  'e2e',
+  '',
+  'seed'
+FROM artifacts
+WHERE id LIKE 'e2e-page-%';
+
 INSERT INTO artifact_categories (artifact_id, category_id) VALUES
 ${categories.join(',\n')};
 

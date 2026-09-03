@@ -46,8 +46,10 @@ Replace these with real commands when the stack is selected.
    hashes, topics and search documents as well as translations.
 3. Compare document/topic counts with non-deprecated artifact counts and test
    representative Latin and CJK queries.
-4. Set `CATALOG_FTS_SEARCH=true`; revert the variable if D1 errors or query
-   quality regress.
+4. `CATALOG_FTS_SEARCH=true` is the production default in
+   `frontend/wrangler.jsonc`. Revert the variable if D1 errors or query quality
+   regress. Apply `0010_artifact_facet_covering_indexes` so home/browse facet
+   counts do not scan `readme_markdown`.
 5. Check current locale coverage, then set `SEO_LOCALE_GATING=true`; this switch
    is independently reversible.
 6. Purge the edge cache, sample the sitemap files, and submit the sitemap index

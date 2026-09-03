@@ -87,7 +87,11 @@ export class D1ArtifactRepository implements ArtifactRepository {
       const normalized = normalizeSearchText(query.text)
       const needle = `%${normalized}%`
       const locale = query.locale ?? 'und'
-      const documentMatch = this.ftsSearchEnabled && normalized.length >= 3
+      // `%LIKE%` cannot use a B-tree index (Cloudflare D1: leading wildcard
+      // scans the table). FTS5 is the documented path once the derived index
+      // is populated; keep LIKE only as the short-query / rollback fallback.
+      const useFts = usesFtsIndex(this.ftsSearchEnabled, normalized)
+      const documentMatch = useFts
         ? sql`exists (
             select 1 from artifact_search_fts
             join artifact_search_documents d on d.rowid = artifact_search_fts.rowid
@@ -103,11 +107,13 @@ export class D1ArtifactRepository implements ArtifactRepository {
                 or d.keywords like ${needle} or d.topics like ${needle})
           )`
       conditions.push(
-        or(
-          like(sql`lower(${artifacts.id})`, needle),
-          documentMatch,
-          sql`exists (select 1 from ${artifactSearch} where ${artifactSearch.artifactId} = ${artifacts.id} and ${artifactSearch.haystack} like ${needle})`,
-        ),
+        useFts
+          ? or(like(sql`lower(${artifacts.id})`, needle), documentMatch)
+          : or(
+              like(sql`lower(${artifacts.id})`, needle),
+              documentMatch,
+              sql`exists (select 1 from ${artifactSearch} where ${artifactSearch.artifactId} = ${artifacts.id} and ${artifactSearch.haystack} like ${needle})`,
+            ),
       )
     }
     if (query.categories && query.categories.length > 0) {
@@ -155,8 +161,7 @@ export class D1ArtifactRepository implements ArtifactRepository {
     const rows = await this.db
       .select({ id: artifactCategories.categoryId, count: sql<number>`count(*)` })
       .from(artifactCategories)
-      .innerJoin(artifacts, eq(artifacts.id, artifactCategories.artifactId))
-      .where(eq(artifacts.deprecated, false))
+      .where(inArray(artifactCategories.artifactId, this.liveArtifactIds()))
       .groupBy(artifactCategories.categoryId)
     return rows.map((row) => ({ id: row.id, count: Number(row.count) }))
   }
@@ -165,10 +170,14 @@ export class D1ArtifactRepository implements ArtifactRepository {
     const rows = await this.db
       .select({ id: artifactTopics.topicId, count: sql<number>`count(*)` })
       .from(artifactTopics)
-      .innerJoin(artifacts, eq(artifacts.id, artifactTopics.artifactId))
-      .where(eq(artifacts.deprecated, false))
+      .where(inArray(artifactTopics.artifactId, this.liveArtifactIds()))
       .groupBy(artifactTopics.topicId)
     return rows.map((row) => ({ id: row.id, count: Number(row.count) }))
+  }
+
+  /** Covering `(deprecated, id)` — never visits `readme_markdown`. */
+  private liveArtifactIds() {
+    return this.db.select({ id: artifacts.id }).from(artifacts).where(eq(artifacts.deprecated, false))
   }
 
   async listAvailableLocales(id: Slug) {
@@ -563,6 +572,11 @@ export class D1ArtifactRepository implements ArtifactRepository {
   }
 }
 
+/** FTS5 needs a token of at least three characters; shorter text keeps LIKE. */
+export function usesFtsIndex(ftsSearchEnabled: boolean, normalizedQuery: string): boolean {
+  return ftsSearchEnabled && normalizedQuery.length >= 3
+}
+
 function ftsQuery(normalized: string): string {
   return normalized
     .split(' ')
@@ -586,7 +600,7 @@ function orderFor(query: ArtifactQuery, ftsSearchEnabled: boolean) {
       // `listRank` uses, so a text search still surfaces the artifact people
       // actually install rather than the shortest name.
       return [
-        ...(ftsSearchEnabled && query.text !== undefined && normalizeSearchText(query.text).length >= 3
+        ...(query.text !== undefined && usesFtsIndex(ftsSearchEnabled, normalizeSearchText(query.text))
           ? [
               asc(sql`coalesce((
                 select bm25(artifact_search_fts, 8.0, 5.0, 3.0, 2.0)

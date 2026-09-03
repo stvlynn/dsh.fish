@@ -6,6 +6,8 @@
 --
 -- Not used in production: the real catalog is populated by the Cron Trigger.
 
+DELETE FROM artifact_search_documents;
+DELETE FROM artifact_topics;
 DELETE FROM artifact_categories;
 DELETE FROM artifact_search;
 DELETE FROM artifacts;
@@ -101,6 +103,21 @@ UPDATE artifacts SET popularity = (`installs` * 3 + `stars` + `downloads` / 10.0
 
 INSERT INTO artifact_search (artifact_id, haystack)
 SELECT id, lower(display_name || ' ' || summary) FROM artifacts;
+
+-- Locale-und documents so local FTS matches the production search path.
+-- Triggers keep artifact_search_fts in step; a dummy hash is enough locally.
+INSERT INTO artifact_search_documents (
+  artifact_id, locale, display_name, summary, keywords, topics, summary_hash
+)
+SELECT
+  id,
+  'und',
+  lower(display_name),
+  lower(summary),
+  lower(replace(replace(replace(keywords, '[', ''), ']', ''), '"', ' ')),
+  '',
+  'seed'
+FROM artifacts;
 
 -- GitHub Social previews. The turtle-ui row uses a real uploaded preview so
 -- local screenshots exercise the custom-image path; GitHub-sourced rows use

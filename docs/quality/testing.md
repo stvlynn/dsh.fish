@@ -208,7 +208,8 @@ with `limit`/`offset` (disjoint slices, stored `popularity` order) and clicks
 the real prev/next anchors. The widget's caret/affordance cases stay in the
 unit test. The same project covers the category taxonomy: retired `/category/*`
 slugs 301 onto the live ids, unknown ids 404, and an alias filter matches the
-canonical browse id.
+canonical browse id. `catalog-read-path.spec.ts` asserts home, `/api/v1/facets`,
+and FTS text search (`q=PostgreSQL`) return 200 against that seed.
 
 Install the browser once with `pnpm exec playwright install --with-deps chromium`.
 

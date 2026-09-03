@@ -407,6 +407,12 @@ Listings now:
 2. Select a card projection that omits `readme_markdown`.
 3. Issue `COUNT(*)` and the page as one D1 `batch`, because the Worker-to-D1
    hop dominates.
+4. Facet counts never join the wide `artifacts` row. Kind counts use covering
+   index `(deprecated, kind)`. Category and topic counts semi-join live ids
+   from `(deprecated, id)`.
+5. Text search of three or more characters uses FTS5 (`CATALOG_FTS_SEARCH`).
+   `%LIKE%` on `artifact_search_documents` is a full table scan and is only
+   the short-query / rollback path.
 
 `GET /api/v1/catalog/snapshot` still returns the whole public catalog as one
 KV-cached document — that is the third-party sync contract, not a browse
