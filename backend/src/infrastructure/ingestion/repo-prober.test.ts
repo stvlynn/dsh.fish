@@ -173,4 +173,67 @@ describe('RepoProber.indexRepository', () => {
 
     expect(snapshot?.categories).toEqual(['memory'])
   })
+
+  it('records a verified npm binding when the packument repository matches', async () => {
+    stubRawHost({
+      'package.json': JSON.stringify({
+        name: 'dsh-hud',
+        version: '0.1.0',
+        dsh: { bundle: {} },
+      }),
+    })
+
+    const snapshot = await new RepoProber(undefined, undefined, async () => ({
+      packageName: 'dsh-hud',
+      latestVersion: '0.1.0',
+    })).indexRepository(descriptor())
+
+    expect(snapshot?.source).toMatchObject({
+      origin: 'github',
+      owner: 'acme',
+      repo: 'widgets',
+      npm: { packageName: 'dsh-hud', latestVersion: '0.1.0' },
+    })
+  })
+
+  it('records a same-repo Release tarball from the curated list', async () => {
+    stubRawHost({
+      'package.json': JSON.stringify({
+        name: 'dsh-hud',
+        version: '0.1.0',
+        dsh: { bundle: {} },
+      }),
+    })
+    const tarball = 'https://github.com/acme/widgets/releases/download/v0.1.0/hud.tgz'
+
+    const snapshot = await new RepoProber(undefined, undefined, async () => undefined).indexRepository(
+      descriptor(),
+      undefined,
+      undefined,
+      [],
+      { tarball },
+    )
+
+    expect(snapshot?.source).toMatchObject({ origin: 'github', releaseTarball: tarball })
+  })
+
+  it('drops a tarball that is not this repository', async () => {
+    stubRawHost({
+      'package.json': JSON.stringify({
+        name: 'dsh-hud',
+        version: '0.1.0',
+        dsh: { bundle: {} },
+      }),
+    })
+
+    const snapshot = await new RepoProber(undefined, undefined, async () => undefined).indexRepository(
+      descriptor(),
+      undefined,
+      undefined,
+      [],
+      { tarball: 'https://github.com/evil/repo/releases/download/v1/p.tgz' },
+    )
+
+    expect(snapshot?.source.origin === 'github' && snapshot.source.releaseTarball).toBeUndefined()
+  })
 })

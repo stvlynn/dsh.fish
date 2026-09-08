@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { HubClient, InstallPlan, InstallStep } from './hub-client.js'
-import { InstallRefused, PlanInstaller, packageNameFromSpec } from './installer.js'
+import {
+  InstallRefused,
+  PlanInstaller,
+  ndjsonError,
+  packageNameFromSpec,
+  pluginMutationArgs,
+} from './installer.js'
 import { listLocked, readLock } from './lockfile.js'
 
 function plan(overrides: Partial<InstallPlan> & { steps: InstallStep[] }): InstallPlan {
@@ -29,6 +35,53 @@ describe('packageNameFromSpec', () => {
 
   it('uses the repo name of a git spec', () => {
     expect(packageNameFromSpec(`github:acme/thing#${'a'.repeat(40)}`)).toBe('thing')
+  })
+})
+
+describe('pluginMutationArgs', () => {
+  it('adds --reporter=ndjson on add, and -w only at a workspace root', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    const plain = join(home, 'plain')
+    const workspace = join(home, 'workspace')
+    await mkdir(plain, { recursive: true })
+    await mkdir(workspace, { recursive: true })
+    await writeFile(join(workspace, 'pnpm-workspace.yaml'), 'packages: []\n')
+
+    expect(pluginMutationArgs('web', 'add', 'dsh-context', plain)).toEqual([
+      'plugin',
+      '--profile',
+      'web',
+      'add',
+      'dsh-context',
+      '--reporter=ndjson',
+    ])
+    expect(pluginMutationArgs('local-dsh', 'add', 'dsh-context', workspace)).toEqual([
+      'plugin',
+      '--profile',
+      'local-dsh',
+      'add',
+      '-w',
+      'dsh-context',
+      '--reporter=ndjson',
+    ])
+    expect(pluginMutationArgs('local-dsh', 'remove', 'dsh-context', workspace)).toEqual([
+      'plugin',
+      '--profile',
+      'local-dsh',
+      'remove',
+      '-w',
+      'dsh-context',
+    ])
+  })
+})
+
+describe('ndjsonError', () => {
+  it('picks the last pnpm diagnostic out of a progress stream', () => {
+    const stdout = [
+      '{"name":"pnpm:fetching-progress","downloaded":12}',
+      '{"err":{"code":"ERR_PNPM_ADDING_TO_ROOT"},"message":"ERR_PNPM_ADDING_TO_ROOT  Cannot install in a workspace root without -w"}',
+    ].join('\n')
+    expect(ndjsonError(stdout)).toContain('ERR_PNPM_ADDING_TO_ROOT')
   })
 })
 
@@ -151,7 +204,14 @@ describe('PlanInstaller', () => {
       { allowBuildScripts: false, signal: new AbortController().signal },
     )
 
-    expect(calls[0]).toEqual(['plugin', '--profile', 'web', 'add', 'dsh-hello@1.2.3'])
+    expect(calls[0]).toEqual([
+      'plugin',
+      '--profile',
+      'web',
+      'add',
+      'dsh-hello@1.2.3',
+      '--reporter=ndjson',
+    ])
     expect(listLocked(await readLock(home), 'web')[0]?.packages).toEqual([
       { spec: 'dsh-hello@1.2.3', name: 'dsh-hello' },
     ])
@@ -189,7 +249,14 @@ describe('PlanInstaller', () => {
       { allowBuildScripts: false, signal: new AbortController().signal },
     )
 
-    expect(calls[0]).toEqual(['plugin', '--profile', 'local-dsh', 'add', 'dsh-hello@1.2.3'])
+    expect(calls[0]).toEqual([
+      'plugin',
+      '--profile',
+      'local-dsh',
+      'add',
+      'dsh-hello@1.2.3',
+      '--reporter=ndjson',
+    ])
     expect(listLocked(await readLock(home), 'local-dsh')).toHaveLength(1)
   })
 
@@ -224,9 +291,64 @@ describe('PlanInstaller', () => {
       )
 
     expect(failure?.code).toBe('PACKAGE_INSTALL_FAILED')
-    expect(failure?.message).toContain('dsh plugin --profile local-dsh add @dsh-fish/hub')
+    expect(failure?.message).toContain(
+      'dsh plugin --profile local-dsh add @dsh-fish/hub --reporter=ndjson',
+    )
     expect(failure?.message).toContain('is not on PATH')
     expect(failure?.message).toContain(process.env['PATH'] ?? '(PATH unset)')
+  })
+
+  it('injects -w on a workspace profile and surfaces the ndjson error', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    await mkdir(join(home, 'profiles/local-dsh'), { recursive: true })
+    await writeFile(join(home, 'profiles/local-dsh/pnpm-workspace.yaml'), 'packages: []\n')
+
+    const calls: string[][] = []
+    const installer = new PlanInstaller(client(), 'local-dsh', {
+      home,
+      run: async (_file, args) => {
+        calls.push([...args])
+        throw Object.assign(new Error('dsh: pnpm failed in profile directory'), {
+          stdout:
+            '{"err":{"code":"ERR_PNPM_ADDING_TO_ROOT"},"message":"ERR_PNPM_ADDING_TO_ROOT  Cannot install"}',
+          stderr: 'dsh: pnpm failed in profile directory',
+        })
+      },
+    })
+
+    const failure = await installer
+      .apply(
+        plan({
+          kind: 'bundle',
+          profile: 'local-dsh',
+          steps: [
+            {
+              type: 'add-package',
+              profile: 'local-dsh',
+              spec: 'dsh-context',
+              requiresBuildAllowance: false,
+            },
+          ],
+        }),
+        { allowBuildScripts: false, signal: new AbortController().signal },
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error as InstallRefused,
+      )
+
+    expect(calls[0]).toEqual([
+      'plugin',
+      '--profile',
+      'local-dsh',
+      'add',
+      '-w',
+      'dsh-context',
+      '--reporter=ndjson',
+    ])
+    expect(failure?.code).toBe('PACKAGE_INSTALL_FAILED')
+    expect(failure?.message).toContain('ERR_PNPM_ADDING_TO_ROOT')
+    expect(failure?.message).not.toContain('dsh: pnpm failed in profile directory')
   })
 
   it('refuses remove when the lockfile has no matching row', async () => {

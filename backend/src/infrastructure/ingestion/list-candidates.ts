@@ -12,6 +12,10 @@ import { canonicalCategoryId } from '../../domain/artifact/category.js'
 export interface ListCandidate {
   readonly url: string
   readonly category?: string
+  /** Repo-verified npm package name, when the curated list recorded one. */
+  readonly npm?: string
+  /** GitHub Release `.tgz` URL, when the curated list recorded one. */
+  readonly tarball?: string
 }
 
 export function extractAwesomeDshPlugin(body: unknown): readonly ListCandidate[] {
@@ -30,10 +34,14 @@ function candidatesOf(body: unknown, key: 'plugins' | 'items'): readonly ListCan
     const url = record?.url
     if (typeof url !== 'string') return []
     const category = record?.category
+    const npm = record?.npm
+    const tarball = record?.tarball
     return [
       {
         url,
         ...(typeof category === 'string' && category.trim() !== '' ? { category } : {}),
+        ...(typeof npm === 'string' && npm.trim() !== '' ? { npm: npm.trim() } : {}),
+        ...(typeof tarball === 'string' && tarball.trim() !== '' ? { tarball: tarball.trim() } : {}),
       },
     ]
   })
