@@ -100,7 +100,10 @@ test.describe('product docs on a desktop', () => {
   test('publishing a bundle and scoring are their own documents', async ({ page }) => {
     await openDocs(page, '/docs/publish/bundle')
     await expect(page.getByRole('heading', { level: 1, name: 'Bundles' })).toBeVisible()
-    await expect(page.locator('article pre').first()).toContainText('dsh.bundle.patch')
+    await expect(page.locator('article')).toContainText('dsh.bundle.patch')
+    await expect(page.locator('article pre').first()).toContainText(
+      '"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }',
+    )
     await shot(page, 'docs-bundle-light')
 
     await page
