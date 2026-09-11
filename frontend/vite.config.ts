@@ -71,7 +71,12 @@ export default defineConfig({
     fumadocsMdx(),
     // Runs dev and preview inside workerd, so local behavior matches production
     // bindings rather than a Node emulation of them.
-    cloudflare({ viteEnvironment: { name: 'ssr' } }),
+    cloudflare({
+      viteEnvironment: { name: 'ssr' },
+      // CI uses local fixtures and has no Cloudflare account credentials.
+      // Production deployment still reads the remote VPC binding from Wrangler.
+      remoteBindings: !process.env.CI,
+    }),
     tailwindcss(),
     reactRouter(),
     tsconfigPaths(),
