@@ -5,6 +5,7 @@ import type {
 } from '../../application/port/readme-localization.js'
 import type { HubEnv } from '../config/env.js'
 import type { ReadmeI18nAgent } from './readme-i18n-agent.js'
+import { readmeI18nShardName } from './readme-i18n-shards.js'
 
 export class AgentsReadmeLocalizationScheduler implements ReadmeLocalizationScheduler {
   constructor(
@@ -15,7 +16,7 @@ export class AgentsReadmeLocalizationScheduler implements ReadmeLocalizationSche
   async schedule(input: ScheduleReadmeLocalizationInput): Promise<void> {
     const agent = await getAgentByName<HubEnv, ReadmeI18nAgent>(
       this.namespace,
-      String(input.artifactId),
+      readmeI18nShardName(String(input.artifactId)),
     )
     await agent.enqueueReadme({ ...input, locales: this.locales })
   }

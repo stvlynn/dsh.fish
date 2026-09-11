@@ -8,23 +8,38 @@ import type { SummaryTranslation } from '../../domain/artifact/summary-translati
 import { slug } from '../../domain/shared/slug.js'
 import type { HubEnv } from '../config/env.js'
 import { D1ArtifactRepository } from '../persistence/d1-artifact-repository.js'
+import { D1ReadmeTranslationChunkRepository } from '../persistence/d1-readme-translation-chunk-repository.js'
 import { D1ReadmeTranslationRepository } from '../persistence/d1-readme-translation-repository.js'
 import { D1SummaryTranslationRepository } from '../persistence/d1-summary-translation-repository.js'
 import * as schema from '../persistence/schema.js'
+import { translateWithLmStudio } from './lm-studio-readme-translator.js'
 import {
-  translateReadmeWithDeepSeek,
-  translateSummaryWithDeepSeek,
-} from './deepseek-readme-translator.js'
-import {
-  translateReadmeWithOpenCodeGo,
-  translateSummaryWithOpenCodeGo,
-} from './opencode-go-readme-translator.js'
+  preserveBoundaryNewlines,
+  splitReadmeForTranslation,
+} from './readme-translation-chunks.js'
 
 export interface EnqueueReadmeInput extends ScheduleReadmeLocalizationInput {
   readonly locales: readonly string[]
 }
 
-interface TranslateLocaleTask {
+interface TranslateSummaryTask {
+  readonly artifactId: string
+  readonly locale: string
+  readonly summaryHash: string
+}
+
+interface TranslateReadmeChunkTask {
+  readonly artifactId: string
+  readonly locale: string
+  readonly sourceHash: string
+  readonly chunkIndex: number
+  readonly chunkCount: number
+  readonly text: string
+  readonly translate: boolean
+}
+
+/** Payload retained so pre-deployment queue entries can drain as safe no-ops. */
+interface LegacyTranslateLocaleTask {
   readonly artifactId: string
   readonly locale: string
   readonly sourceHash?: string
@@ -34,16 +49,10 @@ interface TranslateLocaleTask {
 const LOCALE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/
 
 /**
- * Durable localization worker, sharded by artifact id.
- *
- * Each artifact gets an independent Agent instance and FIFO. A failing README
- * therefore cannot block translations for the rest of the catalog. The queue
- * durably accepts work before this RPC returns; per-task retries happen inside
- * the callback so queue-level head-of-line backoff is avoided.
- *
- * One task per locale covers both the README and the summary. Each half skips
- * itself when its stored row is already current, so a retry after a partial
- * failure only pays for the half that is still missing.
+ * Durable localization worker. The scheduler maps the catalog onto a fixed
+ * number of these FIFO queues, bounding aggregate LM Studio concurrency.
+ * README chunks make progress independently and are assembled from D1 once
+ * every chunk for the current source hash is present.
  */
 export class ReadmeI18nAgent extends Agent<HubEnv> {
   async enqueueReadme(input: EnqueueReadmeInput): Promise<void> {
@@ -53,111 +62,147 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
       throw new Error('README localization needs valid target locales.')
     }
 
-    const sourceHash =
-      input.markdown === undefined ? undefined : await readmeDigest(input.markdown)
+    const markdown = input.markdown?.trim() === '' ? undefined : input.markdown
+    const sourceHash = markdown === undefined ? undefined : await readmeDigest(markdown)
     const summaryHash = await readmeDigest(input.summary)
-    // Also advances the source hashes, topic membership and base FTS document;
-    // the stock backfill therefore prepares search before its rollout flag is enabled.
-    await this.artifactRepository().refreshSearchMetadata(artifactId)
-    const translations = this.translationRepository()
-    const summaries = this.summaryRepository()
+    const chunks = markdown === undefined ? [] : splitReadmeForTranslation(markdown)
 
+    await this.artifactRepository().refreshSearchMetadata(artifactId)
+    const readmes = this.translationRepository()
+    const summaries = this.summaryRepository()
+    const pendingReadmes: Array<{
+      readonly locale: string
+      readonly completed: ReadonlySet<number>
+    }> = []
+
+    // Short summaries are queued before long READMEs so translated catalog
+    // listings become useful early in a multi-day backfill.
     for (const locale of locales) {
-      const task: TranslateLocaleTask = { artifactId, locale, sourceHash, summaryHash }
-      const readmeStale = sourceHash !== undefined && (await this.isStale(translations, task))
-      const summaryStale = await this.isStale(summaries, task)
-      if (!readmeStale && !summaryStale) {
-        await this.artifactRepository().refreshLocalizedSearchDocument(artifactId, locale)
-        continue
+      const summary = await summaries.find(artifactId, locale)
+      const summaryStale = summary?.sourceHash !== summaryHash || summary.status === 'failed'
+      if (summaryStale) {
+        const task: TranslateSummaryTask = { artifactId, locale, summaryHash }
+        await summaries.save(summaryRecord(task, 'pending'))
+        await this.queue('translateSummary', task, {
+          retry: { maxAttempts: 1 },
+        })
       }
 
-      if (readmeStale) await translations.save(readmeRecord(task, 'pending'))
-      if (summaryStale) await summaries.save(summaryRecord(task, 'pending'))
-      await this.queue('translateLocale', task, {
-        // `translateLocale` owns retries so it can persist a terminal failure.
-        retry: { maxAttempts: 1 },
-      })
+      let readmeStale = false
+      if (sourceHash !== undefined) {
+        const readme = await readmes.find(artifactId, locale)
+        readmeStale = readme?.sourceHash !== sourceHash || readme.status === 'failed'
+        if (readmeStale) {
+          await readmes.save(readmeRecord({ artifactId, locale, sourceHash }, 'pending'))
+          const completed = await this.chunkRepository().prepare(artifactId, locale, sourceHash)
+          pendingReadmes.push({ locale, completed })
+        }
+      }
+
+      if (!summaryStale && !readmeStale) {
+        await this.artifactRepository().refreshLocalizedSearchDocument(artifactId, locale)
+      }
+    }
+
+    for (const { locale, completed } of pendingReadmes) {
+      for (const chunk of chunks) {
+        if (completed.has(chunk.index)) continue
+        const task: TranslateReadmeChunkTask = {
+          artifactId,
+          locale,
+          sourceHash: sourceHash!,
+          chunkIndex: chunk.index,
+          chunkCount: chunks.length,
+          text: chunk.text,
+          translate: chunk.translate,
+        }
+        await this.queue('translateReadmeChunk', task, {
+          retry: { maxAttempts: 1 },
+        })
+      }
     }
   }
 
-  async translateLocale(
-    task: TranslateLocaleTask,
-    _queueItem: QueueItem<TranslateLocaleTask>,
+  async translateSummary(
+    task: TranslateSummaryTask,
+    _queueItem: QueueItem<TranslateSummaryTask>,
   ): Promise<void> {
     const artifactId = slug(task.artifactId)
     const artifact = await this.artifactRepository().findById(artifactId)
-    const failures: string[] = []
-
-    // A part whose source changed while the task waited is owned by a newer
-    // ingestion call; this old task must not overwrite its status or prose.
-    const markdown = artifact?.readmeMarkdown
-    if (markdown !== undefined && (await readmeDigest(markdown)) === task.sourceHash) {
-      const existing = await this.translationRepository().find(artifactId, task.locale)
-      if (existing?.sourceHash !== task.sourceHash || existing.status !== 'completed') {
-        try {
-          const translated = await this.retry(
-            () => this.translate('readme', markdown, task.locale),
-            { maxAttempts: 3, baseDelayMs: 1_000, maxDelayMs: 8_000 },
-          )
-          await this.translationRepository().save(readmeRecord(task, 'completed', { markdown: translated }))
-        } catch (error) {
-          await this.translationRepository().save(readmeRecord(task, 'failed', { error: describe(error) }))
-          failures.push(`readme: ${describe(error)}`)
-        }
-      }
-    }
-
     const summary = artifact?.summary
-    if (summary !== undefined && summary !== '' && (await readmeDigest(summary)) === task.summaryHash) {
-      const existing = await this.summaryRepository().find(artifactId, task.locale)
-      if (existing?.sourceHash !== task.summaryHash || existing.status !== 'completed') {
-        try {
-          const translated = await this.retry(
-            () => this.translate('summary', summary, task.locale),
+    if (
+      summary === undefined ||
+      summary === '' ||
+      (await readmeDigest(summary)) !== task.summaryHash
+    ) {
+      return
+    }
+    const existing = await this.summaryRepository().find(artifactId, task.locale)
+    if (existing?.sourceHash !== task.summaryHash || existing.status === 'completed') return
+
+    try {
+      const translated = await this.retry(
+        () => translateWithLmStudio(this.env.I18N_MODEL, summary, task.locale, 'summary'),
+        { maxAttempts: 3, baseDelayMs: 1_000, maxDelayMs: 8_000 },
+      )
+      await this.summaryRepository().save(summaryRecord(task, 'completed', { text: translated }))
+      await this.artifactRepository().refreshLocalizedSearchDocument(artifactId, task.locale)
+    } catch (error) {
+      await this.summaryRepository().save(summaryRecord(task, 'failed', { error: describe(error) }))
+      throw error
+    }
+  }
+
+  async translateReadmeChunk(
+    task: TranslateReadmeChunkTask,
+    _queueItem: QueueItem<TranslateReadmeChunkTask>,
+  ): Promise<void> {
+    const artifactId = slug(task.artifactId)
+    const existing = await this.translationRepository().find(artifactId, task.locale)
+    if (existing?.sourceHash !== task.sourceHash || existing.status === 'completed') return
+
+    try {
+      const translated = task.translate
+        ? await this.retry(
+            async () =>
+              preserveBoundaryNewlines(
+                task.text,
+                await translateWithLmStudio(
+                  this.env.I18N_MODEL,
+                  task.text,
+                  task.locale,
+                  'readme',
+                ),
+              ),
             { maxAttempts: 3, baseDelayMs: 1_000, maxDelayMs: 8_000 },
           )
-          await this.summaryRepository().save(summaryRecord(task, 'completed', { text: translated }))
-        } catch (error) {
-          await this.summaryRepository().save(summaryRecord(task, 'failed', { error: describe(error) }))
-          failures.push(`summary: ${describe(error)}`)
-        }
-      }
+        : task.text
+      const chunks = this.chunkRepository()
+      await chunks.save({ ...task, artifactId, text: translated })
+      const markdown = await chunks.assemble(
+        artifactId,
+        task.locale,
+        task.sourceHash,
+        task.chunkCount,
+      )
+      if (markdown === undefined) return
+
+      await this.translationRepository().save(readmeRecord(task, 'completed', { markdown }))
+      await chunks.clear(artifactId, task.locale, task.sourceHash)
+      await this.artifactRepository().refreshLocalizedSearchDocument(artifactId, task.locale)
+    } catch (error) {
+      await this.translationRepository().save(
+        readmeRecord(task, 'failed', { error: describe(error) }),
+      )
+      throw error
     }
-
-    if (failures.length > 0) throw new Error(failures.join('; '))
-    await this.artifactRepository().refreshLocalizedSearchDocument(artifactId, task.locale)
   }
 
-  /**
-   * Off-peak the paid DeepSeek leg runs first (thinking disabled, cached
-   * prefix); during its peak pricing hours it suspends itself and the
-   * OpenCode Go chain carries the load. Any DeepSeek failure likewise falls
-   * through to Go.
-   */
-  private async translate(kind: 'readme' | 'summary', text: string, locale: string): Promise<string> {
-    const deepseekKey = this.env.DEEPSEEK_API_KEY
-    if (deepseekKey !== undefined && deepseekKey.trim() !== '') {
-      try {
-        return kind === 'readme'
-          ? await translateReadmeWithDeepSeek(deepseekKey, text, locale)
-          : await translateSummaryWithDeepSeek(deepseekKey, text, locale)
-      } catch (error) {
-        console.warn('readme_i18n_deepseek_fallback', describe(error))
-      }
-    }
-    return kind === 'readme'
-      ? translateReadmeWithOpenCodeGo(this.env.OPENCODE_GO_API_KEY, text, locale)
-      : translateSummaryWithOpenCodeGo(this.env.OPENCODE_GO_API_KEY, text, locale)
-  }
-
-  private async isStale(
-    repository: D1ReadmeTranslationRepository | D1SummaryTranslationRepository,
-    task: TranslateLocaleTask,
-  ): Promise<boolean> {
-    const existing = await repository.find(slug(task.artifactId), task.locale)
-    const hash = repository instanceof D1SummaryTranslationRepository ? task.summaryHash : task.sourceHash
-    return existing?.sourceHash !== hash || existing?.status === 'failed'
-  }
+  /** Old per-locale tasks drain safely after the deployment. */
+  async translateLocale(
+    _task: LegacyTranslateLocaleTask,
+    _queueItem: QueueItem<LegacyTranslateLocaleTask>,
+  ): Promise<void> {}
 
   private artifactRepository(): D1ArtifactRepository {
     return new D1ArtifactRepository(drizzle(this.env.DB, { schema }))
@@ -170,14 +215,21 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
   private summaryRepository(): D1SummaryTranslationRepository {
     return new D1SummaryTranslationRepository(drizzle(this.env.DB, { schema }))
   }
+
+  private chunkRepository(): D1ReadmeTranslationChunkRepository {
+    return new D1ReadmeTranslationChunkRepository(drizzle(this.env.DB, { schema }))
+  }
 }
 
 function readmeRecord(
-  task: TranslateLocaleTask,
+  task: {
+    readonly artifactId: string
+    readonly locale: string
+    readonly sourceHash: string
+  },
   status: ReadmeTranslation['status'],
   result: { readonly markdown?: string; readonly error?: string } = {},
 ): ReadmeTranslation {
-  if (task.sourceHash === undefined) throw new Error('README task has no source hash.')
   return {
     artifactId: slug(task.artifactId),
     locale: task.locale,
@@ -190,7 +242,7 @@ function readmeRecord(
 }
 
 function summaryRecord(
-  task: TranslateLocaleTask,
+  task: TranslateSummaryTask,
   status: SummaryTranslation['status'],
   result: { readonly text?: string; readonly error?: string } = {},
 ): SummaryTranslation {

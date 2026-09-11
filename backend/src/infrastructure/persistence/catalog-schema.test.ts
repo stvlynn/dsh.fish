@@ -5,8 +5,10 @@ import reviewsMigrationSql from '../../../migrations/0006_lucky_firestar.sql?raw
 import popularityMigrationSql from '../../../migrations/0008_artifact_popularity.sql?raw'
 import searchMigrationSql from '../../../migrations/0009_flimsy_machine_man.sql?raw'
 import facetIndexSql from '../../../migrations/0010_artifact_facet_covering_indexes.sql?raw'
+import chunkMigrationSql from '../../../migrations/0012_famous_zemo.sql?raw'
 import journal from '../../../migrations/meta/_journal.json'
 import {
+  artifactReadmeTranslationChunks,
   artifactReadmeTranslations,
   artifactReviews,
   artifactSearchDocuments,
@@ -36,6 +38,15 @@ describe('artifact README translations', () => {
     expect(readmeMigrationSql).toContain('CREATE TABLE `artifact_readme_translations`')
     expect(readmeMigrationSql).not.toContain('CREATE TABLE `artifact_metrics`')
     expect(journal.entries.map((entry) => entry.tag)).toContain('0005_minor_ultimo')
+  })
+})
+
+describe('artifact README translation chunks', () => {
+  it('keeps the resumable chunk schema, migration and journal in step', () => {
+    expect(artifactReadmeTranslationChunks.chunkIndex.name).toBe('chunk_index')
+    expect(artifactReadmeTranslationChunks.text.notNull).toBe(true)
+    expect(chunkMigrationSql).toContain('CREATE TABLE `artifact_readme_translation_chunks`')
+    expect(journal.entries.map((entry) => entry.tag)).toContain('0012_famous_zemo')
   })
 })
 

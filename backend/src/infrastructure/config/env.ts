@@ -12,15 +12,10 @@ export interface HubEnv {
   readonly KV: KVNamespace
   /** React Router client assets served by the same Worker. */
   readonly ASSETS: Fetcher
-  /** One durable Agent instance per artifact, addressed by catalog slug. */
+  /** A small fixed set of durable Agent queues that bounds model concurrency. */
   readonly README_I18N_AGENT: DurableObjectNamespace<ReadmeI18nAgent>
-  /** OpenCode Go bearer token, stored as a Wrangler secret. */
-  readonly OPENCODE_GO_API_KEY: string
-  /**
-   * DeepSeek official API key, stored as a Wrangler secret. Optional: without
-   * it README localization runs on the OpenCode Go chain only.
-   */
-  readonly DEEPSEEK_API_KEY?: string
+  /** Private Workers VPC service backed by the Mac mini's LM Studio server. */
+  readonly I18N_MODEL: Fetcher
   /** Absolute origin the site is served from, e.g. `https://dsh.fish`. */
   readonly PUBLIC_BASE_URL: string
   readonly BETTER_AUTH_SECRET: string

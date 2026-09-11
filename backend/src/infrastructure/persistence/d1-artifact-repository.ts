@@ -240,9 +240,11 @@ export class D1ArtifactRepository implements ArtifactRepository {
       .limit(1)
     if (summaryRow?.text === null || summaryRow?.text === undefined) return
     const props = artifact.toProps()
+    const readmeMarkdown =
+      props.readmeMarkdown?.trim() === '' ? undefined : props.readmeMarkdown
     const topics = inferTopics({
       keywords: props.keywords,
-      text: [props.displayName, props.summary, props.readmeMarkdown ?? ''].join(' '),
+      text: [props.displayName, props.summary, readmeMarkdown ?? ''].join(' '),
     })
     await this.db
       .insert(artifactSearchDocuments)
@@ -254,8 +256,7 @@ export class D1ArtifactRepository implements ArtifactRepository {
         keywords: normalizeSearchText(props.keywords.join(' ')),
         topics: normalizeSearchText(topicSearchText(topics)),
         summaryHash: await readmeDigest(props.summary),
-        readmeHash:
-          props.readmeMarkdown === undefined ? null : await readmeDigest(props.readmeMarkdown),
+        readmeHash: readmeMarkdown === undefined ? null : await readmeDigest(readmeMarkdown),
       })
       .onConflictDoUpdate({
         target: [artifactSearchDocuments.artifactId, artifactSearchDocuments.locale],
@@ -470,12 +471,14 @@ export class D1ArtifactRepository implements ArtifactRepository {
 
   private async writeStatements(artifact: Artifact): Promise<BatchStatement[]> {
     const props = artifact.toProps()
+    const readmeMarkdown =
+      props.readmeMarkdown?.trim() === '' ? undefined : props.readmeMarkdown
     const summaryHash = await readmeDigest(props.summary)
     const readmeHash =
-      props.readmeMarkdown === undefined ? null : await readmeDigest(props.readmeMarkdown)
+      readmeMarkdown === undefined ? null : await readmeDigest(readmeMarkdown)
     const topics = inferTopics({
       keywords: props.keywords,
-      text: [props.displayName, props.summary, props.readmeMarkdown ?? ''].join(' '),
+      text: [props.displayName, props.summary, readmeMarkdown ?? ''].join(' '),
     })
     const values = {
       id: props.id as string,

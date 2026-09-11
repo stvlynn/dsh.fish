@@ -249,6 +249,33 @@ export const artifactReadmeTranslations = sqliteTable(
 )
 
 /**
+ * Temporary, resumable README translation output.
+ *
+ * Rows are deleted after the ordered chunks have been assembled into the
+ * current translation, so large catalogs do not permanently duplicate README
+ * storage. The source hash isolates an in-flight job from a newer README.
+ */
+export const artifactReadmeTranslationChunks = sqliteTable(
+  'artifact_readme_translation_chunks',
+  {
+    artifactId: text('artifact_id')
+      .notNull()
+      .references(() => artifacts.id, { onDelete: 'cascade' }),
+    locale: text('locale').notNull(),
+    sourceHash: text('source_hash').notNull(),
+    chunkIndex: integer('chunk_index').notNull(),
+    chunkCount: integer('chunk_count').notNull(),
+    text: text('text').notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.artifactId, table.locale, table.sourceHash, table.chunkIndex],
+    }),
+  ],
+)
+
+/**
  * Generated summary translations, one current result per artifact and locale.
  *
  * Same contract as the README table: the source hash identifies which

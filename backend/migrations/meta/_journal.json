@@ -85,6 +85,13 @@
       "when": 1788439200000,
       "tag": "0011_artifact_recent_covering_index",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789144908448,
+      "tag": "0012_famous_zemo",
+      "breakpoints": true
     }
   ]
 }

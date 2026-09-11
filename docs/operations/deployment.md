@@ -7,7 +7,10 @@ for why the two share one origin.
 ## Prerequisites
 
 - A Cloudflare account with Workers, D1, KV and Durable Objects enabled.
-- An OpenCode Go subscription and API key.
+- A Mac mini running LM Studio with `hy-mt2-1.8b`, context length 8192 and
+  four parallel slots.
+- A named Cloudflare Tunnel and HTTP Workers VPC Service targeting LM Studio
+  on port 1234.
 - `wrangler` authenticated (`pnpm dlx wrangler login`).
 - A GitHub OAuth app. Sign-in is GitHub only.
 
@@ -16,10 +19,17 @@ for why the two share one origin.
 ```sh
 pnpm dlx wrangler d1 create dsh-fish-db
 pnpm dlx wrangler kv namespace create KV
+pnpm dlx wrangler vpc service create dsh-fish-local-i18n \
+  --type http \
+  --tunnel-id <TUNNEL_UUID> \
+  --ipv4 127.0.0.1 \
+  --http-port 1234
 ```
 
 Copy the returned ids into `frontend/wrangler.jsonc`, replacing
-`REPLACE_WITH_D1_DATABASE_ID` and `REPLACE_WITH_KV_NAMESPACE_ID`.
+`REPLACE_WITH_D1_DATABASE_ID`, `REPLACE_WITH_KV_NAMESPACE_ID` and the
+`I18N_MODEL` VPC Service id. Keep `remote: true` on the VPC binding so
+`wrangler dev` can use the remote private service.
 
 ## 2. Apply migrations
 
@@ -60,9 +70,6 @@ pnpm dlx wrangler secret put GITHUB_CLIENT_ID
 pnpm dlx wrangler secret put GITHUB_CLIENT_SECRET
 pnpm dlx wrangler secret put GITHUB_TOKEN           # crawler, read-only
 pnpm dlx wrangler secret put ADMIN_EMAILS
-pnpm dlx wrangler secret put OPENCODE_GO_API_KEY     # README localization
-# Optional. Omit it so production stays on the OpenCode Go chain.
-# pnpm dlx wrangler secret put DEEPSEEK_API_KEY
 ```
 
 `PUBLIC_BASE_URL` must be the real origin. It is read by `readConfig`, which
@@ -105,23 +112,14 @@ at 20 Fast requests, aborts on 429/403, and is not a GitHub Actions job.
 Completing 20 requests does not prove Ada has no limiter. See
 [`adr-0004-artifact-ask-via-ada.md`](../decisions/adr-0004-artifact-ask-via-ada.md).
 
-README localization uses OpenCode Go with an ordered model list
-(`muse-spark-1.2-contributor` on `/zen/go/v1/responses`, then `hy3` and
-`mimo-v2.5` on `/zen/go/v1/chat/completions`). Muse Spark 1.2 Contributor is
-the high-quota Go model (heavily discounted because prompts and completions
-may train future Meta models, and availability is region-limited). The later
-models remain as fallbacks because the Go tier still enforces a rolling
-per-model usage window, and a 429, 403, 404 or provider-side 5xx falls through
-to the next model, while request or auth errors fail immediately.
-An optional `DEEPSEEK_API_KEY` still prefers DeepSeek's official API
-(`api.deepseek.com/chat/completions`, `deepseek-v4-flash` with thinking
-disabled) during off-peak hours when that secret is present. Production
-currently omits that secret so the Go chain carries every request.
-`OPENCODE_GO_API_KEY` is a Wrangler secret; `DEEPSEEK_API_KEY` is optional.
-They must never appear in `wrangler.jsonc`, `.dev.vars` committed to Git, or
-logs.
-Each successful translation logs a `readme_i18n_usage` line with the billed
-token counts (including reasoning and prompt cache hits) for spend tracking.
+README localization calls LM Studio's OpenAI-compatible chat-completions API
+through the `I18N_MODEL` Workers VPC binding. The binding is private network
+configuration, not a secret or public route. LM Studio listens on loopback;
+`cloudflared` and LM Studio must both stay running on the Mac mini. Each
+successful translation logs a structured `readme_i18n_usage` event with input
+and output token counts for throughput tracking. Do not add a silent public
+provider fallback: a private-service outage is persisted as a failed job and
+retried by the existing stale-failure sweep.
 `README_I18N_AGENT` is the Durable Object namespace in `frontend/wrangler.jsonc`.
 The Agent class is declared under Wrangler's `exports` map with SQLite storage.
 After changing a binding, regenerate the local environment declaration used to
@@ -130,6 +128,35 @@ validate the configuration:
 ```sh
 pnpm --filter @dsh-fish/frontend run cf-typegen
 ```
+
+### Local translation service
+
+LM Studio must expose only loopback port 1234; Cloudflare Tunnel carries the
+private path:
+
+```sh
+lms server start --port 1234 --bind 127.0.0.1
+lms load Hy-MT2-1.8B-Q8_0.gguf \
+  --identifier hy-mt2-1.8b \
+  --context-length 8192 \
+  --parallel 4 \
+  --yes
+curl http://127.0.0.1:1234/v1/models
+pnpm --filter @dsh-fish/frontend exec wrangler vpc service list
+cloudflared tunnel info dsh-fish-i18n-mac-mini
+```
+
+Run both LM Studio and `cloudflared` as login services on the Mac mini. A
+model response on loopback proves only the inference process; a Workers VPC
+probe is required before deploying a new policy because it also verifies the
+Tunnel connector, VPC Service host/port and Worker binding.
+
+Workers VPC requires the Tunnel connector to use QUIC (`protocol: quic` or
+`auto`) and outbound UDP 7844. If a local proxy uses fake-IP DNS, exclude
+`+.argotunnel.com` from fake-IP resolution and route that suffix directly;
+HTTP/2 can report a healthy Tunnel but cannot carry Workers VPC traffic. Use
+the numeric loopback address in the VPC Service because `localhost` still
+requires a DNS lookup inside the Tunnel data path.
 
 ## 4. Deploy
 
@@ -219,13 +246,13 @@ columns recomputed, so star history grows at cron cadence (see
 The minutely `* * * * *` trigger advances a versioned README-localization
 backfill by ten artifacts. A new translation-policy version therefore begins
 stock translation on the first trigger after deployment without flooding the
-provider with every locale for every artifact at once. The cursor is stored in
-KV and is written only after the page is durably queued. The forward-only
-cursor never revisits an artifact, so the same trigger also reschedules up to
-ten artifacts whose terminal `failed` rows are older than six hours — long
-enough for the provider's rolling usage window to reset. Each new attempt
-restamps `updated_at`, which bounds a permanently failing README to one batch
-per interval.
+four durable model queues with every locale for every artifact at once. The
+cursor is stored in KV and is written only after the page is durably queued.
+The forward-only cursor never revisits an artifact, so the hourly trigger also
+reschedules up to 100 artifacts whose terminal `failed` rows are older than
+six hours. Each new attempt restamps `updated_at`, which bounds a permanently
+failing README to one batch per interval. Selection is oldest-first to keep the
+large retry backlog fair.
 
 One firing reads a slice, not the whole topic. A Worker invocation may make
 1000 subrequests, so the run is budgeted — 200 GitHub repositories, 100 npm
@@ -266,9 +293,9 @@ Every saved artifact with a non-empty README is also handed to its durable
 deduplicates completed or pending work by README hash and locale. A changed
 README queues replacements; until each replacement completes, readers keep the
 previous completed translation rather than dropping back to the upstream
-source. OpenCode Go failures are
-retried three times with bounded exponential backoff, then persisted as
-`failed`; the minutely backfill requeues them once they are six hours stale.
+source. LM Studio failures are retried three times with bounded exponential
+backoff, then persisted as `failed`; the hourly backfill requeues up to 100
+artifacts once they are six hours stale.
 
 Trigger a sweep manually as an administrator:
 

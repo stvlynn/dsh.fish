@@ -46,12 +46,16 @@ README localization tests cover three boundaries without calling a paid model:
   a catalog write with a non-empty README;
 - the detail use case serves generated README/summary prose still on the row,
   including a previous completed body while its replacement is pending;
-- the OpenCode Go client pins the per-model endpoint (Responses for Muse Spark,
-  chat-completions for Hy3 and MiMo), walks the fallback chain on
-  403/404/429/5xx, and rejects malformed, empty or failed responses;
+- the LM Studio client pins the private chat-completions contract, full target
+  language name and Markdown-preservation instruction, and rejects unsupported
+  locales, empty output and failed responses;
+- the Markdown splitter bounds model input, preserves source bytes before
+  translation and excludes fenced code; the deterministic four-way shard
+  function bounds model concurrency;
 - the stock backfill advances durable pages, becomes a no-op when complete,
   never advances its cursor after a scheduling failure, and reschedules stale
-  terminal failures on every run;
+  terminal failures; its D1 retry query is restricted to current locales and
+  detects a missing current summary locale;
 - the schema test pins the D1 table to its migration and journal entry.
 
 `wrangler types` and `wrangler deploy --dry-run` validate the real Agent

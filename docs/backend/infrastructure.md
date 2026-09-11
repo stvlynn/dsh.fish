@@ -8,8 +8,8 @@ The infrastructure layer implements the abstractions that the domain layer defin
 - **External service clients** — HTTP clients, SDK wrappers, message publishers.
 - **Messaging adapters** — event bus, queue producers/consumers.
 - **Agent adapters** — Cloudflare Agent classes, durable task queues, the
-  OpenCode Go HTTP client, and scheduler/backfill adapters behind application
-  ports.
+  Workers VPC LM Studio client, resumable translation chunks, and
+  scheduler/backfill adapters behind application ports.
 - **Ada client** — `AdaClient` POSTs `https://api.devin.ai/ada/query` (Fast)
   then opens the query WebSocket. Live Fast tokens arrive as
   `{ type: "chunk", data: "<token>" }`; the adapter also accepts recorded

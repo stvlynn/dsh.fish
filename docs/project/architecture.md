@@ -21,7 +21,7 @@ an agent drives.
 | Backend                   | Hono, layered DDD                                                               |
 | Database                  | Cloudflare D1 (SQLite) via Drizzle ORM                                          |
 | Cache / secondary storage | Cloudflare KV                                                                   |
-| README localization       | Cloudflare Agents SDK + OpenCode Go (`muse-spark-1.2-contributor` → `hy3` → `mimo-v2.5`) |
+| README localization       | Cloudflare Agents SDK + Workers VPC + LM Studio (`hy-mt2-1.8b`)              |
 | Auth                      | Better Auth (`better-auth-cloudflare`), GitHub OAuth + OAuth device grant       |
 | Scheduled work            | Workers Cron Triggers                                                           |
 
@@ -39,12 +39,12 @@ One Worker serves both halves of the product.
                     └───────┬───────────┬───────────┬──────────┘
                             ▼           ▼           ▼
                      D1 (catalog)    KV (sessions,   README i18n Agent
-                                     crawl state,    → OpenCode Go
+                                     crawl state,    → Workers VPC
                                      ask limiter)
-                                          │
-                                          ▼
-                                    Ada Fast query
-                                    (GitHub ask)
+                                          │              │
+                                          ▼              ▼
+                                    Ada Fast query    Cloudflare Tunnel
+                                    (GitHub ask)      → Mac mini LM Studio
 ```
 
 Sharing an origin is a deliberate choice, not an accident of packaging:
@@ -310,15 +310,19 @@ When an artifact is created or its README Markdown changes, both ingestion
 paths — scheduled
 discovery and an ownership-verified submission — call the same application
 port to durably accept localization work. Its Cloudflare Agents SDK adapter
-addresses one `ReadmeI18nAgent` instance per artifact, then queues one task per
-site locale. Per-artifact sharding prevents one failing README from blocking
-the rest of the catalog. The task reads the current source Markdown from D1,
-uses OpenCode Go to translate human prose while preserving Markdown, code,
-links and identifiers, and stores the result in
-`artifact_readme_translations`. Requests walk an ordered model fallback chain
-(`muse-spark-1.2-contributor` on the Responses API, then `hy3` and
-`mimo-v2.5` on chat-completions) so one model's exhausted usage window,
-region block or retired id does not stall the catalog.
+hashes artifacts across four named `ReadmeI18nAgent` instances. Each instance
+drains its FIFO sequentially, so aggregate inference concurrency never exceeds
+the four parallel slots configured in LM Studio.
+
+The Worker reaches the Mac mini through an HTTP Workers VPC Service bound to a
+named Cloudflare Tunnel; LM Studio is not published behind a public hostname.
+The model is `hy-mt2-1.8b` behind its OpenAI-compatible chat-completions
+endpoint. README prose is split into at most 4,000-character model chunks.
+Fenced code is not sent to the model, and oversized protected blocks are
+carried in bounded chunks. Completed pieces are stored temporarily in
+`artifact_readme_translation_chunks`, assembled in order, written to
+`artifact_readme_translations`, then deleted. A failed locale resumes from
+the chunks already stored for the same source hash.
 
 Every translation carries a SHA-256 hash of its upstream README plus an opaque
 translation-policy version so a replacement can be queued. The detail
@@ -326,7 +330,9 @@ use case keeps serving the last completed body until that replacement
 finishes; pending or failed rows without a retained body expose the original
 README instead. Queue acceptance is deduplicated by artifact, locale and hash.
 The Agent performs bounded retries itself and records terminal failures in D1,
-because the Agents SDK queue has no dead-letter queue.
+because the Agents SDK queue has no dead-letter queue. The old cloud-provider
+task method remains as a no-op for one release so entries queued before the
+model-policy change can drain without calling a retired provider.
 
 A separate minutely Cron advances a versioned KV cursor over every stored,
 non-empty README in bounded pages. Therefore a deployment that changes the
@@ -335,10 +341,12 @@ the existing hourly ingestion Cron remains unchanged. Cursor writes happen
 only after a page is accepted, and only when the page actually moved the
 cursor; repeating a page after a failure is safe because
 the per-artifact Agents deduplicate it. The hourly Cron also reschedules
-artifacts whose `failed` rows have been stale for six hours, since the
-forward-only cursor never revisits them and the provider's usage window has
-reset by then. That retry scan reads every README-bearing row, so the minutely
-Cron skips it — once an hour is often enough for a six-hour staleness window.
+artifacts whose current-locale `failed` rows have been stale for six hours,
+plus artifacts missing any current summary locale, since the forward-only
+cursor never revisits them. It starts from the narrow translation indexes and
+ignores retired locale rows; the minutely Cron skips this recovery query,
+while the hourly Cron requeues up to 100 artifacts after the cooling interval,
+oldest failure first.
 
 ## Quality score, maintenance status and star velocity
 

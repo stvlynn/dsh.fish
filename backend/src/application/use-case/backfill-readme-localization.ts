@@ -8,9 +8,9 @@ import type {
 const DEFAULT_BATCH_SIZE = 10
 
 /**
- * A terminal failure is retried only after the provider's rolling usage
- * window has had time to reset. Every attempt stamps `updatedAt`, so a
- * permanently failing README costs at most one batch per delay interval.
+ * A terminal failure is retried only after a cooling interval. Every attempt
+ * stamps `updatedAt`, so an unavailable local service costs at most one
+ * batch per interval.
  */
 const FAILED_RETRY_DELAY_MS = 6 * 60 * 60 * 1_000
 
@@ -24,9 +24,9 @@ export interface BackfillReadmeLocalizationReport {
 export interface BackfillReadmeLocalizationOptions {
   /**
    * Whether to also rescan for stale terminal failures. The scan exists to
-   * requeue failures after the provider's rolling usage window resets; it reads
-   * every README-bearing artifact, so a caller that fires every minute should
-   * leave it off and let a slower cadence (the hourly sweep) pay for it.
+   * requeue failures after the service cooling interval; it scans the
+   * translation indexes and missing-locale projection, so a caller that fires
+   * every minute should leave it off and let a slower cadence pay for it.
    * Defaults to `true` so the use case stays self-contained.
    */
   readonly retryStaleFailures?: boolean
@@ -34,7 +34,7 @@ export interface BackfillReadmeLocalizationOptions {
 
 /**
  * Incrementally schedules every stored README for the current translation
- * policy. A small batch limits provider concurrency while the minutely trigger
+ * policy. A small batch limits enqueue work while the minutely trigger
  * makes a newly deployed policy begin within the next Cron invocation.
  *
  * Cursor persistence happens only after the complete batch is accepted. If an
@@ -44,10 +44,10 @@ export interface BackfillReadmeLocalizationOptions {
  * The forward-only cursor never revisits an artifact, so a run can also
  * reschedule a bounded batch of stale terminal failures. The per-artifact
  * Agent re-queues only locales whose stored row is still `failed`; `pending`
- * and `completed` rows with a matching hash are skipped there. That scan reads
- * the whole README-bearing table, so running it every minute forever — long
- * after the backfill completed — is pure waste; callers on a fast cadence
- * disable it via `options.retryStaleFailures`.
+ * and `completed` rows with a matching hash are skipped there. Running the
+ * retry query every minute forever — long after the backfill completed — is
+ * unnecessary; callers on a fast cadence disable it via
+ * `options.retryStaleFailures`.
  */
 export class BackfillReadmeLocalization {
   constructor(

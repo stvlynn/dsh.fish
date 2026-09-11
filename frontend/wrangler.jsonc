@@ -57,6 +57,13 @@
       "id": "1baebac2338049c0a8294779adde73a7",
     },
   ],
+  "vpc_services": [
+    {
+      "binding": "I18N_MODEL",
+      "service_id": "01a09177-f3cf-7240-9cee-ff99119e839b",
+      "remote": true,
+    },
+  ],
   "triggers": {
     // Re-crawl the GitHub `dsh-plugin` topic and npm every hour.
     // The minutely trigger advances the versioned README backfill immediately

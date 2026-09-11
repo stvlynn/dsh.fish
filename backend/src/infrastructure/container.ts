@@ -92,7 +92,8 @@ export function createContainer(env: HubEnv, options: ContainerOptions): Contain
   const artifacts = new D1ArtifactRepository(db, config.catalogFtsSearch)
   const readmeTranslations = new D1ReadmeTranslationRepository(db)
   const summaryTranslations = new D1SummaryTranslationRepository(db)
-  const readmeBackfillSource = new D1ReadmeLocalizationBackfillSource(db)
+  const supportedLocales = options.supportedLocales ?? ['en']
+  const readmeBackfillSource = new D1ReadmeLocalizationBackfillSource(db, supportedLocales)
   const submissions = new D1SubmissionRepository(db)
   const reviews = new D1ReviewRepository(db)
   const identities = new D1LinkedIdentityReader(db)
@@ -130,7 +131,7 @@ export function createContainer(env: HubEnv, options: ContainerOptions): Contain
       listCatalogFacets: new ListCatalogFacets(artifacts, new KvCatalogFacetCache(env.KV)),
       listSitemapEntries: new ListSitemapEntries(
         artifacts,
-        options.supportedLocales ?? ['en'],
+        supportedLocales,
         config.seoLocaleGating,
       ),
       rateArtifact: new RateArtifact(reviews, artifacts),

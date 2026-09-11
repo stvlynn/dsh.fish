@@ -227,8 +227,8 @@ export default {
             console.error('catalog_reclassify_failed', String(error))
           }),
         container.useCases.backfillReadmeLocalization
-          // The off-peak DeepSeek leg is paid but cheap and unconstrained by
-          // the Go quota, so the stale-failure scan can run a large batch.
+          // The four Agent shards bound actual model concurrency, so this
+          // hourly pass can cheaply requeue a larger stale-failure batch.
           .execute(100)
           .then((report) => {
             console.log('readme_i18n_backfill', report)

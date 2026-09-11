@@ -18,7 +18,7 @@ const env = {
   KV: {} as never,
   ASSETS: {} as never,
   README_I18N_AGENT: {} as never,
-  OPENCODE_GO_API_KEY: 'test-key',
+  I18N_MODEL: {} as never,
   PUBLIC_BASE_URL: 'https://dsh.fish',
   BETTER_AUTH_SECRET: 'test-secret',
 } satisfies HubEnv

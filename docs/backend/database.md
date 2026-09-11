@@ -45,6 +45,10 @@ This document describes database conventions. Fill in concrete technology choice
   primary key makes repeated ingestion idempotent; the source hash prevents a
   completed translation from surviving an upstream README or model-policy
   change.
+- `artifact_readme_translation_chunks` (migration `0012_famous_zemo`) —
+  resumable output for one README, locale and source hash. Chunk rows are
+  assembled in index order and deleted after the current translation is
+  committed, avoiding permanent duplication of the catalog's wide text.
 - `artifact_summary_translations` (migration `0007_bouncy_leper_queen`) — the
   same contract for the short description: one row per artifact and locale,
   hash-pinned to the upstream summary. Listings override the DTO summary with
