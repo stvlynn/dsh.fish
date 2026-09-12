@@ -62,6 +62,7 @@ export async function translateWithLmStudio(
   if (translated === undefined || translated.trim() === '') {
     throw new Error('LM Studio returned an empty translation.')
   }
+  validateTranslation(text, translated, locale)
 
   console.info(
     JSON.stringify({
@@ -80,4 +81,37 @@ export async function translateWithLmStudio(
 
 function prompt(text: string, language: string): string {
   return `Translate the following text into ${language}. Note that you should only output the translated result without any additional explanation:\n\n${text}`
+}
+
+const TARGET_SCRIPT: Readonly<Record<string, RegExp>> = {
+  en: /\p{Script=Latin}/u,
+  'zh-CN': /\p{Script=Han}/u,
+  'zh-TW': /\p{Script=Han}/u,
+  ja: /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u,
+  ko: /\p{Script=Hangul}/u,
+  ru: /\p{Script=Cyrillic}/u,
+}
+
+const PROTECTED_LITERAL =
+  /`[^`\n]+`|https?:\/\/[^\s)>\]]+|--[A-Za-z0-9][\w-]*|@[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|\b[A-Za-z0-9_]{2,}(?:-[A-Za-z0-9_]{2,})+\b/gu
+
+function validateTranslation(source: string, translated: string, locale: string): void {
+  const sourceLetters = source.match(/\p{L}/gu)?.length ?? 0
+  const expectedScript = TARGET_SCRIPT[locale]
+  if (sourceLetters >= 4 && expectedScript !== undefined && !expectedScript.test(translated)) {
+    throw new Error(`LM Studio output does not contain the target script for ${locale}.`)
+  }
+
+  for (const match of source.matchAll(PROTECTED_LITERAL)) {
+    const literal = match[0]
+    if (!containsExactLiteral(translated, literal)) {
+      throw new Error(`LM Studio changed a protected literal: ${literal.slice(0, 120)}`)
+    }
+  }
+}
+
+function containsExactLiteral(text: string, literal: string): boolean {
+  if (literal.startsWith('`') || literal.startsWith('http')) return text.includes(literal)
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|[^A-Za-z0-9_@./-])${escaped}(?:$|[^A-Za-z0-9_@./-])`, 'u').test(text)
 }

@@ -131,6 +131,9 @@ Use Tencent's exact default Hy-MT2 translation prompt and its recommended
 default prompt can make the 1.8B model translate those instructions into the
 output. Fenced code is excluded before inference, and the simple official
 prompt preserves Markdown, inline code and URLs in the production probe.
+The worker rejects responses that lack the target script or mutate inline
+code, URLs, CLI flags, package names or hyphenated technical identifiers.
+Rejected output is retried and is never marked complete.
 
 The minutely backfill admits one artifact at a time into four versioned Agent
 queues. This rate matches the Mac mini's four inference slots without flooding
@@ -314,11 +317,11 @@ commit. File reads go to `raw.githubusercontent.com` and never spend API quota.
 Every saved artifact with a non-empty README is also handed to its durable
 `ReadmeI18nAgent`. Repeated hourly sweeps are cheap at this boundary: the Agent
 deduplicates completed or pending work by README hash and locale. A changed
-README queues replacements; until each replacement completes, readers keep the
-previous completed translation rather than dropping back to the upstream
-source. LM Studio failures are retried three times with bounded exponential
-backoff, then persisted as `failed`; the hourly backfill requeues up to 100
-artifacts once they are six hours stale.
+README queues replacements and clears generated output from the old source or
+policy, so readers fall back to the upstream source until the new translation
+completes. LM Studio failures are retried three times with bounded exponential
+backoff, then persisted as `failed`; the hourly recovery scan requeues one
+stale failed or pending artifact after the cooling interval.
 
 Trigger a sweep manually as an administrator:
 

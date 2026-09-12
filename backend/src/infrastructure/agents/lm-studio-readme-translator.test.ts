@@ -43,4 +43,43 @@ describe('translateWithLmStudio', () => {
     } as unknown as Fetcher
     await expect(translateWithLmStudio(failed, 'Text', 'ja', 'summary')).rejects.toThrow('HTTP 503')
   })
+
+  it('rejects output in the wrong target script', async () => {
+    const service = {
+      fetch: vi.fn(async () =>
+        Response.json({
+          choices: [{ message: { content: 'Still written in English.' } }],
+        }),
+      ),
+    } as unknown as Fetcher
+
+    await expect(
+      translateWithLmStudio(service, 'Translate this sentence.', 'zh-CN', 'summary'),
+    ).rejects.toThrow('target script')
+  })
+
+  it('rejects mutated technical literals', async () => {
+    const service = {
+      fetch: vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: 'Search the gh-pull-dsh-plugin topic with --force at https://example.com.',
+              },
+            },
+          ],
+        }),
+      ),
+    } as unknown as Fetcher
+
+    await expect(
+      translateWithLmStudio(
+        service,
+        'Search the dsh-plugin topic with --force at https://example.com.',
+        'en',
+        'summary',
+      ),
+    ).rejects.toThrow('protected literal')
+  })
 })
