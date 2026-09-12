@@ -3,7 +3,7 @@ const MODEL = 'hy-mt2-1.8b'
 
 const LANGUAGE_NAMES: Readonly<Record<string, string>> = {
   en: 'English',
-  'zh-CN': 'Simplified Chinese',
+  'zh-CN': 'Chinese',
   'zh-TW': 'Traditional Chinese',
   ja: 'Japanese',
   ko: 'Korean',
@@ -29,6 +29,7 @@ export async function translateWithLmStudio(
 ): Promise<string> {
   const language = LANGUAGE_NAMES[locale]
   if (language === undefined) throw new Error(`Unsupported translation locale: ${locale}`)
+  const protectedSource = protectLiterals(text)
 
   const response = await service.fetch(
     new Request(CHAT_COMPLETIONS_URL, {
@@ -39,7 +40,7 @@ export async function translateWithLmStudio(
         messages: [
           {
             role: 'user',
-            content: prompt(text, language),
+            content: prompt(protectedSource.text, language),
           },
         ],
         temperature: 0.7,
@@ -58,10 +59,11 @@ export async function translateWithLmStudio(
   }
 
   const result = (await response.json()) as ChatCompletionResponse
-  const translated = result.choices?.[0]?.message?.content
-  if (translated === undefined || translated.trim() === '') {
+  const modelOutput = result.choices?.[0]?.message?.content
+  if (modelOutput === undefined || modelOutput.trim() === '') {
     throw new Error('LM Studio returned an empty translation.')
   }
+  const translated = restoreLiterals(modelOutput, protectedSource.literals)
   validateTranslation(text, translated, locale)
 
   console.info(
@@ -93,7 +95,32 @@ const TARGET_SCRIPT: Readonly<Record<string, RegExp>> = {
 }
 
 const PROTECTED_LITERAL =
-  /`[^`\n]+`|https?:\/\/[^\s)>\]]+|--[A-Za-z0-9][\w-]*|@[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|\b(?:dsh|mcp|npm|pnpm|yarn|bun|node|github|gitlab)-[A-Za-z0-9_-]+\b/giu
+  /`[^`\n]+`|https?:\/\/[^\s)>\],;!?]*[A-Za-z0-9/#]|--[A-Za-z0-9][\w-]*|@[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|\b(?:dsh|mcp|npm|pnpm|yarn|bun|node|github|gitlab)-[A-Za-z0-9_-]+\b|\bDeepSeek Harness\b|\bdsh\b/giu
+
+const placeholder = (index: number) => `__I18N_${index}__`
+
+function protectLiterals(source: string): { readonly text: string; readonly literals: readonly string[] } {
+  const literals: string[] = []
+  const text = source.replace(PROTECTED_LITERAL, (literal) => {
+    const token = placeholder(literals.length)
+    literals.push(literal)
+    return token
+  })
+  return { text, literals }
+}
+
+function restoreLiterals(translated: string, literals: readonly string[]): string {
+  let restored = translated
+  for (const [index, literal] of literals.entries()) {
+    const token = placeholder(index)
+    const first = restored.indexOf(token)
+    if (first === -1 || restored.indexOf(token, first + token.length) !== -1) {
+      throw new Error(`LM Studio changed a protected literal: ${literal.slice(0, 120)}`)
+    }
+    restored = restored.replace(token, literal)
+  }
+  return restored
+}
 
 function validateTranslation(source: string, translated: string, locale: string): void {
   const sourceLetters = source.match(/\p{L}/gu)?.length ?? 0
@@ -101,17 +128,4 @@ function validateTranslation(source: string, translated: string, locale: string)
   if (sourceLetters >= 4 && expectedScript !== undefined && !expectedScript.test(translated)) {
     throw new Error(`LM Studio output does not contain the target script for ${locale}.`)
   }
-
-  for (const match of source.matchAll(PROTECTED_LITERAL)) {
-    const literal = match[0]
-    if (!containsExactLiteral(translated, literal)) {
-      throw new Error(`LM Studio changed a protected literal: ${literal.slice(0, 120)}`)
-    }
-  }
-}
-
-function containsExactLiteral(text: string, literal: string): boolean {
-  if (literal.startsWith('`') || literal.startsWith('http')) return text.includes(literal)
-  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?:^|[^A-Za-z0-9_@./-])${escaped}(?:$|[^A-Za-z0-9_@./-])`, 'u').test(text)
 }

@@ -132,8 +132,12 @@ default prompt can make the 1.8B model translate those instructions into the
 output. Fenced code is excluded before inference, and the simple official
 prompt preserves Markdown, inline code and URLs in the production probe.
 The worker rejects responses that lack the target script or mutate inline
-code, URLs, CLI flags, package names or known tool-prefixed identifiers.
-Rejected output is retried and is never marked complete.
+code, URLs, CLI flags, package names or known project identifiers. Protected
+literals are replaced with unique placeholders before inference and restored
+afterward; a missing or duplicated placeholder rejects the result. Invalid
+output is retried and is never marked complete. Use `Chinese`, the model card's
+supported full language name, for `zh-CN`; `Simplified Chinese` is not listed
+and can make the 1.8B model return English.
 
 The minutely backfill admits one artifact at a time into four versioned Agent
 queues. This rate matches the Mac mini's four inference slots without flooding
