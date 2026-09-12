@@ -82,4 +82,16 @@ describe('translateWithLmStudio', () => {
       ),
     ).rejects.toThrow('protected literal')
   })
+
+  it('allows natural-language hyphenated compounds to be translated', async () => {
+    const service = {
+      fetch: vi.fn(async () =>
+        Response.json({ choices: [{ message: { content: 'A search interface driven by keys.' } }] }),
+      ),
+    } as unknown as Fetcher
+
+    await expect(
+      translateWithLmStudio(service, 'A keyboard-first search interface.', 'en', 'summary'),
+    ).resolves.toBe('A search interface driven by keys.')
+  })
 })

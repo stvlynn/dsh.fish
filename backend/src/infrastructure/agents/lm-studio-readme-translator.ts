@@ -93,7 +93,7 @@ const TARGET_SCRIPT: Readonly<Record<string, RegExp>> = {
 }
 
 const PROTECTED_LITERAL =
-  /`[^`\n]+`|https?:\/\/[^\s)>\]]+|--[A-Za-z0-9][\w-]*|@[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|\b[A-Za-z0-9_]{2,}(?:-[A-Za-z0-9_]{2,})+\b/gu
+  /`[^`\n]+`|https?:\/\/[^\s)>\]]+|--[A-Za-z0-9][\w-]*|@[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|\b(?:dsh|mcp|npm|pnpm|yarn|bun|node|github|gitlab)-[A-Za-z0-9_-]+\b/giu
 
 function validateTranslation(source: string, translated: string, locale: string): void {
   const sourceLetters = source.match(/\p{L}/gu)?.length ?? 0

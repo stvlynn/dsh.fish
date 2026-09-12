@@ -6,7 +6,7 @@
  * A changed policy clears the previous body when the replacement is queued,
  * preventing output from a retired or invalid policy from being served.
  */
-export const README_TRANSLATION_POLICY_VERSION = 'lm-studio-hy-mt2-1.8b-chunked-v4'
+export const README_TRANSLATION_POLICY_VERSION = 'lm-studio-hy-mt2-1.8b-chunked-v5'
 
 /** Stable identity for the exact README bytes and translation policy. */
 export async function readmeDigest(markdown: string): Promise<string> {

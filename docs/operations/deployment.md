@@ -132,7 +132,7 @@ default prompt can make the 1.8B model translate those instructions into the
 output. Fenced code is excluded before inference, and the simple official
 prompt preserves Markdown, inline code and URLs in the production probe.
 The worker rejects responses that lack the target script or mutate inline
-code, URLs, CLI flags, package names or hyphenated technical identifiers.
+code, URLs, CLI flags, package names or known tool-prefixed identifiers.
 Rejected output is retried and is never marked complete.
 
 The minutely backfill admits one artifact at a time into four versioned Agent
