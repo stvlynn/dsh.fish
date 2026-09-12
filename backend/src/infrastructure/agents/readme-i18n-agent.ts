@@ -52,6 +52,7 @@ interface LegacyTranslateLocaleTask {
 }
 
 const LOCALE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/
+const QUEUE_RETRY = { maxAttempts: 5, baseDelayMs: 2_000, maxDelayMs: 30_000 } as const
 
 /**
  * Durable localization worker. The scheduler maps the catalog onto a fixed
@@ -97,7 +98,7 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
           retainPreviousBody: !summarySourceChanged,
         })
         await this.queue('translateSummary', task, {
-          retry: { maxAttempts: 1 },
+          retry: QUEUE_RETRY,
         })
       }
 
@@ -134,7 +135,7 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
           policyVersion: README_TRANSLATION_POLICY_VERSION,
         }
         await this.queue('translateReadmeChunk', task, {
-          retry: { maxAttempts: 1 },
+          retry: QUEUE_RETRY,
         })
       }
     }

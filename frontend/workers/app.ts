@@ -229,9 +229,10 @@ export default {
             console.error('catalog_reclassify_failed', String(error))
           }),
         container.useCases.backfillReadmeLocalization
-          // The four Agent shards bound actual model concurrency, so this
-          // hourly pass can cheaply requeue a larger stale-failure batch.
-          .execute(100)
+          // The hourly run overlaps D1-heavy ingestion and reclassification.
+          // Admit one forward item and at most one cooled retry rather than
+          // recreating the old 100 + 100 write burst.
+          .execute(1)
           .then((report) => {
             console.log('readme_i18n_backfill', report)
           })

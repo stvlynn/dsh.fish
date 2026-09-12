@@ -1,5 +1,5 @@
 const SHARD_COUNT = 4
-const SHARD_GENERATION = 'v2'
+const SHARD_GENERATION = 'v3'
 
 export function readmeI18nShardName(artifactId: string): string {
   let hash = 2_166_136_261

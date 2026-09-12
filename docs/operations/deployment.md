@@ -138,7 +138,11 @@ D1 with pending chunk writes. A policy change must bump both the digest policy
 and queue generation; queued tasks carry the policy version so an older queue
 drains as no-ops instead of calling the model. Queuing a new source or policy
 also clears its previous generated body, so output from an invalidated policy
-is not served while its replacement is pending.
+is not served while its replacement is pending. Each queued operation retries
+transient dependency errors with bounded backoff; the hourly recovery scan also
+requeues pending rows that have not advanced past the cooling interval. Keep
+the hourly batch at one because it shares its invocation with D1-heavy catalog
+ingestion and reclassification.
 `README_I18N_AGENT` is the Durable Object namespace in `frontend/wrangler.jsonc`.
 The Agent class is declared under Wrangler's `exports` map with SQLite storage.
 After changing a binding, regenerate the local environment declaration used to

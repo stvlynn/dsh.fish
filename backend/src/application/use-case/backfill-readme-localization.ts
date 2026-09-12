@@ -8,9 +8,9 @@ import type {
 const DEFAULT_BATCH_SIZE = 10
 
 /**
- * A terminal failure is retried only after a cooling interval. Every attempt
- * stamps `updatedAt`, so an unavailable local service costs at most one
- * batch per interval.
+ * A terminal failure or abandoned pending task is retried only after a cooling
+ * interval. Every attempt stamps `updatedAt`, so an unavailable dependency
+ * costs at most one retry batch per interval.
  */
 const FAILED_RETRY_DELAY_MS = 6 * 60 * 60 * 1_000
 
