@@ -194,7 +194,9 @@ export default {
         container.useCases.backfillReadmeLocalization
           // The stale-failure rescan reads every README-bearing row; the
           // hourly branch below pays for it once an hour instead.
-          .execute(undefined, { retryStaleFailures: false })
+          // One artifact per minute matches the four-slot Mac mini model's
+          // measured capacity and avoids building a D1-heavy queue backlog.
+          .execute(1, { retryStaleFailures: false })
           .then((report) => {
             console.log('readme_i18n_backfill', report)
           })

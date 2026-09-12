@@ -7,11 +7,22 @@ describe('translateWithLmStudio', () => {
       const body = (await request.json()) as {
         model: string
         messages: readonly { content: string }[]
+        temperature: number
+        top_p: number
+        top_k: number
+        repetition_penalty: number
       }
       expect(request.url).toBe('http://localhost:1234/v1/chat/completions')
       expect(body.model).toBe('hy-mt2-1.8b')
-      expect(body.messages[0]?.content).toContain('Simplified Chinese')
-      expect(body.messages[0]?.content).toContain('Preserve Markdown')
+      expect(body.messages[0]?.content).toBe(
+        'Translate the following text into Simplified Chinese. Note that you should only output the translated result without any additional explanation:\n\n# Title',
+      )
+      expect(body).toMatchObject({
+        temperature: 0.7,
+        top_p: 0.6,
+        top_k: 20,
+        repetition_penalty: 1.05,
+      })
       return Response.json({ choices: [{ message: { content: '译文' } }] })
     })
 

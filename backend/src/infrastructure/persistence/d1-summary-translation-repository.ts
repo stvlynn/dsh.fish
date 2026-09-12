@@ -45,7 +45,10 @@ export class D1SummaryTranslationRepository implements SummaryTranslationReposit
     return rows.map(toTranslation)
   }
 
-  async save(translation: SummaryTranslation): Promise<void> {
+  async save(
+    translation: SummaryTranslation,
+    options: { readonly retainPreviousBody?: boolean } = {},
+  ): Promise<void> {
     const values = {
       artifactId: String(translation.artifactId),
       locale: translation.locale,
@@ -62,7 +65,10 @@ export class D1SummaryTranslationRepository implements SummaryTranslationReposit
         target: [artifactSummaryTranslations.artifactId, artifactSummaryTranslations.locale],
         set: {
           ...values,
-          text: sql`coalesce(excluded.text, ${artifactSummaryTranslations.text})`,
+          text:
+            options.retainPreviousBody === false
+              ? values.text
+              : sql`coalesce(excluded.text, ${artifactSummaryTranslations.text})`,
         },
       })
   }

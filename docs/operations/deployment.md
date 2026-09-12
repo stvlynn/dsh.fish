@@ -124,6 +124,21 @@ successful translation logs a structured `readme_i18n_usage` event with input
 and output token counts for throughput tracking. Do not add a silent public
 provider fallback: a private-service outage is persisted as a failed job and
 retried by the existing stale-failure sweep.
+
+Use Tencent's exact default Hy-MT2 translation prompt and its recommended
+1.8B/7B sampling parameters (`temperature=0.7`, `top_p=0.6`, `top_k=20`,
+`repetition_penalty=1.05`). Adding prose-preservation instructions to the
+default prompt can make the 1.8B model translate those instructions into the
+output. Fenced code is excluded before inference, and the simple official
+prompt preserves Markdown, inline code and URLs in the production probe.
+
+The minutely backfill admits one artifact at a time into four versioned Agent
+queues. This rate matches the Mac mini's four inference slots without flooding
+D1 with pending chunk writes. A policy change must bump both the digest policy
+and queue generation; queued tasks carry the policy version so an older queue
+drains as no-ops instead of calling the model. Queuing a new source or policy
+also clears its previous generated body, so output from an invalidated policy
+is not served while its replacement is pending.
 `README_I18N_AGENT` is the Durable Object namespace in `frontend/wrangler.jsonc`.
 The Agent class is declared under Wrangler's `exports` map with SQLite storage.
 After changing a binding, regenerate the local environment declaration used to

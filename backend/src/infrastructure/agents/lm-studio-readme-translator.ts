@@ -39,10 +39,13 @@ export async function translateWithLmStudio(
         messages: [
           {
             role: 'user',
-            content: prompt(text, language, kind),
+            content: prompt(text, language),
           },
         ],
-        temperature: 0,
+        temperature: 0.7,
+        top_p: 0.6,
+        top_k: 20,
+        repetition_penalty: 1.05,
         max_tokens: 4_096,
         stream: false,
       }),
@@ -75,17 +78,6 @@ export async function translateWithLmStudio(
   return translated
 }
 
-function prompt(text: string, language: string, kind: 'readme' | 'summary'): string {
-  const format =
-    kind === 'readme'
-      ? 'Preserve Markdown structure, links, code, commands, paths, identifiers, and placeholders exactly.'
-      : 'Preserve code, commands, paths, identifiers, and placeholders exactly.'
-  return [
-    `Translate the following technical ${kind} into ${language}.`,
-    format,
-    'If text is already in the target language, keep it unchanged.',
-    'Return only the translation, without explanations or wrappers.',
-    '',
-    text,
-  ].join('\n')
+function prompt(text: string, language: string): string {
+  return `Translate the following text into ${language}. Note that you should only output the translated result without any additional explanation:\n\n${text}`
 }

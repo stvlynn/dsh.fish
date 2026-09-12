@@ -1,7 +1,10 @@
 import { Agent } from 'agents'
 import type { QueueItem } from 'agents'
 import { drizzle } from 'drizzle-orm/d1'
-import { readmeDigest } from '../../application/lib/readme-digest.js'
+import {
+  README_TRANSLATION_POLICY_VERSION,
+  readmeDigest,
+} from '../../application/lib/readme-digest.js'
 import type { ScheduleReadmeLocalizationInput } from '../../application/port/readme-localization.js'
 import type { ReadmeTranslation } from '../../domain/artifact/readme-translation.js'
 import type { SummaryTranslation } from '../../domain/artifact/summary-translation.js'
@@ -26,6 +29,7 @@ interface TranslateSummaryTask {
   readonly artifactId: string
   readonly locale: string
   readonly summaryHash: string
+  readonly policyVersion?: string
 }
 
 interface TranslateReadmeChunkTask {
@@ -36,6 +40,7 @@ interface TranslateReadmeChunkTask {
   readonly chunkCount: number
   readonly text: string
   readonly translate: boolean
+  readonly policyVersion?: string
 }
 
 /** Payload retained so pre-deployment queue entries can drain as safe no-ops. */
@@ -79,10 +84,18 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
     // listings become useful early in a multi-day backfill.
     for (const locale of locales) {
       const summary = await summaries.find(artifactId, locale)
-      const summaryStale = summary?.sourceHash !== summaryHash || summary.status === 'failed'
+      const summarySourceChanged = summary?.sourceHash !== summaryHash
+      const summaryStale = summarySourceChanged || summary?.status === 'failed'
       if (summaryStale) {
-        const task: TranslateSummaryTask = { artifactId, locale, summaryHash }
-        await summaries.save(summaryRecord(task, 'pending'))
+        const task: TranslateSummaryTask = {
+          artifactId,
+          locale,
+          summaryHash,
+          policyVersion: README_TRANSLATION_POLICY_VERSION,
+        }
+        await summaries.save(summaryRecord(task, 'pending'), {
+          retainPreviousBody: !summarySourceChanged,
+        })
         await this.queue('translateSummary', task, {
           retry: { maxAttempts: 1 },
         })
@@ -91,9 +104,12 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
       let readmeStale = false
       if (sourceHash !== undefined) {
         const readme = await readmes.find(artifactId, locale)
-        readmeStale = readme?.sourceHash !== sourceHash || readme.status === 'failed'
+        const readmeSourceChanged = readme?.sourceHash !== sourceHash
+        readmeStale = readmeSourceChanged || readme?.status === 'failed'
         if (readmeStale) {
-          await readmes.save(readmeRecord({ artifactId, locale, sourceHash }, 'pending'))
+          await readmes.save(readmeRecord({ artifactId, locale, sourceHash }, 'pending'), {
+            retainPreviousBody: !readmeSourceChanged,
+          })
           const completed = await this.chunkRepository().prepare(artifactId, locale, sourceHash)
           pendingReadmes.push({ locale, completed })
         }
@@ -115,6 +131,7 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
           chunkCount: chunks.length,
           text: chunk.text,
           translate: chunk.translate,
+          policyVersion: README_TRANSLATION_POLICY_VERSION,
         }
         await this.queue('translateReadmeChunk', task, {
           retry: { maxAttempts: 1 },
@@ -127,6 +144,7 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
     task: TranslateSummaryTask,
     _queueItem: QueueItem<TranslateSummaryTask>,
   ): Promise<void> {
+    if (task.policyVersion !== README_TRANSLATION_POLICY_VERSION) return
     const artifactId = slug(task.artifactId)
     const artifact = await this.artifactRepository().findById(artifactId)
     const summary = artifact?.summary
@@ -157,6 +175,7 @@ export class ReadmeI18nAgent extends Agent<HubEnv> {
     task: TranslateReadmeChunkTask,
     _queueItem: QueueItem<TranslateReadmeChunkTask>,
   ): Promise<void> {
+    if (task.policyVersion !== README_TRANSLATION_POLICY_VERSION) return
     const artifactId = slug(task.artifactId)
     const existing = await this.translationRepository().find(artifactId, task.locale)
     if (existing?.sourceHash !== task.sourceHash || existing.status === 'completed') return

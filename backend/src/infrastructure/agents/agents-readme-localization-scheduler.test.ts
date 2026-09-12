@@ -8,7 +8,7 @@ describe('readmeI18nShardName', () => {
     )
     expect(readmeI18nShardName('artifact-42')).toBe(readmeI18nShardName('artifact-42'))
     expect(new Set(names)).toEqual(
-      new Set(['lm-studio-0', 'lm-studio-1', 'lm-studio-2', 'lm-studio-3']),
+      new Set(['lm-studio-v2-0', 'lm-studio-v2-1', 'lm-studio-v2-2', 'lm-studio-v2-3']),
     )
   })
 })

@@ -1,4 +1,5 @@
 const SHARD_COUNT = 4
+const SHARD_GENERATION = 'v2'
 
 export function readmeI18nShardName(artifactId: string): string {
   let hash = 2_166_136_261
@@ -6,5 +7,5 @@ export function readmeI18nShardName(artifactId: string): string {
     hash ^= artifactId.charCodeAt(index)
     hash = Math.imul(hash, 16_777_619)
   }
-  return `lm-studio-${(hash >>> 0) % SHARD_COUNT}`
+  return `lm-studio-${SHARD_GENERATION}-${(hash >>> 0) % SHARD_COUNT}`
 }

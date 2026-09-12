@@ -31,7 +31,10 @@ export class D1ReadmeTranslationRepository implements ReadmeTranslationRepositor
     return row === undefined ? undefined : toTranslation(row)
   }
 
-  async save(translation: ReadmeTranslation): Promise<void> {
+  async save(
+    translation: ReadmeTranslation,
+    options: { readonly retainPreviousBody?: boolean } = {},
+  ): Promise<void> {
     const values = {
       artifactId: String(translation.artifactId),
       locale: translation.locale,
@@ -48,8 +51,10 @@ export class D1ReadmeTranslationRepository implements ReadmeTranslationRepositor
         target: [artifactReadmeTranslations.artifactId, artifactReadmeTranslations.locale],
         set: {
           ...values,
-          // Keep the last completed body while a replacement is pending or failed.
-          markdown: sql`coalesce(excluded.markdown, ${artifactReadmeTranslations.markdown})`,
+          markdown:
+            options.retainPreviousBody === false
+              ? values.markdown
+              : sql`coalesce(excluded.markdown, ${artifactReadmeTranslations.markdown})`,
         },
       })
   }
