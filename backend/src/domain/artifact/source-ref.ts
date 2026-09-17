@@ -10,6 +10,11 @@ export interface NpmSource {
   readonly latestVersion: string
 }
 
+export interface VerifiedNpmBinding {
+  readonly packageName: string
+  readonly latestVersion: string
+}
+
 export interface GitHubSource {
   readonly origin: 'github'
   readonly owner: string
@@ -25,6 +30,19 @@ export interface GitHubSource {
    * provenance earlier crawls recorded.
    */
   readonly via?: readonly string[]
+  /**
+   * npm package whose packument `repository` is this owner/repo. Recorded at
+   * index time so install never guesses from a display name — a legal npm
+   * name that is not published, or belongs to someone else, must not become
+   * the install spec.
+   */
+  readonly npm?: VerifiedNpmBinding
+  /**
+   * Author-supplied GitHub Release `.tgz` bound to this same owner/repo.
+   * A prebuilt archive; preferred over a full-repo git checkout, never over
+   * a verified npm package.
+   */
+  readonly releaseTarball?: string
 }
 
 export interface SubmissionSource {
@@ -35,6 +53,11 @@ export interface SubmissionSource {
 export type SourceRef = NpmSource | GitHubSource | SubmissionSource
 
 const NPM_NAME = /^(?:@[a-z0-9-*~][a-z0-9-*._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/
+
+/** True when `value` is a legal npm package name (scope optional). */
+export function isNpmPackageName(value: string): boolean {
+  return NPM_NAME.test(value)
+}
 const GH_SEGMENT = /^[A-Za-z0-9_.-]{1,100}$/
 const COMMIT_SHA = /^[0-9a-f]{7,40}$/
 
@@ -54,6 +77,8 @@ export function githubSource(input: {
   path?: string
   commit?: string
   via?: readonly string[]
+  npm?: VerifiedNpmBinding
+  releaseTarball?: string
 }): GitHubSource {
   if (!GH_SEGMENT.test(input.owner) || !GH_SEGMENT.test(input.repo)) {
     throw DomainError.invalid('Not a valid GitHub owner/repo.', {
@@ -64,6 +89,18 @@ export function githubSource(input: {
   if (input.commit !== undefined && !COMMIT_SHA.test(input.commit)) {
     throw DomainError.invalid('A GitHub commit must be a hex SHA.', { commit: input.commit })
   }
+  const npm = input.npm === undefined ? undefined : verifiedNpmBinding(input.npm)
+  const releaseTarball =
+    input.releaseTarball === undefined
+      ? undefined
+      : releaseTarballTarget(input.releaseTarball, `${input.owner}/${input.repo}`)
+  if (input.releaseTarball !== undefined && releaseTarball === undefined) {
+    throw DomainError.invalid('A release tarball must be an HTTPS GitHub Release archive for this repository.', {
+      releaseTarball: input.releaseTarball,
+      owner: input.owner,
+      repo: input.repo,
+    })
+  }
   return {
     origin: 'github',
     owner: input.owner,
@@ -71,7 +108,49 @@ export function githubSource(input: {
     ...(input.path === undefined ? {} : { path: input.path.replace(/^\/+|\/+$/g, '') }),
     ...(input.commit === undefined ? {} : { commit: input.commit }),
     ...(input.via === undefined || input.via.length === 0 ? {} : { via: [...new Set(input.via)] }),
+    ...(npm === undefined ? {} : { npm }),
+    ...(releaseTarball === undefined ? {} : { releaseTarball }),
   }
+}
+
+function verifiedNpmBinding(input: VerifiedNpmBinding): VerifiedNpmBinding {
+  if (!NPM_NAME.test(input.packageName)) {
+    throw DomainError.invalid('Not a valid npm package name.', { packageName: input.packageName })
+  }
+  if (input.latestVersion.trim() === '') {
+    throw DomainError.invalid('A verified npm binding needs a version.', {
+      packageName: input.packageName,
+    })
+  }
+  return { packageName: input.packageName, latestVersion: input.latestVersion.trim() }
+}
+
+/**
+ * A curated, prebuilt GitHub Release archive accepted as a pnpm target —
+ * but only one belonging to `repo`, the entry's own `owner/name`.
+ *
+ * The binding is the whole point. Verified npm gets the same treatment
+ * (name-squatting protection); without it here, an entry could name a
+ * trusted repo and install an archive from somewhere else. Release CDNs
+ * (`objects.githubusercontent.com`, `release-assets.githubusercontent.com`)
+ * are not accepted: their paths carry no owner or repo.
+ */
+export function releaseTarballTarget(value: string, repo: string): string | undefined {
+  const target = value.trim()
+  let url: URL
+  try {
+    url = new URL(target)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com') return undefined
+  if (!url.pathname.endsWith('.tgz') && !url.pathname.endsWith('.tar.gz')) return undefined
+  const segments = url.pathname.split('/').filter((segment) => segment !== '')
+  if (segments.length < 4 || segments[2] !== 'releases') return undefined
+  const owner = segments[0]
+  const name = segments[1]
+  if (owner === undefined || name === undefined) return undefined
+  return `${owner}/${name}`.toLowerCase() === repo.toLowerCase() ? target : undefined
 }
 
 /**
@@ -86,7 +165,14 @@ export function githubSource(input: {
 export function mergeProvenance(existing: SourceRef, next: SourceRef): SourceRef {
   if (existing.origin !== 'github' || next.origin !== 'github') return next
   const via = [...new Set([...(existing.via ?? []), ...(next.via ?? [])])]
-  return via.length === 0 ? next : { ...next, via }
+  const npm = next.npm ?? existing.npm
+  const releaseTarball = next.releaseTarball ?? existing.releaseTarball
+  return {
+    ...next,
+    ...(via.length === 0 ? {} : { via }),
+    ...(npm === undefined ? {} : { npm }),
+    ...(releaseTarball === undefined ? {} : { releaseTarball }),
+  }
 }
 
 export function submissionSource(homepageUrl: string): SubmissionSource {
@@ -156,21 +242,41 @@ function githubTree(source: GitHubSource, view: 'blob' | 'raw'): string {
 /**
  * The package-manager specifier `dsh plugin add` receives.
  *
- * Git installs are pinned to a commit whenever the registry knows one: an
- * unpinned `github:owner/repo` lets a later push silently change what runs on
- * the user's machine at install time.
+ * Chosen at catalog time, same priority as dshmarket: a repo-verified npm
+ * name, then an author-supplied Release tarball bound to the same repository,
+ * then a git spec. Git installs are pinned to a commit whenever the registry
+ * knows one: an unpinned `github:owner/repo` lets a later push silently change
+ * what runs on the user's machine at install time. There is no install-time
+ * fallback from a 404'd npm name onto git — that leaves a ghost dependency
+ * that bricks later adds.
  */
-export function packageSpec(source: SourceRef): string | undefined {
+export function installTargetFor(source: SourceRef): string | undefined {
   switch (source.origin) {
     case 'npm':
       return `${source.packageName}@${source.latestVersion}`
     case 'github':
-      return source.commit === undefined
-        ? `github:${source.owner}/${source.repo}`
-        : `github:${source.owner}/${source.repo}#${source.commit}`
+      if (source.npm !== undefined) return source.npm.packageName
+      if (source.releaseTarball !== undefined) return source.releaseTarball
+      return gitPackageSpec(source)
     case 'submission':
       return undefined
   }
+}
+
+export function packageSpec(source: SourceRef): string | undefined {
+  return installTargetFor(source)
+}
+
+function gitPackageSpec(source: GitHubSource): string {
+  const repo = `${source.owner}/${source.repo}`
+  const path = source.path
+  const commit = source.commit
+  if (path !== undefined && commit !== undefined) {
+    return `github:${repo}#${commit}&path:/${path}`
+  }
+  if (path !== undefined) return `github:${repo}#path:/${path}`
+  if (commit !== undefined) return `github:${repo}#${commit}`
+  return `github:${repo}`
 }
 
 /**
