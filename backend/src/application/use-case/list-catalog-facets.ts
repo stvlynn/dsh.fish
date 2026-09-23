@@ -1,4 +1,5 @@
 import type { CatalogFacetCache } from '../port/catalog-facet-cache.js'
+import { CATALOG_FACET_FALLBACK_TTL_SECONDS } from '../port/catalog-facet-cache.js'
 import type { ArtifactRepository } from '../../domain/artifact/artifact-repository.js'
 import { ARTIFACT_KIND_META, ARTIFACT_KINDS } from '../../domain/artifact/artifact-kind.js'
 import type { ArtifactKind } from '../../domain/artifact/artifact-kind.js'
@@ -79,10 +80,10 @@ export class ListCatalogFacets {
       console.error('catalog_facets_unavailable', {
         message: error instanceof Error ? error.message : String(error),
       })
-      // The fallback uses the cache's own short TTL: it is a circuit breaker,
-      // not a durable answer.
+      // Longer than a healthy snapshot: a 60-second window would retry the
+      // failing aggregation once a minute for the whole outage.
       const fallback = emptyFacets()
-      await this.cache.write(fallback)
+      await this.cache.write(fallback, CATALOG_FACET_FALLBACK_TTL_SECONDS)
       return fallback
     }
   }

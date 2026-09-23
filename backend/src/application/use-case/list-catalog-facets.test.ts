@@ -4,6 +4,7 @@ import { ARTIFACT_KIND_META, ARTIFACT_KINDS } from '../../domain/artifact/artifa
 import { CATEGORIES } from '../../domain/artifact/category.js'
 import { TOPICS } from '../../domain/artifact/topic.js'
 import type { CatalogFacetCache } from '../port/catalog-facet-cache.js'
+import { CATALOG_FACET_FALLBACK_TTL_SECONDS } from '../port/catalog-facet-cache.js'
 import type { FacetsDto } from './list-catalog-facets.js'
 import { ListCatalogFacets } from './list-catalog-facets.js'
 
@@ -21,11 +22,15 @@ function countingRepository() {
 }
 
 function memoryCache() {
-  const state: { value: FacetsDto | undefined } = { value: undefined }
+  const state: { value: FacetsDto | undefined; ttl: number | undefined } = {
+    value: undefined,
+    ttl: undefined,
+  }
   const cache: CatalogFacetCache = {
     read: async () => state.value,
-    write: async (facets) => {
+    write: async (facets, ttlSeconds) => {
       state.value = facets
+      state.ttl = ttlSeconds
     },
   }
   return { cache, state }
@@ -83,6 +88,32 @@ describe('ListCatalogFacets when the catalog read fails', () => {
     // self-sustaining one: the second call must not reach D1 again.
     expect(state.kindReads).toBe(1)
     expect(second).toEqual(first)
+  })
+
+  it('holds the fallback longer than a healthy snapshot', async () => {
+    const { repository } = failingRepository()
+    const { cache, state } = memoryCache()
+    const useCase = new ListCatalogFacets(repository, cache)
+
+    await useCase.execute()
+
+    // A short TTL would retry the failing aggregation on every expiry for the
+    // whole outage, which is the overload the fallback exists to prevent.
+    expect(state.ttl).toBe(CATALOG_FACET_FALLBACK_TTL_SECONDS)
+    // The healthy snapshot relies on the store default (60s, KV's minimum).
+    expect(state.ttl).toBeGreaterThan(60)
+  })
+
+  it('stores a healthy snapshot with the default TTL', async () => {
+    const { repository } = countingRepository()
+    const { cache, state } = memoryCache()
+    const useCase = new ListCatalogFacets(repository, cache)
+
+    await useCase.execute()
+
+    // The healthy path passes no TTL and lets the store pick its default;
+    // only a degraded payload overrides it.
+    expect(state.ttl).toBeUndefined()
   })
 
   it('still lists every kind, category and topic with zeroed counts', async () => {
