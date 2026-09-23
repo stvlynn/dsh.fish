@@ -1,0 +1,1 @@
+CREATE INDEX `artifacts_deprecated_stats_idx` ON `artifacts` (`deprecated`,`updated_at`,`installs`,`stars`,`downloads`);

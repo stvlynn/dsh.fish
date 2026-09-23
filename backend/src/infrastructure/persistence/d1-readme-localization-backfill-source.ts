@@ -18,14 +18,14 @@ const STALE_FAILURES_SQL = `
   with failed_candidates as (
     select artifact_id, min(updated_at) as oldest_failure
     from artifact_readme_translations
-    where status in ('failed', 'pending')
+    where status = 'failed'
       and updated_at < ?1
       and locale in (select value from json_each(?3))
     group by artifact_id
     union all
     select artifact_id, min(updated_at) as oldest_failure
     from artifact_summary_translations
-    where status in ('failed', 'pending')
+    where status = 'failed'
       and updated_at < ?1
       and locale in (select value from json_each(?3))
     group by artifact_id
@@ -94,10 +94,13 @@ export class D1ReadmeLocalizationBackfillSource implements ReadmeLocalizationBac
   }
 
   async listStaleFailures(olderThan: Date, limit: number) {
-    // Failed tasks and stale pending tasks whose queue retries were exhausted
-    // both need recovery. Start from the narrow translation indexes and aggregate once. The old
-    // correlated EXISTS query repeatedly scanned ~50k failed rows for every
-    // artifact and accounted for billions of production rows-read per day.
+    // Only terminal `failed` rows are requeued. A `pending` row means the
+    // task was just scheduled and is still in flight: matching it here makes
+    // the backfill reschedule its own output, so every run re-enqueues what
+    // the previous run enqueued and the queue never drains. Start from the
+    // narrow translation indexes and aggregate once. The old correlated
+    // EXISTS query repeatedly scanned ~50k failed rows for every artifact and
+    // accounted for billions of production rows-read per day.
     const statement = this.db.$client.prepare(STALE_FAILURES_SQL)
     const result = await statement
       .bind(olderThan.getTime(), limit, JSON.stringify(this.locales))

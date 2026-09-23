@@ -6,6 +6,7 @@ import popularityMigrationSql from '../../../migrations/0008_artifact_popularity
 import searchMigrationSql from '../../../migrations/0009_flimsy_machine_man.sql?raw'
 import facetIndexSql from '../../../migrations/0010_artifact_facet_covering_indexes.sql?raw'
 import chunkMigrationSql from '../../../migrations/0012_famous_zemo.sql?raw'
+import statsIndexSql from '../../../migrations/0013_artifact_stats_covering_index.sql?raw'
 import journal from '../../../migrations/meta/_journal.json'
 import {
   artifactReadmeTranslationChunks,
@@ -98,5 +99,16 @@ describe('facet covering indexes', () => {
       'CREATE INDEX `artifacts_deprecated_id_idx` ON `artifacts` (`deprecated`,`id`)',
     )
     expect(journal.entries.map((entry) => entry.tag)).toContain('0010_artifact_facet_covering_indexes')
+  })
+})
+
+describe('catalog stats covering index', () => {
+  it('keeps the schema, migration and journal in step', () => {
+    expect(statsIndexSql).toContain(
+      'CREATE INDEX `artifacts_deprecated_stats_idx` ON `artifacts` (`deprecated`,`updated_at`,`installs`,`stars`,`downloads`)',
+    )
+    expect(journal.entries.map((entry) => entry.tag)).toContain(
+      '0013_artifact_stats_covering_index',
+    )
   })
 })

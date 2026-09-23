@@ -20,6 +20,7 @@ Write an ADR when the decision:
 - [`adr-0005-product-docs-with-fumadocs.md`](adr-0005-product-docs-with-fumadocs.md) — grow `/docs` into a section; adopt Fumadocs (`core` + `mdx`, custom shell) for that section only. Accepted.
 - [`adr-0006-locale-gated-fts-search.md`](adr-0006-locale-gated-fts-search.md) — derived D1 FTS5 documents and hash-current locale gates.
 - [`adr-0007-editorial-blog.md`](adr-0007-editorial-blog.md) — `/blog` as a second Fumadocs collection (dated series, custom shell, not a docs sidebar). Accepted.
+- [`adr-0008-cache-failures-as-circuit-breaker.md`](adr-0008-cache-failures-as-circuit-breaker.md) — cache a zeroed facet fallback when the catalog read fails, so a D1 overload sheds load instead of amplifying it. Accepted.
 
 ## Naming
 

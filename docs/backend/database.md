@@ -82,6 +82,14 @@ This document describes database conventions. Fill in concrete technology choice
   `0011_artifact_recent_covering_index`) — `sort=recent`. The older
   `(updated_at)` index cannot satisfy `WHERE deprecated = 0 ORDER BY updated_at`,
   so SQLite scanned the wide table (~15k rows_read).
+- Index `artifacts_deprecated_stats_idx`
+  `(deprecated, updated_at, installs, stars, downloads)` (migration
+  `0013_artifact_stats_covering_index`) — `catalogStats()`, behind
+  `/api/v1/catalog/version` and `/api/v1/catalog/snapshot`. It aggregates
+  `count(*)`, `max(updated_at)` and `sum(installs|stars|downloads)` over
+  `WHERE deprecated = 0`; without a covering index SQLite walks the heap and
+  reads every `readme_markdown` body (~45 KB/row), which alone is enough to
+  exhaust D1's CPU budget.
 
 ## Migrations
 

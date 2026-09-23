@@ -18,6 +18,39 @@ export interface FacetsDto {
 }
 
 /**
+ * Counts served while the catalog database is unavailable.
+ *
+ * A facet aggregation that fails must not stay uncached: an uncached miss on
+ * every request is what turns a brief D1 overload into a self-sustaining one
+ * (overload -> aggregation throws -> cache never written -> next request also
+ * misses -> more load). Serving zeroed rails for a short window lets the
+ * database drain, because the next caller reads the cached fallback instead of
+ * re-running the aggregation. Every kind is still listed, matching the
+ * contract the use case documents; only the counts are zero.
+ */
+function emptyFacets(): FacetsDto {
+  return {
+    kinds: ARTIFACT_KINDS.map((kind) => ({
+      kind,
+      labelKey: ARTIFACT_KIND_META[kind].labelKey,
+      descriptionKey: ARTIFACT_KIND_META[kind].descriptionKey,
+      packageManaged: ARTIFACT_KIND_META[kind].packageManaged,
+      count: 0,
+    })),
+    categories: CATEGORIES.map((entry) => ({
+      id: entry.id,
+      labelKey: entry.labelKey,
+      count: 0,
+    })),
+    topics: TOPICS.map((entry) => ({
+      id: entry.id,
+      labelKey: entry.labelKey,
+      count: 0,
+    })),
+  }
+}
+
+/**
  * The filter rails. Every kind is listed even at count zero, so the site can
  * show the taxonomy honestly rather than hiding a type nobody has published yet.
  */
@@ -30,9 +63,28 @@ export class ListCatalogFacets {
   async execute(): Promise<FacetsDto> {
     const cached = await this.cache?.read()
     if (cached !== undefined) return cached
-    const facets = await this.loadFromCatalog()
-    await this.cache?.write(facets)
-    return facets
+
+    try {
+      const facets = await this.loadFromCatalog()
+      await this.cache?.write(facets)
+      return facets
+    } catch (error) {
+      // A failing aggregation is cached too, but only when a cache exists to
+      // hold it: an uncached miss on every request is what turns a brief D1
+      // overload into a self-sustaining one (overload -> aggregation throws ->
+      // cache never written -> next request also misses -> more load). Without
+      // a cache there is nowhere to break the cycle, so the caller still sees
+      // the failure rather than silently zeroed rails.
+      if (this.cache === undefined) throw error
+      console.error('catalog_facets_unavailable', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+      // The fallback uses the cache's own short TTL: it is a circuit breaker,
+      // not a durable answer.
+      const fallback = emptyFacets()
+      await this.cache.write(fallback)
+      return fallback
+    }
   }
 
   private async loadFromCatalog(): Promise<FacetsDto> {

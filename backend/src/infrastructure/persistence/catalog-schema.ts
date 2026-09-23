@@ -77,6 +77,18 @@ export const artifacts = sqliteTable(
     // `artifacts_updated_idx` is only `(updated_at)`, so SQLite scanned the
     // wide table (15k rows_read / ~700ms) instead of walking an index.
     index('artifacts_deprecated_updated_idx').on(table.deprecated, table.updatedAt),
+    // `/api/v1/catalog/version` and `/catalog/snapshot` aggregate
+    // `count(*)`, `max(updated_at)` and `sum(installs|stars|downloads)` over
+    // `WHERE deprecated = 0`. Without this index SQLite walks every heap row
+    // — and `readme_markdown` is stored inline, so one row is tens of
+    // kilobytes — which is enough on its own to exhaust D1's CPU budget.
+    index('artifacts_deprecated_stats_idx').on(
+      table.deprecated,
+      table.updatedAt,
+      table.installs,
+      table.stars,
+      table.downloads,
+    ),
   ],
 )
 
