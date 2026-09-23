@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ArtifactRepository } from '../../domain/artifact/artifact-repository.js'
-import { ARTIFACT_KIND_META, ARTIFACT_KINDS } from '../../domain/artifact/artifact-kind.js'
-import { CATEGORIES } from '../../domain/artifact/category.js'
-import { TOPICS } from '../../domain/artifact/topic.js'
 import type { CatalogFacetCache } from '../port/catalog-facet-cache.js'
-import { CATALOG_FACET_FALLBACK_TTL_SECONDS } from '../port/catalog-facet-cache.js'
 import type { FacetsDto } from './list-catalog-facets.js'
 import { ListCatalogFacets } from './list-catalog-facets.js'
 
@@ -22,15 +18,11 @@ function countingRepository() {
 }
 
 function memoryCache() {
-  const state: { value: FacetsDto | undefined; ttl: number | undefined } = {
-    value: undefined,
-    ttl: undefined,
-  }
+  const state: { value: FacetsDto | undefined } = { value: undefined }
   const cache: CatalogFacetCache = {
     read: async () => state.value,
-    write: async (facets, ttlSeconds) => {
+    write: async (facets) => {
       state.value = facets
-      state.ttl = ttlSeconds
     },
   }
   return { cache, state }
@@ -59,109 +51,5 @@ describe('ListCatalogFacets', () => {
     await useCase.execute()
 
     expect(state.kindReads).toBe(2)
-  })
-})
-
-describe('ListCatalogFacets when the catalog read fails', () => {
-  function failingRepository() {
-    const state = { kindReads: 0 }
-    const repository = {
-      countByKind: async () => {
-        state.kindReads += 1
-        throw new Error('D1 DB exceeded its CPU time limit and was reset.')
-      },
-      countByCategory: async () => [],
-      countByTopic: async () => [],
-    } as Pick<ArtifactRepository, 'countByKind' | 'countByCategory' | 'countByTopic'>
-    return { repository: repository as ArtifactRepository, state }
-  }
-
-  it('caches the fallback so a failing database is not re-read on every request', async () => {
-    const { repository, state } = failingRepository()
-    const { cache } = memoryCache()
-    const useCase = new ListCatalogFacets(repository, cache)
-
-    const first = await useCase.execute()
-    const second = await useCase.execute()
-
-    // Uncached misses in a loop are what turn a brief overload into a
-    // self-sustaining one: the second call must not reach D1 again.
-    expect(state.kindReads).toBe(1)
-    expect(second).toEqual(first)
-  })
-
-  it('holds the fallback longer than a healthy snapshot', async () => {
-    const { repository } = failingRepository()
-    const { cache, state } = memoryCache()
-    const useCase = new ListCatalogFacets(repository, cache)
-
-    await useCase.execute()
-
-    // A short TTL would retry the failing aggregation on every expiry for the
-    // whole outage, which is the overload the fallback exists to prevent.
-    expect(state.ttl).toBe(CATALOG_FACET_FALLBACK_TTL_SECONDS)
-    // The healthy snapshot relies on the store default (60s, KV's minimum).
-    expect(state.ttl).toBeGreaterThan(60)
-  })
-
-  it('stores a healthy snapshot with the default TTL', async () => {
-    const { repository } = countingRepository()
-    const { cache, state } = memoryCache()
-    const useCase = new ListCatalogFacets(repository, cache)
-
-    await useCase.execute()
-
-    // The healthy path passes no TTL and lets the store pick its default;
-    // only a degraded payload overrides it.
-    expect(state.ttl).toBeUndefined()
-  })
-
-  it('still lists every kind, category and topic with zeroed counts', async () => {
-    const { repository } = failingRepository()
-    const { cache } = memoryCache()
-    const useCase = new ListCatalogFacets(repository, cache)
-
-    const facets = await useCase.execute()
-
-    expect(facets.kinds).toEqual(
-      ARTIFACT_KINDS.map((kind) => ({
-        kind,
-        labelKey: ARTIFACT_KIND_META[kind].labelKey,
-        descriptionKey: ARTIFACT_KIND_META[kind].descriptionKey,
-        packageManaged: ARTIFACT_KIND_META[kind].packageManaged,
-        count: 0,
-      })),
-    )
-    expect(facets.categories.map((entry) => entry.count)).toEqual(
-      CATEGORIES.map(() => 0),
-    )
-    expect(facets.topics.map((entry) => entry.count)).toEqual(TOPICS.map(() => 0))
-  })
-
-  it('marks the fallback as degraded so routes can keep it out of caches', async () => {
-    const { repository } = failingRepository()
-    const { cache } = memoryCache()
-    const useCase = new ListCatalogFacets(repository, cache)
-
-    const facets = await useCase.execute()
-
-    expect(facets.degraded).toBe(true)
-  })
-
-  it('does not mark a successful read as degraded', async () => {
-    const { repository } = countingRepository()
-    const { cache } = memoryCache()
-    const useCase = new ListCatalogFacets(repository, cache)
-
-    const facets = await useCase.execute()
-
-    expect(facets.degraded).toBeUndefined()
-  })
-
-  it('propagates the failure when no cache can absorb it', async () => {
-    const { repository } = failingRepository()
-    const useCase = new ListCatalogFacets(repository)
-
-    await expect(useCase.execute()).rejects.toThrow(/CPU time limit/)
   })
 })

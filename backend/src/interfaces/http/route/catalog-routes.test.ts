@@ -3,10 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { Artifact } from '../../../domain/artifact/artifact.js'
 import type { ArtifactRepository } from '../../../domain/artifact/artifact-repository.js'
 import { npmSource } from '../../../domain/artifact/source-ref.js'
-import type {
-  CatalogSnapshotMeta,
-  CatalogSnapshotStore,
-} from '../../../application/port/catalog-snapshot-store.js'
+import type { CatalogSnapshotStore } from '../../../application/port/catalog-snapshot-store.js'
 import type { CatalogSnapshotDto } from '../../../application/use-case/get-catalog-snapshot.js'
 import { GetCatalogSnapshot } from '../../../application/use-case/get-catalog-snapshot.js'
 import type { Container } from '../../../infrastructure/container.js'
@@ -38,19 +35,11 @@ function testContainer() {
     }),
   } as unknown as ArtifactRepository
   const entries = new Map<string, string>()
-  const bodies = new Map<string, string>()
-  const meta: { value: CatalogSnapshotMeta | undefined } = { value: undefined }
   const store: CatalogSnapshotStore = {
     read: async (dataVersion) => entries.get(dataVersion),
     write: async (dataVersion, body) => {
       entries.set(dataVersion, body)
-      bodies.set('last', body)
     },
-    readMeta: async () => meta.value,
-    writeMeta: async (next) => {
-      meta.value = next
-    },
-    readLastBody: async () => bodies.get('last'),
   }
   return {
     useCases: { getCatalogSnapshot: new GetCatalogSnapshot(artifacts, store) },

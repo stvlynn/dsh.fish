@@ -8,7 +8,6 @@ import { requireLocale, translate, useT } from '@/shared/config/i18n'
 import { useLocalePath } from '@/shared/ui/locale-link'
 import { breadcrumbLd, collectionLd, errorMeta, pageMeta } from '@/shared/lib/seo'
 import { SearchIcon, SortIcon } from '@/shared/ui/icon'
-import { emptyPageOnCatalogFailure } from '@/shared/lib/catalog-degraded-page'
 
 const PAGE_SIZE = 24
 
@@ -56,13 +55,6 @@ export function meta({ loaderData, params }: Route.MetaArgs): Route.MetaDescript
   })
 }
 
-export function headers({ loaderData }: { loaderData?: { facets?: { degraded?: true } } }) {
-  // Same rule as home: a page rendered from a degraded catalog read must not
-  // be cached, so empty rails cannot outlive the outage that caused them.
-  if (loaderData?.facets?.degraded) return { 'cache-control': 'no-store' }
-  return {}
-}
-
 export async function loader({ context, params, request }: Route.LoaderArgs) {
   const locale = requireLocale(params.locale)
   const url = new URL(request.url)
@@ -70,18 +62,16 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const query = url.searchParams.get('q') ?? ''
 
   const [results, facets] = await Promise.all([
-    emptyPageOnCatalogFailure(PAGE_SIZE, Number(url.searchParams.get('offset') ?? 0), () =>
-      container.useCases.searchArtifacts.execute({
-        locale,
-        ...(query === '' ? {} : { text: query }),
-        kinds: url.searchParams.getAll('kind'),
-        categories: url.searchParams.getAll('category'),
-        ...(url.searchParams.get('sort') ? { sort: url.searchParams.get('sort')! } : {}),
-        ...(url.searchParams.get('verified') === 'true' ? { verifiedOnly: true } : {}),
-        limit: PAGE_SIZE,
-        offset: Number(url.searchParams.get('offset') ?? 0),
-      }),
-    ),
+    container.useCases.searchArtifacts.execute({
+      locale,
+      ...(query === '' ? {} : { text: query }),
+      kinds: url.searchParams.getAll('kind'),
+      categories: url.searchParams.getAll('category'),
+      ...(url.searchParams.get('sort') ? { sort: url.searchParams.get('sort')! } : {}),
+      ...(url.searchParams.get('verified') === 'true' ? { verifiedOnly: true } : {}),
+      limit: PAGE_SIZE,
+      offset: Number(url.searchParams.get('offset') ?? 0),
+    }),
     container.useCases.listCatalogFacets.execute(),
   ])
 

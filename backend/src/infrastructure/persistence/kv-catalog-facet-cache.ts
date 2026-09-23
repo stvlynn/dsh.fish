@@ -16,9 +16,9 @@ export class KvCatalogFacetCache implements CatalogFacetCache {
     return asFacetsDto(value)
   }
 
-  async write(facets: FacetsDto, ttlSeconds: number = CATALOG_FACET_CACHE_TTL_SECONDS): Promise<void> {
+  async write(facets: FacetsDto): Promise<void> {
     await this.kv.put(CATALOG_FACET_CACHE_KEY, JSON.stringify(facets), {
-      expirationTtl: ttlSeconds,
+      expirationTtl: CATALOG_FACET_CACHE_TTL_SECONDS,
     })
   }
 }

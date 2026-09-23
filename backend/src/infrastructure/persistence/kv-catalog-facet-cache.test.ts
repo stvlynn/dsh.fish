@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import type { FacetsDto } from '../../application/use-case/list-catalog-facets.js'
-import { CATALOG_FACET_FALLBACK_TTL_SECONDS } from '../../application/port/catalog-facet-cache.js'
 import {
   CATALOG_FACET_CACHE_KEY,
   CATALOG_FACET_CACHE_TTL_SECONDS,
@@ -57,14 +56,4 @@ describe('KvCatalogFacetCache', () => {
     await expect(cache.read()).rejects.toThrow('malformed payload')
   })
 
-  it('honours an explicit TTL so a degraded payload can outlive a healthy one', async () => {
-    const { kv, entries } = memoryKv()
-    const cache = new KvCatalogFacetCache(kv as never)
-
-    await cache.write(facets, CATALOG_FACET_FALLBACK_TTL_SECONDS)
-
-    expect(entries.get(CATALOG_FACET_CACHE_KEY)?.expirationTtl).toBe(
-      CATALOG_FACET_FALLBACK_TTL_SECONDS,
-    )
-  })
 })

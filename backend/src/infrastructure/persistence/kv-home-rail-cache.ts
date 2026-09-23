@@ -6,8 +6,8 @@ import type { ArtifactSummaryDto, PageDto } from '../../application/dto/artifact
  * filters. They are also the heaviest reads on the site — tens of thousands of
  * rows per call — so a crawl that lands on `/` every second re-queues D1 even
  * when the database is healthy. Caching the rendered rails in KV for a short
- * window keeps the misses from being re-read on every request, and a degraded
- * rail is never written, so a failed read cannot poison the cache.
+ * window keeps the misses from being re-read on every request. Only a
+ * successful read is written, so a failure can never be served as a result.
  */
 const RAIL_TTL_SECONDS = 60
 

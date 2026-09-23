@@ -14,19 +14,13 @@ function emptySummaryTranslations(): SummaryTranslationRepository {
 }
 
 function artifact(id: string): Artifact {
-  return new Artifact({
+  return Artifact.create({
     id,
-    kind: 'skill',
+    kind: 'bundle',
     displayName: id,
     summary: 'a plugin',
-    source: npmSource('example', id),
-    payload: { npm: { package: id, version: '1.0.0' } },
-    keywords: [],
-    categories: [],
-    stats: { stars: 0, downloads: 0, installs: 0 },
-    publishedAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-    indexedAt: new Date('2026-01-01T00:00:00.000Z'),
+    source: npmSource(id, '1.0.0'),
+    payload: { kind: 'bundle', requiresBuild: false },
   })
 }
 

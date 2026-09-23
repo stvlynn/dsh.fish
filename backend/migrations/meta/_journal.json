@@ -99,6 +99,13 @@
       "when": 1790156561935,
       "tag": "0013_artifact_stats_covering_index",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1790166471638,
+      "tag": "0014_artifact_popularity_tiebreak_index",
+      "breakpoints": true
     }
   ]
 }

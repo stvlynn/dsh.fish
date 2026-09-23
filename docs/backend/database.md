@@ -90,11 +90,21 @@ This document describes database conventions. Fill in concrete technology choice
   `WHERE deprecated = 0`; without a covering index SQLite walks the heap and
   reads every `readme_markdown` body (~45 KB/row), which alone is enough to
   exhaust D1's CPU budget.
-  `GetCatalogSnapshot.meta()` also records its last successful result in KV
-  (`catalog:snapshot:meta`) and serves that when the aggregation fails, so a
-  D1 overload degrades a poll endpoint instead of 500ing it. The migration
-  itself is not yet applied in production: `CREATE INDEX` over the 494 MB
-  `artifacts` table exceeds D1's per-statement CPU budget.
+- Index `artifacts_popularity_tiebreak_idx`
+  `(deprecated, popularity, updated_at, id)` (migration
+  `0014_artifact_popularity_tiebreak_index`) — `sort=popular`, which orders by
+  `popularity DESC, updated_at DESC, id DESC`. `(deprecated, popularity)` alone
+  cannot supply the tiebreak columns, so SQLite chose `(deprecated, updated_at)`,
+  read all 22,039 rows and sorted them in a temporary B-tree (~850 ms). With
+  this index the plan is `SEARCH ... USING COVERING INDEX` and the query reads
+  6 rows in ~0.24 ms — the shape `sort=rising` already had from
+  `artifacts_rising_idx` `(deprecated, star_velocity_7d, popularity)`
+  (25 rows / 0.5 ms).
+
+**After any schema change — creating an index in particular — run
+`PRAGMA optimize`** (`wrangler d1 execute <db> --remote --command "PRAGMA
+optimize;"`). It runs `ANALYZE` so the planner has the statistics it needs to
+pick the new index; without it a freshly created index may go unused.
 
 ## Migrations
 

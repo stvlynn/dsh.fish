@@ -39,24 +39,8 @@ export class GetCatalogSnapshot {
   ) {}
 
   async meta(): Promise<CatalogSnapshotMeta> {
-    try {
-      const meta = await toMeta(await this.artifacts.catalogStats())
-      await this.store.writeMeta(meta)
-      return meta
-    } catch (error) {
-      // `catalogStats()` is the cheapest catalog read in the codebase and it
-      // still heap-scans: `readme_markdown` is inline, so one row is tens of
-      // kilobytes. When D1 refuses it, fall back to the last version this
-      // store recorded rather than 500ing a poll endpoint — a sync client only
-      // needs to know whether the catalog moved, and a slightly stale
-      // `dataVersion` makes it re-download, which is safe.
-      const last = await this.store.readMeta()
-      if (last === undefined) throw error
-      console.error('catalog_stats_unavailable', {
-        message: error instanceof Error ? error.message : String(error),
-      })
-      return last
-    }
+    const meta = await toMeta(await this.artifacts.catalogStats())
+    return meta
   }
 
   async snapshot(): Promise<CatalogSnapshot> {
@@ -64,28 +48,15 @@ export class GetCatalogSnapshot {
     const cached = await this.store.read(meta.dataVersion)
     if (cached !== undefined) return { meta, body: cached }
 
-    try {
-      const artifacts = await this.artifacts.listForSnapshot()
-      const body = JSON.stringify({
-        dataVersion: meta.dataVersion,
-        artifactCount: meta.artifactCount,
-        generatedAt: meta.generatedAt,
-        artifacts: artifacts.map(toSummaryDto),
-      } satisfies CatalogSnapshotDto)
-      await this.store.write(meta.dataVersion, body)
-      return { meta, body }
-    } catch (error) {
-      // Building the document reads every public artifact row, so it is the
-      // heaviest call in the catalog and the one D1 refuses first. Serve the
-      // last body this store holds for the version we reported rather than
-      // 500ing: a sync client re-downloads it, which is safe.
-      const last = await this.store.readLastBody()
-      if (last === undefined) throw error
-      console.error('catalog_snapshot_unavailable', {
-        message: error instanceof Error ? error.message : String(error),
-      })
-      return { meta, body: last }
-    }
+    const artifacts = await this.artifacts.listForSnapshot()
+    const body = JSON.stringify({
+      dataVersion: meta.dataVersion,
+      artifactCount: meta.artifactCount,
+      generatedAt: meta.generatedAt,
+      artifacts: artifacts.map(toSummaryDto),
+    } satisfies CatalogSnapshotDto)
+    await this.store.write(meta.dataVersion, body)
+    return { meta, body }
   }
 }
 

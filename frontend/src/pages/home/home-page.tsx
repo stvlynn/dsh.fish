@@ -9,7 +9,6 @@ import { requireLocale, translate, useT } from '@/shared/config/i18n'
 import { LocaleLink, useLocalePath } from '@/shared/ui/locale-link'
 import { errorMeta, organizationLd, pageMeta, websiteLd } from '@/shared/lib/seo'
 import { AnimatedNumber } from '@/shared/ui/animated-number'
-import { emptyPageOnCatalogFailure } from '@/shared/lib/catalog-degraded-page'
 
 export function meta({ loaderData, params }: Route.MetaArgs): Route.MetaDescriptors {
   if (!loaderData) return errorMeta(params.locale)
@@ -29,13 +28,6 @@ export function meta({ loaderData, params }: Route.MetaArgs): Route.MetaDescript
   })
 }
 
-export function headers({ loaderData }: { loaderData?: { facets?: { degraded?: true } } }) {
-  // A page that rendered from a degraded catalog read must not be cached: the
-  // empty rails would outlive the outage that caused them.
-  if (loaderData?.facets?.degraded) return { 'cache-control': 'no-store' }
-  return {}
-}
-
 /**
  * Server-side data for the landing page.
  *
@@ -49,17 +41,11 @@ export async function loader({ context, params }: Route.LoaderArgs) {
   const { searchArtifacts, listCatalogFacets } = container.useCases
 
   const [trending, risingPool, recentPool, facets] = await Promise.all([
-    emptyPageOnCatalogFailure(6, 0, () =>
-      searchArtifacts.execute({ sort: 'popular', limit: 6, locale }),
-    ),
+    searchArtifacts.execute({ sort: 'popular', limit: 6, locale }),
     // Over-fetch, then subtract what the first rail already shows. Two rails
     // listing the same artifacts is the same page twice.
-    emptyPageOnCatalogFailure(12, 0, () =>
-      searchArtifacts.execute({ sort: 'rising', limit: 12, locale }),
-    ),
-    emptyPageOnCatalogFailure(12, 0, () =>
-      searchArtifacts.execute({ sort: 'recent', limit: 12, locale }),
-    ),
+    searchArtifacts.execute({ sort: 'rising', limit: 12, locale }),
+    searchArtifacts.execute({ sort: 'recent', limit: 12, locale }),
     listCatalogFacets.execute(),
   ])
 

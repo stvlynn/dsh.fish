@@ -7,6 +7,7 @@ import searchMigrationSql from '../../../migrations/0009_flimsy_machine_man.sql?
 import facetIndexSql from '../../../migrations/0010_artifact_facet_covering_indexes.sql?raw'
 import chunkMigrationSql from '../../../migrations/0012_famous_zemo.sql?raw'
 import statsIndexSql from '../../../migrations/0013_artifact_stats_covering_index.sql?raw'
+import tiebreakIndexSql from '../../../migrations/0014_artifact_popularity_tiebreak_index.sql?raw'
 import journal from '../../../migrations/meta/_journal.json'
 import {
   artifactReadmeTranslationChunks,
@@ -109,6 +110,17 @@ describe('catalog stats covering index', () => {
     )
     expect(journal.entries.map((entry) => entry.tag)).toContain(
       '0013_artifact_stats_covering_index',
+    )
+  })
+})
+
+describe('popular sort tiebreak index', () => {
+  it('keeps the schema, migration and journal in step', () => {
+    expect(tiebreakIndexSql).toContain(
+      'CREATE INDEX `artifacts_popularity_tiebreak_idx` ON `artifacts` (`deprecated`,`popularity`,`updated_at`,`id`)',
+    )
+    expect(journal.entries.map((entry) => entry.tag)).toContain(
+      '0014_artifact_popularity_tiebreak_index',
     )
   })
 })

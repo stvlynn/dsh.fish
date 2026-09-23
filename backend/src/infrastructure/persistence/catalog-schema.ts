@@ -66,6 +66,18 @@ export const artifacts = sqliteTable(
     index('artifacts_owner_idx').on(table.ownerAccountId),
     index('artifacts_updated_idx').on(table.updatedAt),
     index('artifacts_popularity_idx').on(table.deprecated, table.popularity),
+    // `sort=popular` orders by `popularity, updated_at, id`. An index on
+    // `(deprecated, popularity)` alone cannot satisfy that: SQLite fell back
+    // to `(deprecated, updated_at)` and then sorted 22k rows in a temporary
+    // B-tree (~850 ms, 22,039 rows_read) where `sort=rising` — whose index
+    // matches its sort key — reads 25 rows in 0.5 ms. Same pattern the rising
+    // index already established.
+    index('artifacts_popularity_tiebreak_idx').on(
+      table.deprecated,
+      table.popularity,
+      table.updatedAt,
+      table.id,
+    ),
     index('artifacts_kind_popularity_idx').on(table.kind, table.deprecated, table.popularity),
     index('artifacts_rising_idx').on(table.deprecated, table.starVelocity7d, table.popularity),
     // Facet COUNTs must not visit the wide row (readme_markdown). These two

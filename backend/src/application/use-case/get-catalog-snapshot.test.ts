@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Artifact } from '../../domain/artifact/artifact.js'
 import type { ArtifactRepository } from '../../domain/artifact/artifact-repository.js'
 import { npmSource } from '../../domain/artifact/source-ref.js'
-import type {
-  CatalogSnapshotMeta,
-  CatalogSnapshotStore,
-} from '../port/catalog-snapshot-store.js'
+import type { CatalogSnapshotStore } from '../port/catalog-snapshot-store.js'
 import type { CatalogSnapshotDto } from './get-catalog-snapshot.js'
 import { GetCatalogSnapshot } from './get-catalog-snapshot.js'
 
@@ -72,22 +69,13 @@ function memoryRepository(rows: Artifact[]) {
 
 function memoryStore() {
   const entries = new Map<string, string>()
-  const bodies = new Map<string, string>()
-  const meta: { value: CatalogSnapshotMeta | undefined } = { value: undefined }
   const store: CatalogSnapshotStore = {
     read: async (dataVersion) => entries.get(dataVersion),
     write: async (dataVersion, body) => {
       entries.set(dataVersion, body)
-      // Mirrors the KV store: every built body is also kept under a stable key.
-      bodies.set('last', body)
     },
-    readMeta: async () => meta.value,
-    writeMeta: async (next) => {
-      meta.value = next
-    },
-    readLastBody: async () => [...bodies.values()].at(-1),
   }
-  return { store, entries, meta, bodies }
+  return { store, entries }
 }
 
 describe('GetCatalogSnapshot', () => {
@@ -160,116 +148,5 @@ describe('GetCatalogSnapshot', () => {
     // `generatedAt` is the newest change in the data, not the render time.
     expect(meta.generatedAt).toBe(later.toISOString())
     expect(meta.dataVersion).toMatch(/^[0-9a-f]{64}$/)
-  })
-})
-
-describe('GetCatalogSnapshot when the stats aggregation fails', () => {
-  function failingRepository() {
-    const state = { reads: 0 }
-    const repository = {
-      catalogStats: async () => {
-        state.reads += 1
-        throw new Error('D1 DB exceeded its CPU time limit and was reset.')
-      },
-      listForSnapshot: async () => [],
-    } as unknown as ArtifactRepository
-    return { repository, state }
-  }
-
-  it('falls back to the last recorded version instead of failing the poll', async () => {
-    const good = memoryRepository([artifact('dsh-alpha', { updatedAt: earlier })])
-    const { store } = memoryStore()
-    const known = await new GetCatalogSnapshot(good.repository, store).meta()
-
-    const { repository, state } = failingRepository()
-    const useCase = new GetCatalogSnapshot(repository, store)
-
-    expect(await useCase.meta()).toEqual(known)
-    expect(state.reads).toBe(1)
-
-    // A sync client that sees the last known version re-downloads at worst,
-    // which is safe; it must never see a 500 from a poll endpoint.
-    expect(await useCase.meta()).toEqual(known)
-    expect(state.reads).toBe(2)
-  })
-
-  it('propagates the failure when no version has been recorded yet', async () => {
-    const { repository } = failingRepository()
-    const { store } = memoryStore()
-
-    await expect(new GetCatalogSnapshot(repository, store).meta()).rejects.toThrow(
-      /CPU time limit/,
-    )
-  })
-})
-
-describe('GetCatalogSnapshot when the catalog walk fails', () => {
-  function repositoryThatWalksOnce() {
-    const state = { walks: 0, fail: false }
-    const repository = {
-      catalogStats: async () => ({
-        artifactCount: 1,
-        maxUpdatedAtMs: earlier.getTime(),
-        installs: 0,
-        stars: 0,
-        downloads: 0,
-      }),
-      listForSnapshot: async () => {
-        state.walks += 1
-        if (state.fail) throw new Error('D1 DB exceeded its CPU time limit and was reset.')
-        return [artifact('dsh-alpha', { updatedAt: earlier })]
-      },
-    } as unknown as ArtifactRepository
-    return { repository, state }
-  }
-
-  it('serves the last built document on an unchanged catalog without walking', async () => {
-    const { repository, state } = repositoryThatWalksOnce()
-    const { store } = memoryStore()
-    const useCase = new GetCatalogSnapshot(repository, store)
-
-    const built = await useCase.snapshot()
-    state.fail = true
-    const served = await useCase.snapshot()
-
-    expect(served.body).toBe(built.body)
-    // The versioned copy is still the fast path: an unchanged catalog never
-    // reaches D1, so a failure cannot surface here at all.
-    expect(state.walks).toBe(1)
-  })
-
-  it('serves the last body when the walk fails on a changed catalog', async () => {
-    const { repository, state } = repositoryThatWalksOnce()
-    const { store } = memoryStore()
-    const useCase = new GetCatalogSnapshot(repository, store)
-
-    const built = await useCase.snapshot()
-    // A different data version means the versioned copy no longer matches.
-    state.fail = true
-    ;(repository as unknown as { catalogStats: () => Promise<unknown> }).catalogStats =
-      async () => ({
-        artifactCount: 2,
-        maxUpdatedAtMs: later.getTime(),
-        installs: 0,
-        stars: 0,
-        downloads: 0,
-      })
-
-    const served = await useCase.snapshot()
-
-    expect(served.body).toBe(built.body)
-    // One walk to build the first document, one attempted after the version
-    // moved — that second one is the one that fails and falls back.
-    expect(state.walks).toBe(2)
-  })
-
-  it('propagates the failure when no document has been built yet', async () => {
-    const { repository, state } = repositoryThatWalksOnce()
-    state.fail = true
-    const { store } = memoryStore()
-
-    await expect(new GetCatalogSnapshot(repository, store).snapshot()).rejects.toThrow(
-      /CPU time limit/,
-    )
   })
 })

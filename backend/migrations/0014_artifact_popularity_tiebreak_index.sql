@@ -1,0 +1,1 @@
+CREATE INDEX `artifacts_popularity_tiebreak_idx` ON `artifacts` (`deprecated`,`popularity`,`updated_at`,`id`);

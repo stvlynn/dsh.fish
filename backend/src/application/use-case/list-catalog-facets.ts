@@ -1,5 +1,4 @@
 import type { CatalogFacetCache } from '../port/catalog-facet-cache.js'
-import { CATALOG_FACET_FALLBACK_TTL_SECONDS } from '../port/catalog-facet-cache.js'
 import type { ArtifactRepository } from '../../domain/artifact/artifact-repository.js'
 import { ARTIFACT_KIND_META, ARTIFACT_KINDS } from '../../domain/artifact/artifact-kind.js'
 import type { ArtifactKind } from '../../domain/artifact/artifact-kind.js'
@@ -7,12 +6,6 @@ import { CATEGORIES } from '../../domain/artifact/category.js'
 import { TOPICS } from '../../domain/artifact/topic.js'
 
 export interface FacetsDto {
-  /**
-   * True when these counts are the zeroed fallback served because the catalog
-   * aggregation failed. Lets a route keep the degraded document out of every
-   * cache: empty rails must not outlive the outage that caused them.
-   */
-  readonly degraded?: true
   readonly kinds: readonly {
     kind: ArtifactKind
     labelKey: string
@@ -22,40 +15,6 @@ export interface FacetsDto {
   }[]
   readonly categories: readonly { id: string; labelKey: string; count: number }[]
   readonly topics: readonly { id: string; labelKey: string; count: number }[]
-}
-
-/**
- * Counts served while the catalog database is unavailable.
- *
- * A facet aggregation that fails must not stay uncached: an uncached miss on
- * every request is what turns a brief D1 overload into a self-sustaining one
- * (overload -> aggregation throws -> cache never written -> next request also
- * misses -> more load). Serving zeroed rails for a short window lets the
- * database drain, because the next caller reads the cached fallback instead of
- * re-running the aggregation. Every kind is still listed, matching the
- * contract the use case documents; only the counts are zero.
- */
-function emptyFacets(): FacetsDto {
-  return {
-    degraded: true,
-    kinds: ARTIFACT_KINDS.map((kind) => ({
-      kind,
-      labelKey: ARTIFACT_KIND_META[kind].labelKey,
-      descriptionKey: ARTIFACT_KIND_META[kind].descriptionKey,
-      packageManaged: ARTIFACT_KIND_META[kind].packageManaged,
-      count: 0,
-    })),
-    categories: CATEGORIES.map((entry) => ({
-      id: entry.id,
-      labelKey: entry.labelKey,
-      count: 0,
-    })),
-    topics: TOPICS.map((entry) => ({
-      id: entry.id,
-      labelKey: entry.labelKey,
-      count: 0,
-    })),
-  }
 }
 
 /**
@@ -72,27 +31,9 @@ export class ListCatalogFacets {
     const cached = await this.cache?.read()
     if (cached !== undefined) return cached
 
-    try {
-      const facets = await this.loadFromCatalog()
-      await this.cache?.write(facets)
-      return facets
-    } catch (error) {
-      // A failing aggregation is cached too, but only when a cache exists to
-      // hold it: an uncached miss on every request is what turns a brief D1
-      // overload into a self-sustaining one (overload -> aggregation throws ->
-      // cache never written -> next request also misses -> more load). Without
-      // a cache there is nowhere to break the cycle, so the caller still sees
-      // the failure rather than silently zeroed rails.
-      if (this.cache === undefined) throw error
-      console.error('catalog_facets_unavailable', {
-        message: error instanceof Error ? error.message : String(error),
-      })
-      // Longer than a healthy snapshot: a 60-second window would retry the
-      // failing aggregation once a minute for the whole outage.
-      const fallback = emptyFacets()
-      await this.cache.write(fallback, CATALOG_FACET_FALLBACK_TTL_SECONDS)
-      return fallback
-    }
+    const facets = await this.loadFromCatalog()
+    await this.cache?.write(facets)
+    return facets
   }
 
   private async loadFromCatalog(): Promise<FacetsDto> {
