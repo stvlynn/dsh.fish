@@ -56,6 +56,13 @@ export function meta({ loaderData, params }: Route.MetaArgs): Route.MetaDescript
   })
 }
 
+export function headers({ loaderData }: { loaderData?: { facets?: { degraded?: true } } }) {
+  // Same rule as home: a page rendered from a degraded catalog read must not
+  // be cached, so empty rails cannot outlive the outage that caused them.
+  if (loaderData?.facets?.degraded) return { 'cache-control': 'no-store' }
+  return {}
+}
+
 export async function loader({ context, params, request }: Route.LoaderArgs) {
   const locale = requireLocale(params.locale)
   const url = new URL(request.url)

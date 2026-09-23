@@ -15,6 +15,12 @@ export interface DegradedPage<T> {
   readonly total: number
   readonly limit: number
   readonly offset: number
+  /**
+   * Serialisable failure marker. A `Symbol` would not survive the loader ->
+   * component hand-off, so the flag is a plain boolean the route's `headers`
+   * export can read to keep the degraded document out of every cache.
+   */
+  readonly degraded?: true
 }
 
 export async function emptyPageOnCatalogFailure<T>(
@@ -28,6 +34,6 @@ export async function emptyPageOnCatalogFailure<T>(
     console.error('catalog_listing_unavailable', {
       message: error instanceof Error ? error.message : String(error),
     })
-    return { items: [], total: 0, limit, offset }
+    return { items: [], total: 0, limit, offset, degraded: true }
   }
 }

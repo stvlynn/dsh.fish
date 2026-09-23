@@ -29,6 +29,13 @@ export function meta({ loaderData, params }: Route.MetaArgs): Route.MetaDescript
   })
 }
 
+export function headers({ loaderData }: { loaderData?: { facets?: { degraded?: true } } }) {
+  // A page that rendered from a degraded catalog read must not be cached: the
+  // empty rails would outlive the outage that caused them.
+  if (loaderData?.facets?.degraded) return { 'cache-control': 'no-store' }
+  return {}
+}
+
 /**
  * Server-side data for the landing page.
  *

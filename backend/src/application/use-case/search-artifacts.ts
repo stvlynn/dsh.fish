@@ -27,6 +27,21 @@ export interface SearchArtifactsInput {
   readonly locale?: string
 }
 
+/** KV-backed cache for the fixed home-page rails. Owned by this use case. */
+export interface HomeRailCache {
+  read(
+    sort: string,
+    limit: number,
+    locale: string,
+  ): Promise<PageDto<ArtifactSummaryDto> | undefined>
+  write(
+    sort: string,
+    limit: number,
+    locale: string,
+    page: PageDto<ArtifactSummaryDto>,
+  ): Promise<void>
+}
+
 const SORTS: readonly ArtifactSort[] = ['relevance', 'popular', 'recent', 'name', 'rising']
 
 /**
@@ -38,6 +53,7 @@ export class SearchArtifacts {
   constructor(
     private readonly artifacts: ArtifactRepository,
     private readonly summaryTranslations: SummaryTranslationRepository,
+    private readonly homeRailCache?: HomeRailCache,
   ) {}
 
   async execute(input: SearchArtifactsInput): Promise<PageDto<ArtifactSummaryDto>> {
@@ -63,9 +79,31 @@ export class SearchArtifacts {
       page: pageRequest(input.limit, input.offset),
     }
 
+    // The home rails are a fixed trio of unfiltered queries and the heaviest
+    // reads on the site. Caching them keeps a crawl from re-reading tens of
+    // thousands of rows per page view; any filtered or text search bypasses it.
+    const rail =
+      this.homeRailCache !== undefined &&
+      input.text === undefined &&
+      (input.kinds === undefined || input.kinds.length === 0) &&
+      (input.categories === undefined || input.categories.length === 0) &&
+      (input.topics === undefined || input.topics.length === 0) &&
+      input.verifiedOnly === undefined &&
+      input.includeDeprecated !== true &&
+      input.locale !== undefined &&
+      input.offset === undefined
+        ? { sort: query.sort, limit: query.page.limit, locale: input.locale }
+        : undefined
+    if (rail !== undefined) {
+      const cached = await this.homeRailCache!.read(rail.sort, rail.limit, rail.locale)
+      if (cached !== undefined) return cached
+    }
+
     const result = await this.artifacts.search(query)
     if (input.locale === undefined || result.items.length === 0) {
-      return toPageDto(result, toSummaryDto)
+      const page = toPageDto(result, toSummaryDto)
+      if (rail !== undefined) await this.homeRailCache!.write(rail.sort, rail.limit, rail.locale, page)
+      return page
     }
 
     const translations = await this.summaryTranslations.listFor(
@@ -79,10 +117,12 @@ export class SearchArtifacts {
         translatedSummary(byArtifact.get(String(artifact.id))) ?? artifact.summary,
       ]),
     )
-    return toPageDto(result, (artifact) => ({
+    const page = toPageDto(result, (artifact) => ({
       ...toSummaryDto(artifact),
       summary: summaryByArtifact.get(String(artifact.id)) ?? artifact.summary,
     }))
+    if (rail !== undefined) await this.homeRailCache!.write(rail.sort, rail.limit, rail.locale, page)
+    return page
   }
 }
 

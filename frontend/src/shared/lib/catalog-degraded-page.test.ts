@@ -15,7 +15,15 @@ describe('emptyPageOnCatalogFailure', () => {
       throw new Error('D1 DB exceeded its CPU time limit and was reset.')
     })
 
-    expect(result).toEqual({ items: [], total: 0, limit: 24, offset: 48 })
+    expect(result).toEqual({
+      items: [],
+      total: 0,
+      limit: 24,
+      offset: 48,
+      // Routes read this to emit `cache-control: no-store`: a degraded page
+      // must not be cached, or the empty rails outlive the outage.
+      degraded: true,
+    })
     expect(warn).toHaveBeenCalledOnce()
     warn.mockRestore()
   })

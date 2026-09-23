@@ -32,6 +32,7 @@ import { KvOffsetCursor, reclassifyCursorKey } from './ingestion/offset-cursor.j
 import { KvListCursor, listCursorKey } from './ingestion/list-cursor.js'
 import { RepoProber } from './ingestion/repo-prober.js'
 import { KvSweepCursor, sweepCursorKey } from './ingestion/sweep-cursor.js'
+import { KvHomeRailCache } from './persistence/kv-home-rail-cache.js'
 import { D1ArtifactRepository } from './persistence/d1-artifact-repository.js'
 import { D1ReadmeTranslationRepository } from './persistence/d1-readme-translation-repository.js'
 import { D1SummaryTranslationRepository } from './persistence/d1-summary-translation-repository.js'
@@ -118,7 +119,11 @@ export function createContainer(env: HubEnv, options: ContainerOptions): Contain
     submissions,
     reviews,
     useCases: {
-      searchArtifacts: new SearchArtifacts(artifacts, summaryTranslations),
+      searchArtifacts: new SearchArtifacts(
+        artifacts,
+        summaryTranslations,
+        new KvHomeRailCache(env.KV),
+      ),
       getArtifactDetail: new GetArtifactDetail(
         artifacts,
         readmeTranslations,

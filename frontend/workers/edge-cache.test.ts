@@ -136,4 +136,14 @@ describe('isStorableResponse', () => {
       false,
     )
   })
+
+  it('passes a no-store document through isStorableResponse so the wrapper can defer to it', () => {
+    const headers = new Headers({ 'content-type': 'text/html; charset=utf-8' })
+    headers.set('cache-control', 'no-store')
+    const noStore = new Response('body', { status: 200, headers })
+
+    // `isStorableResponse` deliberately knows nothing about cache-control: the
+    // wrapper checks for `no-store` before stamping the default HTML lifetime.
+    expect(isStorableResponse('/browse', noStore)).toBe(true)
+  })
 })

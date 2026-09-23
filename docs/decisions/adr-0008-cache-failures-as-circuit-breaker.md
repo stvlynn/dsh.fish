@@ -76,6 +76,11 @@ load:
 - Home and browse loaders wrap each rail in
   `emptyPageOnCatalogFailure` (`frontend/src/shared/lib/catalog-degraded-page.ts`),
   so one unreadable rail renders empty instead of 500ing the page.
+- Those degraded payloads carry `degraded: true`, and the routes export
+  `headers` that turn it into `cache-control: no-store`. This matters as much
+  as the fallback itself: production cached the zeroed home page for hours, so
+  visitors kept seeing empty rails long after D1 had recovered. A degraded
+  document must never enter a cache.
 
 ## References
 

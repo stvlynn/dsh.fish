@@ -138,6 +138,26 @@ describe('ListCatalogFacets when the catalog read fails', () => {
     expect(facets.topics.map((entry) => entry.count)).toEqual(TOPICS.map(() => 0))
   })
 
+  it('marks the fallback as degraded so routes can keep it out of caches', async () => {
+    const { repository } = failingRepository()
+    const { cache } = memoryCache()
+    const useCase = new ListCatalogFacets(repository, cache)
+
+    const facets = await useCase.execute()
+
+    expect(facets.degraded).toBe(true)
+  })
+
+  it('does not mark a successful read as degraded', async () => {
+    const { repository } = countingRepository()
+    const { cache } = memoryCache()
+    const useCase = new ListCatalogFacets(repository, cache)
+
+    const facets = await useCase.execute()
+
+    expect(facets.degraded).toBeUndefined()
+  })
+
   it('propagates the failure when no cache can absorb it', async () => {
     const { repository } = failingRepository()
     const useCase = new ListCatalogFacets(repository)

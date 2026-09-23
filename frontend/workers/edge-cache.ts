@@ -116,6 +116,15 @@ export async function withEdgeCache(
     return response
   }
 
+  // A route that declared `no-store` (a degraded catalog read, for example) is
+  // telling every cache layer the same thing: this document must not outlive
+  // the moment it was rendered. Respect it instead of stamping the default
+  // HTML lifetime onto it.
+  const cacheControl = response.headers.get('cache-control')
+  if (cacheControl?.includes('no-store')) {
+    return response
+  }
+
   // Anonymous HTML carries no cache-control of its own; give the stored copy
   // (and the browser) a five-minute lifetime. Routes that already set one keep it.
   if (!response.headers.has('cache-control')) {

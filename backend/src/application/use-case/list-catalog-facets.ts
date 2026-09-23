@@ -7,6 +7,12 @@ import { CATEGORIES } from '../../domain/artifact/category.js'
 import { TOPICS } from '../../domain/artifact/topic.js'
 
 export interface FacetsDto {
+  /**
+   * True when these counts are the zeroed fallback served because the catalog
+   * aggregation failed. Lets a route keep the degraded document out of every
+   * cache: empty rails must not outlive the outage that caused them.
+   */
+  readonly degraded?: true
   readonly kinds: readonly {
     kind: ArtifactKind
     labelKey: string
@@ -31,6 +37,7 @@ export interface FacetsDto {
  */
 function emptyFacets(): FacetsDto {
   return {
+    degraded: true,
     kinds: ARTIFACT_KINDS.map((kind) => ({
       kind,
       labelKey: ARTIFACT_KIND_META[kind].labelKey,
