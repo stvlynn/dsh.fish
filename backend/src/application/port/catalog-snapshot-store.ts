@@ -27,4 +27,15 @@ export interface CatalogSnapshotStore {
    */
   readMeta(): Promise<CatalogSnapshotMeta | undefined>
   writeMeta(meta: CatalogSnapshotMeta): Promise<void>
+
+  /**
+   * The last snapshot body this store holds, whatever version it was built
+   * for.
+   *
+   * Building the document reads every public artifact row, so it is the
+   * heaviest call in the catalog. Keeping one body lets `/catalog/snapshot`
+   * answer from memory when D1 refuses the walk, instead of 500ing a document
+   * that has not actually changed.
+   */
+  readLastBody(): Promise<string | undefined>
 }

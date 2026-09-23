@@ -38,16 +38,19 @@ function testContainer() {
     }),
   } as unknown as ArtifactRepository
   const entries = new Map<string, string>()
+  const bodies = new Map<string, string>()
   const meta: { value: CatalogSnapshotMeta | undefined } = { value: undefined }
   const store: CatalogSnapshotStore = {
     read: async (dataVersion) => entries.get(dataVersion),
     write: async (dataVersion, body) => {
       entries.set(dataVersion, body)
+      bodies.set('last', body)
     },
     readMeta: async () => meta.value,
     writeMeta: async (next) => {
       meta.value = next
     },
+    readLastBody: async () => bodies.get('last'),
   }
   return {
     useCases: { getCatalogSnapshot: new GetCatalogSnapshot(artifacts, store) },

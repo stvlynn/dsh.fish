@@ -52,4 +52,19 @@ describe('KvCatalogSnapshotStore', () => {
 
     await expect(store.readMeta()).rejects.toThrow('malformed payload')
   })
+
+  it('keeps the last built body under a stable key for fallback reads', async () => {
+    const { kv, entries } = memoryKv()
+    const store = new KvCatalogSnapshotStore(kv as never)
+
+    expect(await store.readLastBody()).toBeUndefined()
+    await store.write('v1', '{"artifacts":[]}')
+    expect(await store.readLastBody()).toBe('{"artifacts":[]}')
+
+    // A newer version replaces it: the fallback is the newest document built,
+    // not the first one.
+    await store.write('v2', '{"artifacts":[1]}')
+    expect(await store.readLastBody()).toBe('{"artifacts":[1]}')
+    expect(entries.has('catalog:snapshot:last-body')).toBe(true)
+  })
 })

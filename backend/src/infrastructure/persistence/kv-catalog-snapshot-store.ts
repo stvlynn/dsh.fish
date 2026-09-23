@@ -16,6 +16,7 @@ const SNAPSHOT_TTL_SECONDS = 86_400
  */
 const META_TTL_SECONDS = 86_400
 const META_KEY = 'catalog:snapshot:meta'
+const LAST_BODY_KEY = 'catalog:snapshot:last-body'
 
 export class KvCatalogSnapshotStore implements CatalogSnapshotStore {
   constructor(private readonly kv: KVNamespace) {}
@@ -26,6 +27,10 @@ export class KvCatalogSnapshotStore implements CatalogSnapshotStore {
 
   async write(dataVersion: string, body: string): Promise<void> {
     await this.kv.put(snapshotKey(dataVersion), body, { expirationTtl: SNAPSHOT_TTL_SECONDS })
+    // One extra copy under a stable key, so a caller that cannot build the
+    // document still has something to serve. The versioned copy above stays
+    // the one an unchanged catalog is served from.
+    await this.kv.put(LAST_BODY_KEY, body, { expirationTtl: SNAPSHOT_TTL_SECONDS })
   }
 
   async readMeta(): Promise<CatalogSnapshotMeta | undefined> {
@@ -35,6 +40,10 @@ export class KvCatalogSnapshotStore implements CatalogSnapshotStore {
 
   async writeMeta(meta: CatalogSnapshotMeta): Promise<void> {
     await this.kv.put(META_KEY, JSON.stringify(meta), { expirationTtl: META_TTL_SECONDS })
+  }
+
+  async readLastBody(): Promise<string | undefined> {
+    return (await this.kv.get(LAST_BODY_KEY)) ?? undefined
   }
 }
 
