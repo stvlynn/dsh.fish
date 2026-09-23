@@ -64,6 +64,19 @@ every fallback so the condition stays observable.
   run, but it is a schema and ingestion change; the circuit breaker is needed
   to stop the bleeding first.
 
+## Related decisions
+
+The same reasoning now covers the other catalog reads that fail first under
+load:
+
+- `GetCatalogSnapshot.meta()` records its last successful result in KV and
+  serves it when `catalogStats()` throws; `snapshot()` serves the last built
+  document when the catalog walk throws. Without a recorded value the error
+  still propagates.
+- Home and browse loaders wrap each rail in
+  `emptyPageOnCatalogFailure` (`frontend/src/shared/lib/catalog-degraded-page.ts`),
+  so one unreadable rail renders empty instead of 500ing the page.
+
 ## References
 
 - [`../backend/database.md`](../backend/database.md) — catalog columns, covering indexes.
