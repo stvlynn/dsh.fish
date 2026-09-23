@@ -8,6 +8,7 @@ import { requireLocale, translate, useT } from '@/shared/config/i18n'
 import { useLocalePath } from '@/shared/ui/locale-link'
 import { breadcrumbLd, collectionLd, errorMeta, pageMeta } from '@/shared/lib/seo'
 import { SearchIcon, SortIcon } from '@/shared/ui/icon'
+import { emptyPageOnCatalogFailure } from '@/shared/lib/catalog-degraded-page'
 
 const PAGE_SIZE = 24
 
@@ -62,16 +63,18 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const query = url.searchParams.get('q') ?? ''
 
   const [results, facets] = await Promise.all([
-    container.useCases.searchArtifacts.execute({
-      locale,
-      ...(query === '' ? {} : { text: query }),
-      kinds: url.searchParams.getAll('kind'),
-      categories: url.searchParams.getAll('category'),
-      ...(url.searchParams.get('sort') ? { sort: url.searchParams.get('sort')! } : {}),
-      ...(url.searchParams.get('verified') === 'true' ? { verifiedOnly: true } : {}),
-      limit: PAGE_SIZE,
-      offset: Number(url.searchParams.get('offset') ?? 0),
-    }),
+    emptyPageOnCatalogFailure(PAGE_SIZE, Number(url.searchParams.get('offset') ?? 0), () =>
+      container.useCases.searchArtifacts.execute({
+        locale,
+        ...(query === '' ? {} : { text: query }),
+        kinds: url.searchParams.getAll('kind'),
+        categories: url.searchParams.getAll('category'),
+        ...(url.searchParams.get('sort') ? { sort: url.searchParams.get('sort')! } : {}),
+        ...(url.searchParams.get('verified') === 'true' ? { verifiedOnly: true } : {}),
+        limit: PAGE_SIZE,
+        offset: Number(url.searchParams.get('offset') ?? 0),
+      }),
+    ),
     container.useCases.listCatalogFacets.execute(),
   ])
 

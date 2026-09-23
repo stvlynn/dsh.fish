@@ -9,6 +9,7 @@ import { requireLocale, translate, useT } from '@/shared/config/i18n'
 import { LocaleLink, useLocalePath } from '@/shared/ui/locale-link'
 import { errorMeta, organizationLd, pageMeta, websiteLd } from '@/shared/lib/seo'
 import { AnimatedNumber } from '@/shared/ui/animated-number'
+import { emptyPageOnCatalogFailure } from '@/shared/lib/catalog-degraded-page'
 
 export function meta({ loaderData, params }: Route.MetaArgs): Route.MetaDescriptors {
   if (!loaderData) return errorMeta(params.locale)
@@ -41,11 +42,17 @@ export async function loader({ context, params }: Route.LoaderArgs) {
   const { searchArtifacts, listCatalogFacets } = container.useCases
 
   const [trending, risingPool, recentPool, facets] = await Promise.all([
-    searchArtifacts.execute({ sort: 'popular', limit: 6, locale }),
+    emptyPageOnCatalogFailure(6, 0, () =>
+      searchArtifacts.execute({ sort: 'popular', limit: 6, locale }),
+    ),
     // Over-fetch, then subtract what the first rail already shows. Two rails
     // listing the same artifacts is the same page twice.
-    searchArtifacts.execute({ sort: 'rising', limit: 12, locale }),
-    searchArtifacts.execute({ sort: 'recent', limit: 12, locale }),
+    emptyPageOnCatalogFailure(12, 0, () =>
+      searchArtifacts.execute({ sort: 'rising', limit: 12, locale }),
+    ),
+    emptyPageOnCatalogFailure(12, 0, () =>
+      searchArtifacts.execute({ sort: 'recent', limit: 12, locale }),
+    ),
     listCatalogFacets.execute(),
   ])
 
