@@ -4,13 +4,12 @@ import type {
 } from '../../domain/artifact/artifact-repository.js'
 import type { ArtifactSummaryDto } from '../dto/artifact-dto.js'
 import { toSummaryDto } from '../dto/artifact-dto.js'
-import type { CatalogSnapshotStore } from '../port/catalog-snapshot-store.js'
+import type {
+  CatalogSnapshotMeta,
+  CatalogSnapshotStore,
+} from '../port/catalog-snapshot-store.js'
 
-export interface CatalogSnapshotMeta {
-  readonly dataVersion: string
-  readonly artifactCount: number
-  readonly generatedAt: string
-}
+export type { CatalogSnapshotMeta }
 
 export interface CatalogSnapshotDto extends CatalogSnapshotMeta {
   readonly artifacts: readonly ArtifactSummaryDto[]
@@ -40,7 +39,24 @@ export class GetCatalogSnapshot {
   ) {}
 
   async meta(): Promise<CatalogSnapshotMeta> {
-    return toMeta(await this.artifacts.catalogStats())
+    try {
+      const meta = await toMeta(await this.artifacts.catalogStats())
+      await this.store.writeMeta(meta)
+      return meta
+    } catch (error) {
+      // `catalogStats()` is the cheapest catalog read in the codebase and it
+      // still heap-scans: `readme_markdown` is inline, so one row is tens of
+      // kilobytes. When D1 refuses it, fall back to the last version this
+      // store recorded rather than 500ing a poll endpoint — a sync client only
+      // needs to know whether the catalog moved, and a slightly stale
+      // `dataVersion` makes it re-download, which is safe.
+      const last = await this.store.readMeta()
+      if (last === undefined) throw error
+      console.error('catalog_stats_unavailable', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return last
+    }
   }
 
   async snapshot(): Promise<CatalogSnapshot> {

@@ -1,3 +1,9 @@
+export interface CatalogSnapshotMeta {
+  readonly dataVersion: string
+  readonly artifactCount: number
+  readonly generatedAt: string
+}
+
 /**
  * Where a built catalog snapshot body is kept between requests.
  *
@@ -10,4 +16,15 @@
 export interface CatalogSnapshotStore {
   read(dataVersion: string): Promise<string | undefined>
   write(dataVersion: string, body: string): Promise<void>
+
+  /**
+   * The last catalog metadata this store saw.
+   *
+   * `catalogStats()` heap-scans the wide `artifacts` table, so it is the read
+   * that fails first under load. Keeping its last successful result lets
+   * `/catalog/version` answer from memory instead of 500ing, which also stops
+   * a failing poll endpoint from adding load to the database that is failing.
+   */
+  readMeta(): Promise<CatalogSnapshotMeta | undefined>
+  writeMeta(meta: CatalogSnapshotMeta): Promise<void>
 }

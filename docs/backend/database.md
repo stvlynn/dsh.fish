@@ -90,6 +90,11 @@ This document describes database conventions. Fill in concrete technology choice
   `WHERE deprecated = 0`; without a covering index SQLite walks the heap and
   reads every `readme_markdown` body (~45 KB/row), which alone is enough to
   exhaust D1's CPU budget.
+  `GetCatalogSnapshot.meta()` also records its last successful result in KV
+  (`catalog:snapshot:meta`) and serves that when the aggregation fails, so a
+  D1 overload degrades a poll endpoint instead of 500ing it. The migration
+  itself is not yet applied in production: `CREATE INDEX` over the 494 MB
+  `artifacts` table exceeds D1's per-statement CPU budget.
 
 ## Migrations
 

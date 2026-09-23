@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { Artifact } from '../../domain/artifact/artifact.js'
 import type { ArtifactRepository } from '../../domain/artifact/artifact-repository.js'
 import { npmSource } from '../../domain/artifact/source-ref.js'
-import type { CatalogSnapshotStore } from '../port/catalog-snapshot-store.js'
+import type {
+  CatalogSnapshotMeta,
+  CatalogSnapshotStore,
+} from '../port/catalog-snapshot-store.js'
 import type { CatalogSnapshotDto } from './get-catalog-snapshot.js'
 import { GetCatalogSnapshot } from './get-catalog-snapshot.js'
 
@@ -69,13 +72,18 @@ function memoryRepository(rows: Artifact[]) {
 
 function memoryStore() {
   const entries = new Map<string, string>()
+  const meta: { value: CatalogSnapshotMeta | undefined } = { value: undefined }
   const store: CatalogSnapshotStore = {
     read: async (dataVersion) => entries.get(dataVersion),
     write: async (dataVersion, body) => {
       entries.set(dataVersion, body)
     },
+    readMeta: async () => meta.value,
+    writeMeta: async (next) => {
+      meta.value = next
+    },
   }
-  return { store, entries }
+  return { store, entries, meta }
 }
 
 describe('GetCatalogSnapshot', () => {
@@ -148,5 +156,45 @@ describe('GetCatalogSnapshot', () => {
     // `generatedAt` is the newest change in the data, not the render time.
     expect(meta.generatedAt).toBe(later.toISOString())
     expect(meta.dataVersion).toMatch(/^[0-9a-f]{64}$/)
+  })
+})
+
+describe('GetCatalogSnapshot when the stats aggregation fails', () => {
+  function failingRepository() {
+    const state = { reads: 0 }
+    const repository = {
+      catalogStats: async () => {
+        state.reads += 1
+        throw new Error('D1 DB exceeded its CPU time limit and was reset.')
+      },
+      listForSnapshot: async () => [],
+    } as unknown as ArtifactRepository
+    return { repository, state }
+  }
+
+  it('falls back to the last recorded version instead of failing the poll', async () => {
+    const good = memoryRepository([artifact('dsh-alpha', { updatedAt: earlier })])
+    const { store } = memoryStore()
+    const known = await new GetCatalogSnapshot(good.repository, store).meta()
+
+    const { repository, state } = failingRepository()
+    const useCase = new GetCatalogSnapshot(repository, store)
+
+    expect(await useCase.meta()).toEqual(known)
+    expect(state.reads).toBe(1)
+
+    // A sync client that sees the last known version re-downloads at worst,
+    // which is safe; it must never see a 500 from a poll endpoint.
+    expect(await useCase.meta()).toEqual(known)
+    expect(state.reads).toBe(2)
+  })
+
+  it('propagates the failure when no version has been recorded yet', async () => {
+    const { repository } = failingRepository()
+    const { store } = memoryStore()
+
+    await expect(new GetCatalogSnapshot(repository, store).meta()).rejects.toThrow(
+      /CPU time limit/,
+    )
   })
 })
