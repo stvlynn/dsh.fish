@@ -4,11 +4,13 @@ import type { PackageManifest } from '../../domain/artifact/manifest.js'
 import type { ArtifactKind } from '../../domain/artifact/artifact-kind.js'
 import type { ArtifactPayload } from '../../domain/artifact/artifact-payload.js'
 import { resolveCategories } from '../../domain/artifact/category-inference.js'
-import { githubSource } from '../../domain/artifact/source-ref.js'
-import type { SourceRef } from '../../domain/artifact/source-ref.js'
+import { githubSource, isNpmPackageName, releaseTarballTarget } from '../../domain/artifact/source-ref.js'
+import type { SourceRef, VerifiedNpmBinding } from '../../domain/artifact/source-ref.js'
 import { slugify } from '../../domain/shared/slug.js'
 import type { IndexedSnapshot } from '../../application/port/source-indexer.js'
 import { GitHubSocialPreview } from './github-social-preview.js'
+import { lookupNpmBinding } from './npm-binding.js'
+import type { NpmBindingLookup } from './npm-binding.js'
 
 /** The topic the harness README asks plugin authors to tag their repositories with. */
 export const DSH_PLUGIN_TOPIC = 'dsh-plugin'
@@ -76,10 +78,17 @@ function orderProbes(kindHint: ArtifactKind | undefined): readonly ProbeName[] {
  * at all — the discovery channels (topic search, curated lists) both surface
  * far more applications than loadable plugins.
  */
+/** Install hints a curated list already recorded for this repository. */
+export interface CuratedInstallHints {
+  readonly npm?: string
+  readonly tarball?: string
+}
+
 export class RepoProber {
   constructor(
     private readonly token?: string,
     private readonly socialPreview: GitHubSocialPreview = new GitHubSocialPreview(token),
+    private readonly lookupNpm: NpmBindingLookup = lookupNpmBinding,
   ) {}
 
   /** Fetch one repository's metadata; undefined when it is gone or private. */
@@ -94,6 +103,7 @@ export class RepoProber {
     subPath?: string,
     kindHint?: ArtifactKind,
     curatedCategories: readonly string[] = [],
+    curatedInstall: CuratedInstallHints = {},
   ): Promise<IndexedSnapshot | undefined> {
     const ref = repo.default_branch
     const prefix = subPath === undefined || subPath === '' ? '' : `${subPath}/`
@@ -113,7 +123,16 @@ export class RepoProber {
     for (const probe of orderProbes(kindHint)) {
       const snapshot =
         probe === 'manifest'
-          ? await this.probeManifest(repo, prefix, ref, subPath, base, topics, curatedCategories)
+          ? await this.probeManifest(
+              repo,
+              prefix,
+              ref,
+              subPath,
+              base,
+              topics,
+              curatedCategories,
+              curatedInstall,
+            )
           : probe === 'skill'
             ? await this.probeSkill(repo, prefix, ref, subPath, base, topics, curatedCategories)
             : await this.probePreset(repo, prefix, ref, subPath, base, curatedCategories)
@@ -131,6 +150,7 @@ export class RepoProber {
     base: RepoFacts,
     topics: readonly string[],
     curatedCategories: readonly string[],
+    curatedInstall: CuratedInstallHints,
   ): Promise<IndexedSnapshot | undefined> {
     const manifestText = await this.readFile(repo, `${prefix}${MANIFEST_FILE}`, ref)
     if (manifestText === undefined) return undefined
@@ -140,13 +160,14 @@ export class RepoProber {
     if (!classification) return undefined
 
     const context = await this.loadContext(repo, subPath, prefix, ref)
+    const source = await this.withInstallTargets(context.source, manifest.name, curatedInstall)
     const keywords = [...topics, ...(manifest.keywords ?? [])]
     return {
       id: slugify(manifest.name),
       kind: classification.kind,
       displayName: manifest.name,
       summary: manifest.description ?? repo.description ?? manifest.name,
-      source: context.source,
+      source,
       payload: classification.payload,
       ...base,
       keywords,
@@ -254,6 +275,44 @@ export class RepoProber {
       ogImageUrl: context.ogImageUrl,
       ...(context.head === undefined ? {} : { sourceCommitSha: context.head }),
     }
+  }
+
+  /**
+   * Attach a verified npm name and a same-repo Release tarball when either
+   * can be proven. The install plan reads these; it does not guess from the
+   * display name. A packument whose `repository` is a different remote is
+   * ignored (name-squatting). Network failure leaves the fields off so a
+   * later sweep can fill them without wiping a previous binding (merge keeps
+   * the stored npm/tarball when the next crawl omits them).
+   */
+  private async withInstallTargets(
+    source: SourceRef,
+    packageName: string | undefined,
+    curated: CuratedInstallHints,
+  ): Promise<SourceRef> {
+    if (source.origin !== 'github') return source
+    const names = [curated.npm, packageName].filter(
+      (name): name is string => typeof name === 'string' && isNpmPackageName(name),
+    )
+    let npm: VerifiedNpmBinding | undefined
+    for (const name of [...new Set(names)]) {
+      npm = await this.lookupNpm(name, source.owner, source.repo)
+      if (npm !== undefined) break
+    }
+    const releaseTarball =
+      curated.tarball === undefined
+        ? undefined
+        : releaseTarballTarget(curated.tarball, `${source.owner}/${source.repo}`)
+    if (npm === undefined && releaseTarball === undefined) return source
+    return githubSource({
+      owner: source.owner,
+      repo: source.repo,
+      ...(source.path === undefined ? {} : { path: source.path }),
+      ...(source.commit === undefined ? {} : { commit: source.commit }),
+      ...(source.via === undefined ? {} : { via: source.via }),
+      ...(npm === undefined ? {} : { npm }),
+      ...(releaseTarball === undefined ? {} : { releaseTarball }),
+    })
   }
 
   /**

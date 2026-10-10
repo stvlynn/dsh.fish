@@ -17,7 +17,14 @@ export type {
   ReviewSummary,
 } from './hub-client.js'
 export { renderArtifactReviews } from './review-text.js'
-export { InstallRefused, PlanInstaller, packageNameFromSpec, safeJoin } from './installer.js'
+export {
+  InstallRefused,
+  PlanInstaller,
+  ndjsonError,
+  packageNameFromSpec,
+  pluginMutationArgs,
+  safeJoin,
+} from './installer.js'
 export type {
   AppliedStep,
   CommandRunner,

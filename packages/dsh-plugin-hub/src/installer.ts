@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
@@ -195,7 +196,7 @@ export class PlanInstaller {
   ): Promise<{ step: AppliedStep; locked: LockedPackage }> {
     const spec = String(step['spec'])
     const before = await this.dependencyNames()
-    const args = ['plugin', '--profile', this.profile, 'add', spec]
+    const args = pluginMutationArgs(this.profile, 'add', spec, this.profileDir())
     try {
       const { stdout, stderr } = await this.run('dsh', args, signal)
       const after = await this.dependencyNames()
@@ -220,7 +221,7 @@ export class PlanInstaller {
   }
 
   private async removePackage(name: string, signal: AbortSignal): Promise<AppliedStep> {
-    const args = ['plugin', '--profile', this.profile, 'remove', name]
+    const args = pluginMutationArgs(this.profile, 'remove', name, this.profileDir())
     try {
       const { stdout, stderr } = await this.run('dsh', args, signal)
       return {
@@ -319,6 +320,37 @@ export function safeJoin(root: string, relativePath: string): string {
 }
 
 /**
+ * Argv for `dsh plugin add|remove`, matching the command the official market
+ * actually runs.
+ *
+ * `dsh plugin add` forwards leftover flags to `pnpm add`. Two of those are
+ * load-bearing on a desktop profile:
+ *
+ * - `-w` (`--workspace-root`): pnpm 9 refuses `add` at a workspace root
+ *   without it (`ERR_PNPM_ADDING_TO_ROOT`). Every pnpm major refuses `-w`
+ *   when the directory is *not* a workspace, so the flag is injected only
+ *   when `pnpm-workspace.yaml` is present.
+ * - `--reporter=ndjson` on add: pnpm's real error lands on this stream, not
+ *   in `dsh`'s wrapper stderr. Without it, a failed install looks silent.
+ */
+export function pluginMutationArgs(
+  profile: string,
+  action: 'add' | 'remove',
+  spec: string,
+  profileDir: string,
+): string[] {
+  const args = ['plugin', '--profile', profile, action]
+  if (existsSync(join(profileDir, 'pnpm-workspace.yaml'))) {
+    args.push('-w')
+  }
+  args.push(spec)
+  if (action === 'add') {
+    args.push('--reporter=ndjson')
+  }
+  return args
+}
+
+/**
  * Best-effort package name from a specifier, used when the profile manifest
  * did not gain a new dependency key (re-install of something already present).
  */
@@ -384,9 +416,38 @@ function isNotFound(error: unknown): boolean {
 }
 
 function describe(error: unknown): string {
-  if (error && typeof error === 'object' && 'stderr' in error) {
-    const stderr = String((error as { stderr: unknown }).stderr).trim()
-    if (stderr !== '') return stderr.slice(0, 1000)
-  }
+  const stdout = field(error, 'stdout')
+  const stderr = field(error, 'stderr')
+  const fromNdjson = ndjsonError(stdout)
+  if (fromNdjson !== undefined) return fromNdjson
+  if (stderr !== '') return stderr.slice(0, 2000)
+  if (stdout !== '') return stdout.slice(0, 2000)
   return error instanceof Error ? error.message : String(error)
+}
+
+function field(error: unknown, name: 'stdout' | 'stderr'): string {
+  if (!error || typeof error !== 'object' || !(name in error)) return ''
+  return String((error as Record<string, unknown>)[name]).trim()
+}
+
+/**
+ * pnpm's ndjson reporter writes one JSON object per tick. Progress lines are
+ * noise; a line that carries `err` or a `ERR_PNPM_*` message is the actual
+ * failure. Walk from the tail so the last diagnostic wins.
+ */
+export function ndjsonError(stdout: string): string | undefined {
+  for (const line of stdout.split(/\r?\n/).reverse()) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('{')) continue
+    try {
+      const parsed = JSON.parse(trimmed) as { err?: unknown; message?: unknown }
+      if (typeof parsed.message !== 'string' || parsed.message === '') continue
+      if (parsed.err !== undefined || /ERR_PNPM_/.test(parsed.message)) {
+        return parsed.message.slice(0, 2000)
+      }
+    } catch {
+      // Not a JSON tick; keep scanning.
+    }
+  }
+  return undefined
 }

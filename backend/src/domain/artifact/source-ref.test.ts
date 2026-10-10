@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   githubRepoFromUrl,
   githubSource,
+  installTargetFor,
   mergeProvenance,
   npmSource,
+  releaseTarballTarget,
   sourceAssetBase,
   sourceDocBase,
   submissionSource,
@@ -101,5 +103,84 @@ describe('mergeProvenance', () => {
       packageName: 'thing',
       latestVersion: '1.1.0',
     })
+  })
+
+  it('keeps a verified npm binding a later crawl did not re-check', () => {
+    const listed = githubSource({
+      owner: 'acme',
+      repo: 'thing',
+      npm: { packageName: 'thing', latestVersion: '1.0.0' },
+      releaseTarball: 'https://github.com/acme/thing/releases/download/v1.0.0/thing.tgz',
+    })
+    const crawled = githubSource({ owner: 'acme', repo: 'thing', commit: 'abc1234' })
+
+    expect(mergeProvenance(listed, crawled)).toMatchObject({
+      commit: 'abc1234',
+      npm: { packageName: 'thing', latestVersion: '1.0.0' },
+      releaseTarball: 'https://github.com/acme/thing/releases/download/v1.0.0/thing.tgz',
+    })
+  })
+})
+
+describe('installTargetFor', () => {
+  it('pins an npm source to its latest version', () => {
+    expect(installTargetFor(npmSource('thing', '1.2.3'))).toBe('thing@1.2.3')
+  })
+
+  it('uses a verified npm name, then a bound tarball, then a pinned git spec', () => {
+    const tarball = 'https://github.com/acme/thing/releases/download/v1.0.0/thing.tgz'
+    expect(
+      installTargetFor(
+        githubSource({
+          owner: 'acme',
+          repo: 'thing',
+          commit: 'abc1234',
+          npm: { packageName: 'thing', latestVersion: '1.0.0' },
+          releaseTarball: tarball,
+        }),
+      ),
+    ).toBe('thing')
+    expect(
+      installTargetFor(
+        githubSource({ owner: 'acme', repo: 'thing', commit: 'abc1234', releaseTarball: tarball }),
+      ),
+    ).toBe(tarball)
+    expect(installTargetFor(githubSource({ owner: 'acme', repo: 'thing', commit: 'abc1234' }))).toBe(
+      'github:acme/thing#abc1234',
+    )
+  })
+})
+
+describe('releaseTarballTarget', () => {
+  const repo = 'acme/thing'
+
+  it('accepts an HTTPS GitHub Release archive for the same repository', () => {
+    const url = 'https://github.com/acme/thing/releases/download/v1.0.0/thing-1.0.0.tgz'
+    expect(releaseTarballTarget(url, repo)).toBe(url)
+  })
+
+  it('rejects an archive that is not this repository', () => {
+    expect(
+      releaseTarballTarget(
+        'https://github.com/evil/repo/releases/download/v1.0.0/p.tgz',
+        repo,
+      ),
+    ).toBeUndefined()
+  })
+
+  it('rejects a release CDN URL that cannot be bound to a repository', () => {
+    expect(
+      releaseTarballTarget('https://objects.githubusercontent.com/whatever/x.tgz', repo),
+    ).toBeUndefined()
+  })
+
+  it('refuses to construct a source whose tarball is not this repository', () => {
+    expect(() =>
+      githubSource({
+        owner: 'acme',
+        repo: 'thing',
+        releaseTarball: 'https://github.com/evil/repo/releases/download/v1/p.tgz',
+      }),
+    ).toThrow(/release tarball/i)
   })
 })

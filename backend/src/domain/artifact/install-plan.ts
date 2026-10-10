@@ -1,7 +1,7 @@
 import { DomainError } from '../shared/error.js'
 import type { Artifact } from './artifact.js'
 import type { ArtifactKind } from './artifact-kind.js'
-import { packageSpec } from './source-ref.js'
+import { installTargetFor } from './source-ref.js'
 
 /**
  * Where an install writes. The hub never learns a machine's real paths: a step
@@ -93,23 +93,24 @@ export function buildInstallPlan(artifact: Artifact, target: InstallTarget): Ins
 
   switch (payload.kind) {
     case 'bundle': {
-      const spec = packageSpec(artifact.source)
+      const spec = bundleInstallSpec(artifact)
       if (spec === undefined) {
         throw DomainError.unsupported('This bundle has no installable package specifier.', {
           artifactId: artifact.id,
         })
       }
+      const gitSpec = spec.startsWith('github:')
       steps.push({
         type: 'add-package',
         profile: target.profile,
         spec,
-        requiresBuildAllowance: payload.requiresBuild,
+        requiresBuildAllowance: gitSpec && payload.requiresBuild,
       })
       manualCommands.push(`dsh plugin --profile ${target.profile} add ${spec}`)
-      if (payload.requiresBuild) {
+      if (gitSpec && payload.requiresBuild) {
         warningKeys.push('install.warning.buildAllowance')
       }
-      if (artifact.source.origin === 'github' && artifact.source.commit === undefined) {
+      if (gitSpec && artifact.source.origin === 'github' && artifact.source.commit === undefined) {
         warningKeys.push('install.warning.unpinnedGitSpec')
       }
       break
@@ -175,4 +176,16 @@ export function buildInstallPlan(artifact: Artifact, target: InstallTarget): Ins
       ? {}
       : { scannedAtCommit: artifact.sourceCommitSha }),
   }
+}
+
+/**
+ * Specifier `dsh plugin add` should receive for a catalog bundle.
+ *
+ * The choice is made on the source at index time (verified npm, then a
+ * same-repo Release tarball, then a pinned git spec). Display names are not
+ * consulted: a legal package.json name that is unpublished, or belongs to
+ * another repository, must not become the install spec.
+ */
+export function bundleInstallSpec(artifact: Artifact): string | undefined {
+  return installTargetFor(artifact.source)
 }

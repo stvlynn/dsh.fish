@@ -268,6 +268,37 @@ describe('AWESOME_LISTS', () => {
 })
 
 describe('AwesomeListIndexer', () => {
+  it('attaches a curated Release tarball that belongs to the listed repository', async () => {
+    const tarball = 'https://github.com/acme/dsh-hud/releases/download/v0.1.0/hud.tgz'
+    stubSources(
+      [{ owner: 'acme', name: 'dsh-hud', files: { 'package.json': BUNDLE_MANIFEST } }],
+      {
+        [AWESOME_URL]: {
+          plugins: [
+            {
+              url: 'https://github.com/acme/dsh-hud',
+              category: 'ui',
+              tarball,
+            },
+          ],
+        },
+      },
+    )
+
+    const snapshots = await new AwesomeListIndexer(
+      new RepoProber(undefined, undefined, async () => undefined),
+      undefined,
+      testLists(),
+    ).discover(1)
+
+    expect(snapshots[0]?.source).toMatchObject({
+      origin: 'github',
+      repo: 'dsh-hud',
+      via: ['awesome-dsh-plugin'],
+      releaseTarball: tarball,
+    })
+  })
+
   it('probes a repository listed by awesome-dsh-plugin and records the provenance', async () => {
     stubSources(
       [{ owner: 'acme', name: 'dsh-hud', files: { 'package.json': BUNDLE_MANIFEST } }],

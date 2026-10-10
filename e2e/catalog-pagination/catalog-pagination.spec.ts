@@ -4,16 +4,18 @@ import {
   PAGINATION_FILLER_COUNT,
   paginationFillerId,
 } from '../lib/pagination-fillers'
+import { INSTALL_TARGET_FIXTURE_COUNT } from '../lib/install-target-fixtures'
 
 /**
  * Real SQL pagination against the e2e D1, not a Worker-side slice of the
  * snapshot. The shared seed is one row per kind; seedLocalCatalog adds enough
- * fillers that `/browse` (page size 24) has a second page.
+ * fillers that `/browse` (page size 24) has a second page, plus the install-
+ * target fixtures the install-panel suite reads.
  *
- * Six public seed rows + 20 fillers = 26. Default search hides the deprecated
- * shim, so `total` is 26.
+ * Six public seed rows + 20 fillers + 3 install-target fixtures = 29.
+ * Default search hides the deprecated shim, so `total` is 29.
  */
-const PUBLIC_TOTAL = 6 + PAGINATION_FILLER_COUNT
+const PUBLIC_TOTAL = 6 + PAGINATION_FILLER_COUNT + INSTALL_TARGET_FIXTURE_COUNT
 
 type ArtifactPage = {
   items: { id: string }[]
