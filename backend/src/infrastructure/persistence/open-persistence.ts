@@ -41,8 +41,8 @@ export async function openPersistence(env: HubEnv, locales: readonly string[] = 
       queueLimit: 16,
     })
     try {
-      // Verify connectivity before constructing the container; fail without D1 fallback.
-      await client.query('SELECT 1')
+      // Open sockets lazily: cached/static/anonymous-session paths must not queue a probe.
+      // The first actual database operation still propagates failures; never fall back to D1.
       const db = mysqlDrizzle(client, { schema: mysqlSchema, mode: 'default' })
       return {
         mysqlDb: db,

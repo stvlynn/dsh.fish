@@ -15,11 +15,13 @@
         "name": "README_I18N_AGENT",
         "class_name": "ReadmeI18nAgent",
       },
+      { "name": "CAT_QUERY_ADMISSION", "class_name": "CatalogQueryAdmission" },
     ],
   },
   // Declarative Durable Object lifecycle is the current Wrangler form. The
   // Agent SDK stores its queue and retry state in per-instance SQLite.
   "exports": {
+    "CatalogQueryAdmission": { "type": "durable-object", "storage": "sqlite" },
     "ReadmeI18nAgent": {
       "type": "durable-object",
       "storage": "sqlite",

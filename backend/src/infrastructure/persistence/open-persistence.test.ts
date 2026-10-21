@@ -46,16 +46,16 @@ describe('request-scoped persistence', () => {
     expect(mocks.createPool).toHaveBeenCalledWith(
       expect.objectContaining({ connectionLimit: 2, disableEval: true, queueLimit: 16 }),
     )
-    expect(mocks.query).toHaveBeenCalledWith('SELECT 1')
+    expect(mocks.query).not.toHaveBeenCalled()
     expect(persistence.mysqlDb).toBeDefined()
     await persistence.dispose()
     expect(mocks.end).toHaveBeenCalledOnce()
   })
-  it('disposes a failed connection probe and preserves the error', async () => {
+  it('does not hide a failure from the first real database operation', async () => {
+    const persistence = await openPersistence({ STORAGE_BACKEND: 'mysql', HYPERDRIVE: hyperdrive } as never)
     mocks.query.mockRejectedValueOnce(new Error('origin unavailable'))
-    await expect(
-      openPersistence({ STORAGE_BACKEND: 'mysql', HYPERDRIVE: hyperdrive } as never),
-    ).rejects.toThrow('origin unavailable')
+    await expect(persistence.artifacts.readFacetCounts()).rejects.toMatchObject({ cause: expect.objectContaining({ message: 'origin unavailable' }) })
+    await persistence.dispose()
     expect(mocks.end).toHaveBeenCalledOnce()
   })
 })

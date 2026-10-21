@@ -37,10 +37,16 @@ The infrastructure layer implements the abstractions that the domain layer defin
 ## Persistence lifecycle and cutover controls
 
 [open-persistence.ts](../../backend/src/infrastructure/persistence/open-persistence.ts)
-selects storage per request/invocation and verifies MySQL connectivity without a
-silent D1 fallback. Its MySQL pool is bounded to two connections; each transaction
+selects storage per request/invocation. MySQL pools open lazily without an
+unconditional readiness query; the first real SQL operation fails explicitly
+without a silent D1 fallback. Its MySQL pool is bounded to two connections; each transaction
 leases an exclusive connection. Never retain the pool in global Worker or Agent
 state. Hyperdrive owns cross-request origin pooling.
+
+Costly MySQL catalog cache misses reserve one atomic global SQLite Durable
+Object lease and minute budget. Excess queries return 429 before persistence
+opens. A per-request pool is not a Worker-wide limit; KV get-plus-put is not
+an atomic concurrency lock.
 
 The async container and its persistence handle remain alive until the response
 body/stream and registered background work finish, then dispose exactly once.

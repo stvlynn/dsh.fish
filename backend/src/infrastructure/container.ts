@@ -78,7 +78,8 @@ export interface ContainerOptions {
  *
  * A Worker isolate handles many requests, but D1 and KV bindings arrive per
  * request, so the container is built per request rather than cached at module
- * scope. Everything it builds is cheap: no connection pools, no warm-up.
+ * scope. MySQL uses an invocation-local lazy pool; construction performs no
+ * database warm-up query.
  */
 export async function createContainer(env: HubEnv, options: ContainerOptions): Promise<Container> {
   const config = readConfig(env)

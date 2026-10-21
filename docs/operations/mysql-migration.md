@@ -239,17 +239,49 @@ contains 13,039 total artifacts, including deprecated rows. Seven repository and
 five authentication TLS integration tests passed; OAuth interactive login itself
 was not automated.
 
-The D1 global search budget remains 10/minute on the legacy branch. MySQL uses a
-separate bounded 120/minute KV counter so an exhausted old D1 counter does not
-block all searches. This KV budget is best-effort, not an atomic global limit;
-known scrape ASN protection remains active.
+## Query-pressure incident and protection
 
-Do not claim full performance recovery: direct MySQL facet round trips were about
-44 ms, but some observed Worker end-to-end requests took roughly 7–17 seconds. Increasing
-the Hyperdrive origin budget to 16 did not establish a latency SLA. Keep cron
-paused pending connection-path/load diagnosis. Local Wrangler tailing also failed
-TLS verification; database verification, successful HTTPS reads and deployment
-metadata do not replace an interactive OAuth check or concurrency benchmark.
+Production first-byte delays reached facets 10.7 seconds, browse 17.2 seconds
+and home 26.8 seconds, despite fast TCP/TLS. An isolated read-only Worker measured
+SELECT 1/facet queries waiting 5–11 seconds while pool disposal took 0 ms. The
+app account hit MySQL error 1226 (max_user_connections=20), and process-list
+snapshots showed concurrent FULLTEXT count/page work.
+
+Pausing production searches with the same application code reduced facets to
+0.10 seconds, browse to 0.93 seconds and home to 2.1 seconds. The same Hyperdrive
+probe then measured SELECTs in 7–18 ms and its search transaction in 54 ms. This
+established expensive-query pressure/admission as the shared bottleneck, not
+SSR rendering or an inherent multi-second MySQL query cost.
+
+The old MySQL budget used KV get-plus-put on one global minute key. It was
+non-atomic; runtime logs showed KV PUT failed: 429 Too Many Requests, escaping
+before API handling as Worker error 1101. MySQL no longer uses that KV counter.
+Legacy D1 retains its existing 10/minute KV budget.
+
+CatalogQueryAdmission is a SQLite-backed Durable Object bound as
+CAT_QUERY_ADMISSION. Expensive MySQL cache misses atomically reserve one global
+lease and a maximum 120 successful admissions per minute. Excess work receives
+429 with a short retry hint rather than waiting on the database. Plain home,
+browse, facets, auth and static documents do not acquire the costly-query slot.
+Text search and semantic filter routes are covered; known scrape ASN protection
+remains. The lease persists across eviction and token-specific release cannot
+clear another owner. Its 120-second expiry is crash recovery, not SQL cancellation:
+a query running longer could outlive exclusion. Parallel loader siblings settle
+before error propagation and lease release.
+
+MySQL client pools now open lazily without unconditional SELECT 1 warm-up for
+cached/static/anonymous-session paths. Real SQL failures still propagate without
+D1 fallback. The app account cap is 32, providing bounded headroom above Hyperdrive
+soft-origin limit 16 and below gateway capacity 40; this does not increase costly
+query concurrency or grant additional database privileges.
+
+Post-fix measured first-byte timings were facets 0.10–0.37 seconds, browse
+0.18–0.42 seconds, home 1.6–1.8 seconds and anonymous session 0.7–0.9 seconds.
+Search can return immediate 429 under sustained scraping instead of blocking
+basic pages. A two-minute telemetry sample contained approximately 35,679
+rejected responses; this is not an exact count of unique clients. Do not claim
+unrestricted search availability or a load-test SLA. Cron remains paused;
+interactive OAuth login was not automated.
 
 ## Failure handling and rollback boundary
 

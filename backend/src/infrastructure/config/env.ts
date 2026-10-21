@@ -12,6 +12,8 @@ export interface HubEnv {
   readonly CATALOG_WRITES_PAUSED?: string
   readonly STORAGE_BACKEND?: 'd1' | 'mysql'
   readonly HYPERDRIVE?: Hyperdrive
+  /** Global lease coordinator for costly MySQL catalog queries. */
+  readonly CAT_QUERY_ADMISSION?: DurableObjectNamespace
 
   /** D1 database holding both the catalog and Better Auth's own tables. */
   readonly DB: D1Database

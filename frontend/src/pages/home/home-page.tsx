@@ -1,6 +1,7 @@
 import { Form } from 'react-router'
 import type { Route } from './+types/home-page'
 import { hubContext } from '@/shared/api/hub-context'
+import { settleTogether } from '@/shared/lib/settle-together'
 import { CatalogGrid } from '@/widgets/catalog-grid/catalog-grid'
 import { KindIcon } from '@/entities/artifact/ui/kind-icon'
 import { kindDescriptionKey, kindPluralKey } from '@/entities/artifact/model/types'
@@ -40,7 +41,7 @@ export async function loader({ context, params }: Route.LoaderArgs) {
   const { container } = context.get(hubContext)
   const { searchArtifacts, listCatalogFacets } = container.useCases
 
-  const [trending, risingPool, recentPool, facets] = await Promise.all([
+  const [trending, risingPool, recentPool, facets] = await settleTogether([
     searchArtifacts.execute({ sort: 'popular', limit: 6, locale }),
     // Over-fetch, then subtract what the first rail already shows. Two rails
     // listing the same artifacts is the same page twice.
@@ -90,9 +91,7 @@ export default function HomePage({ loaderData }: Route.ComponentProps) {
             className="mx-auto mt-8 flex max-w-lg gap-2"
           >
             <div className="relative flex-1">
-              <SearchIcon
-                className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              />
+              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="search"
                 name="q"

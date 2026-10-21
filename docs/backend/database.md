@@ -29,7 +29,8 @@ a catalog-only copy is not a complete backend migration.
 Multi-table writes and count/page reads build queries on the transaction handle,
 not on the outer pool. Each transaction leases an exclusive connection from its
 invocation-scoped pool. MySQL evaluates UPDATE assignments left to right;
-Drizzle builder assignments follow schema order. Install writes use explicit
+Drizzle builder assignments follow schema order. Expensive public MySQL query
+concurrency is bounded by global admission, not by the invocation pool size. Install writes use explicit
 rank-first SQL and parenthesize the new install count before its multiplier.
 
 Catalog saves invalidate localized search documents, not retained translation

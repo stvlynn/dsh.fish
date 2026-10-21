@@ -1,6 +1,7 @@
 import { Form, useSearchParams } from 'react-router'
 import type { Route } from './+types/browse-page'
 import { hubContext } from '@/shared/api/hub-context'
+import { settleTogether } from '@/shared/lib/settle-together'
 import { CatalogGrid } from '@/widgets/catalog-grid/catalog-grid'
 import { CatalogFilters } from '@/widgets/catalog-filters/catalog-filters'
 import { CatalogPagination } from '@/widgets/catalog-pagination/catalog-pagination'
@@ -61,7 +62,7 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { container } = context.get(hubContext)
   const query = url.searchParams.get('q') ?? ''
 
-  const [results, facets] = await Promise.all([
+  const [results, facets] = await settleTogether([
     container.useCases.searchArtifacts.execute({
       locale,
       ...(query === '' ? {} : { text: query }),
@@ -105,9 +106,7 @@ export default function BrowsePage({ loaderData }: Route.ComponentProps) {
               close to 300px between them, which on a phone leaves the field too
               narrow to read a query back in. Its own row above them instead. */}
           <div className="relative min-w-0 basis-full sm:flex-1 sm:basis-auto">
-            <SearchIcon
-              className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
+            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="search"
               name="q"
@@ -121,9 +120,7 @@ export default function BrowsePage({ loaderData }: Route.ComponentProps) {
               the row keeps three fields and not five. The native disclosure
               arrow stays: it is the only thing that says "this is a select". */}
           <div className="relative">
-            <SortIcon
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
+            <SortIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <select
               name="sort"
               defaultValue={params.get('sort') ?? ''}

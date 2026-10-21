@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   router: vi.fn(),
   apiFetch: vi.fn(),
   edgeCache: vi.fn(),
+  budget: vi.fn(),
 }))
 vi.mock('@dsh-fish/backend', async (original) => ({
   ...(await original<typeof import('@dsh-fish/backend')>()),
@@ -23,6 +24,9 @@ vi.mock('@dsh-fish/backend/infrastructure/agents/agents-readme-localization-sche
 }))
 vi.mock('@dsh-fish/backend/infrastructure/agents/readme-i18n-agent.js', () => ({
   ReadmeI18nAgent: class {},
+}))
+vi.mock('@dsh-fish/backend/infrastructure/catalog-query-admission.js', () => ({
+  CatalogQueryAdmission: class {},
 }))
 vi.mock('react-router', async (original) => ({
   ...(await original<typeof import('react-router')>()),
@@ -44,7 +48,7 @@ vi.mock('./edge-cache', () => ({
 vi.mock('./catalog-scrape-gate', () => ({
   MYSQL_SEARCH_BUDGET_PER_MINUTE: 120,
   scrapeShedResponse: () => undefined,
-  catalogSearchBudgetShed: async () => undefined,
+  catalogSearchBudgetShed: mocks.budget,
 }))
 
 function deferred<T>() {
@@ -87,12 +91,43 @@ const schedule = (cron: string, bindings: HubEnv, ctx: ReturnType<typeof context
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.budget.mockResolvedValue(undefined)
   mocks.edgeCache.mockImplementation((_request, _ctx, handle: () => Promise<Response>) => handle())
   mocks.markdown.mockResolvedValue(null)
   mocks.router.mockResolvedValue(new Response('page'))
 })
 
 describe('Worker request container lifecycle', () => {
+  it('admits costly MySQL work before the handler and releases after it completes', async () => {
+    mocks.budget.mockRejectedValue(new Error('MySQL search must not write the legacy KV counter'))
+    const phases: string[] = []
+    const stub = {
+      fetch: vi.fn(async (url: string) => {
+        if (url.endsWith('/acquire')) {
+          phases.push('acquire')
+          return Response.json({
+            token: '12345678-1234-4234-8234-123456789abc',
+            expiresAt: Date.now() + 120_000,
+          })
+        }
+        phases.push('release')
+        return new Response(null, { status: 204 })
+      }),
+    }
+    const namespace = { idFromName: vi.fn(() => ({})), get: vi.fn(() => stub) }
+    mocks.apiFetch.mockImplementation(async () => {
+      phases.push('handler')
+      return new Response('api')
+    })
+    const response = await fetch('/api/v1/artifacts?q=python', {
+      ...env,
+      STORAGE_BACKEND: 'mysql',
+      CAT_QUERY_ADMISSION: namespace as unknown as DurableObjectNamespace,
+    })
+    expect(await response.text()).toBe('api')
+    expect(phases).toEqual(['acquire', 'handler', 'release'])
+    expect(mocks.budget).not.toHaveBeenCalled()
+  })
   it('uses a separate MySQL cache generation while preserving legacy D1 keys', async () => {
     mocks.apiFetch.mockImplementation(async () => new Response('api'))
     await (await fetch('/api/v1/scoring', { ...env, STORAGE_BACKEND: 'mysql' })).text()

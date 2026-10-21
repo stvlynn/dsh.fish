@@ -24,7 +24,8 @@ import {
   supportsMarkdownNegotiation,
 } from '@/pages/markdown'
 import { withEdgeCache } from './edge-cache'
-import { scrapeShedResponse, catalogSearchBudgetShed, MYSQL_SEARCH_BUDGET_PER_MINUTE } from './catalog-scrape-gate'
+import { withCatalogQueryAdmission } from './catalog-query-admission'
+import { scrapeShedResponse, catalogSearchBudgetShed } from './catalog-scrape-gate'
 import { retiredCategoryRedirect } from '@/shared/lib/retired-category-path'
 import { retiredKindRedirect, retiredPublishDocsRedirect } from '@/shared/lib/retired-kind-path'
 
@@ -45,6 +46,7 @@ const api = createApiApp({ readmeLocalization })
 // Wrangler discovers Durable Object classes from the Worker entry module. The
 // exact export name must match `class_name` in wrangler.jsonc.
 export { ReadmeI18nAgent } from '@dsh-fish/backend/infrastructure/agents/readme-i18n-agent.js'
+export { CatalogQueryAdmission } from '@dsh-fish/backend/infrastructure/catalog-query-admission.js'
 
 const requestHandler = createRequestHandler(
   () => import('virtual:react-router/server-build'),
@@ -175,7 +177,9 @@ export default {
 
     const shed =
       scrapeShedResponse(request.cf?.asn) ??
-      (await catalogSearchBudgetShed(new URL(request.url), env.KV, Date.now(), env.STORAGE_BACKEND === 'mysql' ? MYSQL_SEARCH_BUDGET_PER_MINUTE : undefined))
+      (env.STORAGE_BACKEND === 'mysql'
+        ? undefined
+        : await catalogSearchBudgetShed(new URL(request.url), env.KV))
     if (shed !== undefined) {
       return withPublicSignals(shed, request)
     }
@@ -183,7 +187,7 @@ export default {
       await withEdgeCache(
         request,
         ctx,
-        () => handleRequest(request, env, ctx),
+        () => withCatalogQueryAdmission(request, env, () => handleRequest(request, env, ctx)),
         env.STORAGE_BACKEND === 'mysql' ? 'mysql-v1' : '',
       ),
       request,
