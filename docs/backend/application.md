@@ -11,9 +11,11 @@ The application layer orchestrates use cases. It depends on the domain layer and
 - **Background-work ports** — durable work is requested through an application
   interface such as `ReadmeLocalizationScheduler`; use cases never import a
   queue, Worker binding or Agent SDK.
-- **Catalog facet cache** — `ListCatalogFacets` reads an optional
-  `CatalogFacetCache` before the three count queries. The cache is a catalog-wide
-  snapshot, not a per-URL entry.
+- **Catalog facets** — `ListCatalogFacets` maps the pre-aggregated counts from
+  `ArtifactRepository.readFacetCounts()` onto the full taxonomy and throws when
+  they were never computed. `RefreshCatalogFacets` rebuilds them; it runs on the
+  hourly cron and is the only place the catalog is aggregated for the rails
+  (ADR 0009).
 - **Backfill orchestration** — `BackfillReadmeLocalization` pages over a small
   README projection and advances a durable cursor only after every item on the
   page has been accepted by the scheduler. Each run also reschedules a bounded

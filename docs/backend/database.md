@@ -53,6 +53,14 @@ This document describes database conventions. Fill in concrete technology choice
   same contract for the short description: one row per artifact and locale,
   hash-pinned to the upstream summary. Listings override the DTO summary with
   the completed, hash-current row for the request locale.
+- `catalog_facet_counts` (migration `0015_catalog_facet_counts`) — one row per
+  `(dimension, facet_id)` for the live catalog, where `dimension` is `kind`,
+  `category` or `topic`, plus a `meta`/`live` row written by every refresh. The
+  rails read it instead of aggregating `artifacts`, `artifact_categories` and
+  `artifact_topics`, which cost about 1 M SQLite VM steps per request however
+  they were indexed. `refreshFacetCounts()` rebuilds it atomically on the
+  hourly cron; the migration backfills it. A missing `meta` row means "never
+  refreshed" and the rail read throws. See ADR 0009.
 - `artifact_reviews` (migration `0006_lucky_firestar`) — one row per
   (artifact, account) community rating: whole stars 1–5 plus an optional
   comment. The composite primary key is what makes re-rating an overwrite

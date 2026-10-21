@@ -209,6 +209,10 @@ export default {
 
     ctx.waitUntil(
       Promise.all([
+        // Ingestion and reclassification move artifacts between categories and
+        // topics; the rails are rebuilt once both settle, so a rail read never
+        // aggregates the catalog (ADR 0009).
+        Promise.all([
         container.useCases.ingestCatalog
           .execute({
             limitPerSource: 100,
@@ -227,6 +231,11 @@ export default {
           })
           .catch((error: unknown) => {
             console.error('catalog_reclassify_failed', String(error))
+          }),
+        ])
+          .then(() => container.useCases.refreshCatalogFacets.execute())
+          .catch((error: unknown) => {
+            console.error('catalog_facets_refresh_failed', String(error))
           }),
         container.useCases.backfillReadmeLocalization
           // The hourly run overlaps D1-heavy ingestion and reclassification.

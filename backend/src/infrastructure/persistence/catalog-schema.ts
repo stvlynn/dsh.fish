@@ -137,6 +137,27 @@ export const artifactTopics = sqliteTable(
   ],
 )
 
+/**
+ * Pre-aggregated filter-rail counts: one row per (dimension, facet id) for the
+ * live (non-deprecated) catalog. `dimension` is `kind`, `category` or `topic`.
+ *
+ * The rails used to be three `GROUP BY` aggregations over `artifacts`,
+ * `artifact_categories` and `artifact_topics` — about 150k rows read per
+ * refresh no matter which index served them, because `deprecated = 0` matches
+ * nearly every row. The table is rebuilt in one atomic batch by
+ * `D1ArtifactRepository.refreshFacetCounts`; a rail read is a ~50-row scan.
+ */
+export const catalogFacetCounts = sqliteTable(
+  'catalog_facet_counts',
+  {
+    dimension: text('dimension').notNull(),
+    facetId: text('facet_id').notNull(),
+    count: integer('count').notNull(),
+    refreshedAt: integer('refreshed_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.dimension, table.facetId] })],
+)
+
 export const submissions = sqliteTable(
   'submissions',
   {

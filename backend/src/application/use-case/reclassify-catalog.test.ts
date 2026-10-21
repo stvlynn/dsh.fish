@@ -57,7 +57,8 @@ function memory(rows: Artifact[]) {
         .slice(query.page.offset, query.page.offset + query.page.limit)
       return page(items, byId.size, query.page)
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async (row) => {
       saved.push(row)
       byId.set(String(row.id), row)

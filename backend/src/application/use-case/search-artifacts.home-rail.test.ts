@@ -32,7 +32,8 @@ function listingRepository() {
       state.searches += 1
       return page([artifact('dsh-alpha')], 1, query.page)
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async () => {},
     saveMany: async () => {},
     incrementInstalls: async () => {},

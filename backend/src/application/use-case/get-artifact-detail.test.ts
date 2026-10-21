@@ -30,7 +30,8 @@ function artifactRepository(): ArtifactRepository {
     search: async () => {
       throw new Error('not used')
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async () => {},
     saveMany: async () => {},
     incrementInstalls: async () => {},

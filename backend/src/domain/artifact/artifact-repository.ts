@@ -30,6 +30,14 @@ export interface TaxonomyCount {
   readonly count: number
 }
 
+/** Live-catalog counts behind the filter rails, plus when they were computed. */
+export interface FacetCounts {
+  readonly kinds: readonly KindCount[]
+  readonly categories: readonly TaxonomyCount[]
+  readonly topics: readonly TaxonomyCount[]
+  readonly refreshedAt: Date
+}
+
 export interface ArtifactLocaleAvailability {
   readonly locale: string
   readonly updatedAt: Date
@@ -72,9 +80,18 @@ export interface CatalogStats {
 export interface ArtifactRepository {
   findById(id: Slug): Promise<Artifact | undefined>
   search(query: ArtifactQuery): Promise<Page<Artifact>>
-  countByKind(): Promise<readonly KindCount[]>
-  countByCategory?(): Promise<readonly TaxonomyCount[]>
-  countByTopic?(): Promise<readonly TaxonomyCount[]>
+  /**
+   * The pre-aggregated filter-rail counts, or `undefined` when
+   * `refreshFacetCounts` has never run. A read touches ~50 rows; it never
+   * aggregates the catalog.
+   */
+  readFacetCounts(): Promise<FacetCounts | undefined>
+  /**
+   * Recompute every rail count from the live catalog and replace the stored
+   * rows atomically. This is the only place the catalog is aggregated for the
+   * rails, so it runs on a schedule rather than per request.
+   */
+  refreshFacetCounts(): Promise<void>
   listAvailableLocales?(id: Slug): Promise<readonly ArtifactLocaleAvailability[]>
   save(artifact: Artifact): Promise<void>
   saveMany(artifacts: readonly Artifact[]): Promise<void>

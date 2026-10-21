@@ -38,7 +38,8 @@ function memoryRepository(rows: Artifact[]) {
     search: async () => {
       throw new Error('not used')
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async (artifact) => {
       state.rows = [...state.rows.filter((row) => row.id !== artifact.id), artifact]
     },

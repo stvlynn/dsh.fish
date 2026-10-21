@@ -25,7 +25,8 @@ function capturingRepository() {
       queries.push(query)
       return page([], 0, query.page)
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async () => {},
     saveMany: async () => {},
     incrementInstalls: async () => {},

@@ -17,7 +17,8 @@ function memoryRepository() {
     search: async () => {
       throw new Error('not used')
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async (artifact: Artifact) => {
       saved.push(String(artifact.id))
       rows.set(String(artifact.id), artifact)

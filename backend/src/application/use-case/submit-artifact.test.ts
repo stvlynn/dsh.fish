@@ -78,7 +78,8 @@ function harness(options: { linkedGitHubId?: string; snapshot?: IndexedSnapshot 
     search: async () => {
       throw new Error('not used')
     },
-    countByKind: async () => [],
+    readFacetCounts: async () => undefined,
+    refreshFacetCounts: async () => {},
     save: async (artifact) => {
       artifacts.push(artifact)
     },

@@ -9,6 +9,7 @@ import { DescribeScoring } from '../application/use-case/describe-scoring.js'
 import { IngestCatalog } from '../application/use-case/ingest-catalog.js'
 import { ReclassifyCatalog } from '../application/use-case/reclassify-catalog.js'
 import { ListCatalogFacets } from '../application/use-case/list-catalog-facets.js'
+import { RefreshCatalogFacets } from '../application/use-case/refresh-catalog-facets.js'
 import { ListSitemapEntries } from '../application/use-case/list-sitemap-entries.js'
 import { RateArtifact } from '../application/use-case/rate-artifact.js'
 import { ResolveInstallPlan } from '../application/use-case/resolve-install-plan.js'
@@ -41,7 +42,6 @@ import { D1LinkedIdentityReader } from './persistence/d1-linked-identity.js'
 import { D1ReviewRepository } from './persistence/d1-review-repository.js'
 import { D1SubmissionRepository } from './persistence/d1-submission-repository.js'
 import { KvCatalogSnapshotStore } from './persistence/kv-catalog-snapshot-store.js'
-import { KvCatalogFacetCache } from './persistence/kv-catalog-facet-cache.js'
 import { KvReadmeLocalizationBackfillProgress } from './agents/kv-readme-localization-backfill-progress.js'
 import { AdaClient } from './ada/ada-client.js'
 import { KvAskRateLimiter } from './ask/kv-ask-rate-limiter.js'
@@ -60,6 +60,7 @@ export interface Container {
     readonly getCatalogSnapshot: GetCatalogSnapshot
     readonly describeScoring: DescribeScoring
     readonly listCatalogFacets: ListCatalogFacets
+    readonly refreshCatalogFacets: RefreshCatalogFacets
     readonly listSitemapEntries: ListSitemapEntries
     readonly rateArtifact: RateArtifact
     readonly resolveInstallPlan: ResolveInstallPlan
@@ -133,7 +134,8 @@ export function createContainer(env: HubEnv, options: ContainerOptions): Contain
       getArtifactReviews: new GetArtifactReviews(reviews, artifacts),
       getCatalogSnapshot: new GetCatalogSnapshot(artifacts, new KvCatalogSnapshotStore(env.KV)),
       describeScoring: new DescribeScoring(),
-      listCatalogFacets: new ListCatalogFacets(artifacts, new KvCatalogFacetCache(env.KV)),
+      listCatalogFacets: new ListCatalogFacets(artifacts),
+      refreshCatalogFacets: new RefreshCatalogFacets(artifacts),
       listSitemapEntries: new ListSitemapEntries(
         artifacts,
         supportedLocales,

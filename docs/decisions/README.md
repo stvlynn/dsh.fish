@@ -21,6 +21,7 @@ Write an ADR when the decision:
 - [`adr-0006-locale-gated-fts-search.md`](adr-0006-locale-gated-fts-search.md) — derived D1 FTS5 documents and hash-current locale gates.
 - [`adr-0007-editorial-blog.md`](adr-0007-editorial-blog.md) — `/blog` as a second Fumadocs collection (dated series, custom shell, not a docs sidebar). Accepted.
 - [`adr-0008-fix-the-query-not-the-symptom.md`](adr-0008-fix-the-query-not-the-symptom.md) — catalog reads fail loudly; the fix is a matching index, not a zeroed fallback. Accepted.
+- [`adr-0009-preaggregated-facet-counts.md`](adr-0009-preaggregated-facet-counts.md) — the filter rails read a pre-aggregated `catalog_facet_counts` table refreshed by cron; the KV facet cache is removed. Accepted.
 
 ## Naming
 

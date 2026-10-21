@@ -13,7 +13,7 @@
     "./schema": "./src/infrastructure/persistence/schema.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node-tests.json --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate"
   },

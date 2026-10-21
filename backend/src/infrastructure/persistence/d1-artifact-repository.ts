@@ -9,9 +9,8 @@ import type {
   ArtifactQuery,
   ArtifactRepository,
   CatalogStats,
-  KindCount,
+  FacetCounts,
   SitemapEntry,
-  TaxonomyCount,
 } from '../../domain/artifact/artifact-repository.js'
 import { inferTopics, normalizeSearchText, topicSearchText } from '../../domain/artifact/topic.js'
 import { starVelocity } from '../../domain/artifact/quality-score.js'
@@ -31,6 +30,7 @@ import {
   artifactSummaryTranslations,
   artifactTopics,
   artifacts,
+  catalogFacetCounts,
 } from './catalog-schema.js'
 import * as schema from './schema.js'
 
@@ -148,36 +148,45 @@ export class D1ArtifactRepository implements ArtifactRepository {
     return page(pageRows.map(toListingEntity), Number(countRows[0]?.total ?? 0), query.page)
   }
 
-  async countByKind(): Promise<readonly KindCount[]> {
-    const rows = await this.db
-      .select({ kind: artifacts.kind, count: sql<number>`count(*)` })
-      .from(artifacts)
-      .where(eq(artifacts.deprecated, false))
-      .groupBy(artifacts.kind)
-    return rows.map((row) => ({ kind: artifactKind(row.kind), count: Number(row.count) }))
+  async readFacetCounts(): Promise<FacetCounts | undefined> {
+    const rows = await this.db.select().from(catalogFacetCounts)
+    // The `meta` row is written by every refresh, so its absence means the
+    // table was never populated — distinct from a live catalog with no topics.
+    const meta = rows.find((row) => row.dimension === 'meta')
+    if (meta === undefined) return undefined
+
+    const inDimension = (dimension: string) =>
+      rows.filter((row) => row.dimension === dimension).map((row) => ({ id: row.facetId, count: row.count }))
+    return {
+      kinds: inDimension('kind').map((entry) => ({ kind: artifactKind(entry.id), count: entry.count })),
+      categories: inDimension('category'),
+      topics: inDimension('topic'),
+      refreshedAt: meta.refreshedAt,
+    }
   }
 
-  async countByCategory(): Promise<readonly TaxonomyCount[]> {
-    const rows = await this.db
-      .select({ id: artifactCategories.categoryId, count: sql<number>`count(*)` })
-      .from(artifactCategories)
-      .where(inArray(artifactCategories.artifactId, this.liveArtifactIds()))
-      .groupBy(artifactCategories.categoryId)
-    return rows.map((row) => ({ id: row.id, count: Number(row.count) }))
-  }
-
-  async countByTopic(): Promise<readonly TaxonomyCount[]> {
-    const rows = await this.db
-      .select({ id: artifactTopics.topicId, count: sql<number>`count(*)` })
-      .from(artifactTopics)
-      .where(inArray(artifactTopics.artifactId, this.liveArtifactIds()))
-      .groupBy(artifactTopics.topicId)
-    return rows.map((row) => ({ id: row.id, count: Number(row.count) }))
-  }
-
-  /** Covering `(deprecated, id)` — never visits `readme_markdown`. */
-  private liveArtifactIds() {
-    return this.db.select({ id: artifacts.id }).from(artifacts).where(eq(artifacts.deprecated, false))
+  async refreshFacetCounts(): Promise<void> {
+    // Inlined, not bound: drizzle's `db.run` inside `db.batch` reads a prepared
+    // statement that only exists for builder queries, so a bound parameter
+    // would throw. An integer timestamp has no injection surface.
+    const now = sql.raw(String(Math.trunc(Date.now())))
+    // One atomic batch: readers see the previous counts or the new ones, never
+    // a half-built table. The aggregations run here, once per refresh.
+    await this.db.batch([
+      this.db.delete(catalogFacetCounts),
+      this.db.run(sql`insert into catalog_facet_counts (dimension, facet_id, count, refreshed_at)
+        select 'kind', kind, count(*), ${now} from artifacts where deprecated = 0 group by kind`),
+      this.db.run(sql`insert into catalog_facet_counts (dimension, facet_id, count, refreshed_at)
+        select 'category', c.category_id, count(*), ${now}
+        from artifact_categories c join artifacts a on a.id = c.artifact_id
+        where a.deprecated = 0 group by c.category_id`),
+      this.db.run(sql`insert into catalog_facet_counts (dimension, facet_id, count, refreshed_at)
+        select 'topic', t.topic_id, count(*), ${now}
+        from artifact_topics t join artifacts a on a.id = t.artifact_id
+        where a.deprecated = 0 group by t.topic_id`),
+      this.db.run(sql`insert into catalog_facet_counts (dimension, facet_id, count, refreshed_at)
+        select 'meta', 'live', count(*), ${now} from artifacts where deprecated = 0`),
+    ])
   }
 
   async listAvailableLocales(id: Slug) {
