@@ -13,6 +13,14 @@ import { E2E_ORIGIN } from './origin.ts'
  * `.wrangler/state/v3/d1`, but Vite will mint an empty Durable Object on
  * first boot if the file is not yet there.
  */
+export function facetCountFixtureSql(migration: string): string {
+  // Reuse the authoritative migration projections after fixture rows have been inserted.
+  const statements = migration.split('--> statement-breakpoint').map((part) => part.trim())
+  const inserts = statements.filter((part) => part.startsWith('INSERT INTO `catalog_facet_counts`'))
+  if (inserts.length !== 4) throw new Error('Expected the four catalog facet projection statements')
+  return ['DELETE FROM `catalog_facet_counts`;', ...inserts].join('\n')
+}
+
 export function seedLocalCatalog(root: string): void {
   const frontend = resolve(root, 'frontend')
   ensureDevVars(frontend)
@@ -23,6 +31,9 @@ export function seedLocalCatalog(root: string): void {
     readFileSync(resolve(root, 'backend/scripts/seed-local.sql'), 'utf8'),
     `UPDATE artifacts SET readme_markdown = ${sqlString(kitchenSinkReadme())} WHERE id = ${sqlString(KITCHEN_SINK_ARTIFACT_ID)};`,
     paginationFillerSql(),
+    facetCountFixtureSql(
+      readFileSync(resolve(root, 'backend/migrations/0015_catalog_facet_counts.sql'), 'utf8'),
+    ),
     '',
   ].join('\n')
   const sqlPath = resolve(root, 'e2e/.generated-kitchen-sink.sql')

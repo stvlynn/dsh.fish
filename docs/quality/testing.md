@@ -135,8 +135,11 @@ behavior without accessing production credentials or databases.
 relative paths while selecting local D1, removing Hyperdrive, enabling fixture
 reads/writes and keeping cron paused. Vite and the seed CLI use that same file;
 production builds do not set `DSH_E2E_WORKER_CONFIG` and retain MySQL. No production
-MySQL credentials are needed or passed to PR/E2E jobs. A Node contract test checks
-this isolation as part of `pnpm run test`. Project groups share one config:
+MySQL credentials are needed or passed to PR/E2E jobs. Fixture inserts are followed
+by rebuilding the four facet projections from the authoritative D1 migration
+statements, so a clean database does not retain the zero counts created before
+seeding. Node contract tests check both storage isolation and the fresh-database
+facet refresh as part of `pnpm run test`. Project groups share one config:
 **Product docs** (`e2e/docs/`) covers the Fumadocs section at one desktop
 viewport (1280×900) and one phone (Pixel 7). It asserts the sidebar, nested
 guides, live scoring, sidebar filter, indexable Japanese MDX, controlled video
