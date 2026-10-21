@@ -6,6 +6,13 @@ import type { ReadmeI18nAgent } from '../agents/readme-i18n-agent.js'
  * scheduled crawler and the React Router server build.
  */
 export interface HubEnv {
+  /** Explicit cutover controls; search and cron stay paused until verified. */
+  readonly CATALOG_SEARCH_PAUSED?: string
+  readonly CATALOG_CRON_PAUSED?: string
+  readonly CATALOG_WRITES_PAUSED?: string
+  readonly STORAGE_BACKEND?: 'd1' | 'mysql'
+  readonly HYPERDRIVE?: Hyperdrive
+
   /** D1 database holding both the catalog and Better Auth's own tables. */
   readonly DB: D1Database
   /** KV namespace used as Better Auth secondary storage and for rate limiting. */

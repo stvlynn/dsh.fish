@@ -38,8 +38,9 @@ export function isCacheableRequest(request: Request): boolean {
  * path never collide. The key is always a GET request — the Cache API rejects
  * `put` with any other method, and a HEAD lookup must find what a GET stored.
  */
-export function buildCacheKey(request: Request): Request {
+export function buildCacheKey(request: Request, generation = ''): Request {
   const url = new URL(request.url)
+  if (generation !== '') url.searchParams.set('__storage_generation', generation)
   if (request.headers.get('accept')?.includes('text/markdown')) {
     url.searchParams.set(MARKDOWN_KEY_PARAM, MARKDOWN_KEY_VALUE)
   }
@@ -96,6 +97,7 @@ export async function withEdgeCache(
   request: Request,
   ctx: ExecutionContext,
   next: () => Promise<Response>,
+  generation = '',
 ): Promise<Response> {
   if (!import.meta.env.PROD || !isCacheableRequest(request)) {
     return next()
@@ -104,7 +106,7 @@ export async function withEdgeCache(
   // The DOM lib's `CacheStorage` shadows the Workers type on the global
   // `caches`; the Workers runtime adds `default`.
   const cache = (caches as unknown as { default: Cache }).default
-  const key = buildCacheKey(request)
+  const key = buildCacheKey(request, generation)
   const cached = await cache.match(key)
   if (cached !== undefined) {
     return cached

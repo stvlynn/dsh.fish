@@ -4,7 +4,9 @@ The infrastructure layer implements the abstractions that the domain layer defin
 
 ## What belongs in `infrastructure/`
 
-- **Repository implementations** — concrete persistence for domain aggregates.
+- **Repository implementations** — D1 and MySQL adapters for the same domain
+  ports. Production remains D1 until the planned
+  [MySQL cutover](../operations/mysql-migration.md) passes its acceptance gates.
 - **External service clients** — HTTP clients, SDK wrappers, message publishers.
 - **Messaging adapters** — event bus, queue producers/consumers.
 - **Agent adapters** — Cloudflare Agent classes, durable task queues, the
@@ -18,10 +20,12 @@ The infrastructure layer implements the abstractions that the domain layer defin
   `Content-Encoding: none` so the edge does not gzip-buffer the stream.
   Timeouts: connect 10s, idle 30s, total 60s. Upstream 429/5xx become
   `UNAVAILABLE`.
-- **Catalog facet counts** — `catalog_facet_counts` in D1, read by
-  `D1ArtifactRepository.readFacetCounts()` (about 35 rows) and rebuilt by
-  `refreshFacetCounts()` in one atomic `db.batch`. Home, browse, and
-  `GET /api/v1/facets` all read it. There is no KV facet cache.
+- **Catalog facet counts** — `catalog_facet_counts`, read through the repository
+  port and rebuilt atomically: D1 `db.batch`, MySQL `db.transaction`. Home, browse
+  and `GET /api/v1/facets` share that persisted projection. Assembled rail DTOs
+  and catalog snapshots also use KV; MySQL catalog cache keys and edge responses
+  have a `mysql-v1` namespace. Auth secondary storage stays on the existing KV
+  binding and is not purged with catalog caches.
 - **Ask rate limiter** — `KvAskRateLimiter` on the existing `KV` binding:
   12 asks / IP / 10 min, 4 concurrent streams / IP, 30 asks / artifact / hour,
   60 asks / Worker / minute. Consume/release is serialized inside one Worker
@@ -29,6 +33,26 @@ The infrastructure layer implements the abstractions that the domain layer defin
   circuit.
 - **Configuration and environment access** — reading env vars, config files.
 - **Framework-specific code** — ORM mappings, database migrations, cache integrations.
+
+## Persistence lifecycle and cutover controls
+
+[open-persistence.ts](../../backend/src/infrastructure/persistence/open-persistence.ts)
+selects storage per request/invocation and verifies MySQL connectivity without a
+silent D1 fallback. Its MySQL pool is bounded to two connections; each transaction
+leases an exclusive connection. Never retain the pool in global Worker or Agent
+state. Hyperdrive owns cross-request origin pooling.
+
+The async container and its persistence handle remain alive until the response
+body/stream and registered background work finish, then dispose exactly once.
+Agents open/dispose persistence for each invocation, including retries. Scheduled
+ingestion/reclassification/facet work runs serially to bound origin concurrency.
+
+`CATALOG_SEARCH_PAUSED` and `CATALOG_CRON_PAUSED` stay paused unless explicitly
+`false`. `CATALOG_WRITES_PAUSED=true` is a maintenance barrier for every non-health
+application request, including GET side effects and auth routes; scheduled work
+stops and Agent localization/retry work defers. Drain existing work before the
+final source snapshot. These controls do not make D1 a safe rollback after MySQL
+has accepted new writes: stop writes and reverse-sync or forward-fix instead.
 
 ## Rules
 

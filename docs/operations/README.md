@@ -6,6 +6,7 @@ This section covers how the project is run, built, deployed, and monitored.
 
 - [`local-dev.md`](local-dev.md) — local development setup.
 - [`deployment.md`](deployment.md) — Worker deployment and CLI publish.
+- [`mysql-migration.md`](mysql-migration.md) — TencentDB MySQL rehearsal results and cutover requirements.
 
 ## Environment
 

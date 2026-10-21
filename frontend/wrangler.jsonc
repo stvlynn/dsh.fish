@@ -25,7 +25,14 @@
       "storage": "sqlite",
     },
   },
+  "hyperdrive": [
+    { "binding": "HYPERDRIVE", "id": "05c55f04e4cc44878f027160f009c4ae" },
+  ],
   "vars": {
+    "STORAGE_BACKEND": "mysql",
+    "CATALOG_SEARCH_PAUSED": "false",
+    "CATALOG_CRON_PAUSED": "true",
+    "CATALOG_WRITES_PAUSED": "false",
     "PUBLIC_BASE_URL": "https://dsh.fish",
     // IndexNow verification key. Public by design — the Worker serves it at
     // /indexnow-<key>.txt. Rotate with: openssl rand -hex 16 (and redeploy).

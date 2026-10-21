@@ -1,10 +1,10 @@
+import { projectArtifact } from './artifact-projection.js'
+import { toEntity, toListingEntity } from './artifact-row.js'
 import { and, asc, desc, eq, inArray, like, lte, or, sql, type SQL } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import { Artifact } from '../../domain/artifact/artifact.js'
-import type { ArtifactProps } from '../../domain/artifact/artifact.js'
 import { artifactKind } from '../../domain/artifact/artifact-kind.js'
-import type { ArtifactPayload } from '../../domain/artifact/artifact-payload.js'
 import type {
   ArtifactQuery,
   ArtifactRepository,
@@ -15,7 +15,6 @@ import type {
 import { inferTopics, normalizeSearchText, topicSearchText } from '../../domain/artifact/topic.js'
 import { starVelocity } from '../../domain/artifact/quality-score.js'
 import type { MetricsSnapshot } from '../../domain/artifact/quality-score.js'
-import type { SourceRef } from '../../domain/artifact/source-ref.js'
 import type { Page, PageRequest } from '../../domain/shared/pagination.js'
 import { page } from '../../domain/shared/pagination.js'
 import type { Slug } from '../../domain/shared/slug.js'
@@ -35,7 +34,6 @@ import {
 import * as schema from './schema.js'
 
 type Db = DrizzleD1Database<typeof schema>
-type ArtifactRow = typeof artifacts.$inferSelect
 /** One statement in a D1 batch. Drizzle types each builder differently, so the
  *  heterogeneous list needs the shared base type to stay assignable. */
 type BatchStatement = BatchItem<'sqlite'>
@@ -156,9 +154,14 @@ export class D1ArtifactRepository implements ArtifactRepository {
     if (meta === undefined) return undefined
 
     const inDimension = (dimension: string) =>
-      rows.filter((row) => row.dimension === dimension).map((row) => ({ id: row.facetId, count: row.count }))
+      rows
+        .filter((row) => row.dimension === dimension)
+        .map((row) => ({ id: row.facetId, count: row.count }))
     return {
-      kinds: inDimension('kind').map((entry) => ({ kind: artifactKind(entry.id), count: entry.count })),
+      kinds: inDimension('kind').map((entry) => ({
+        kind: artifactKind(entry.id),
+        count: entry.count,
+      })),
       categories: inDimension('category'),
       topics: inDimension('topic'),
       refreshedAt: meta.refreshedAt,
@@ -205,12 +208,7 @@ export class D1ArtifactRepository implements ArtifactRepository {
           eq(artifactReadmeTranslations.locale, artifactSummaryTranslations.locale),
         ),
       )
-      .where(
-        and(
-          eq(artifactSummaryTranslations.artifactId, id),
-          displayableLocalizedProse(),
-        ),
-      )
+      .where(and(eq(artifactSummaryTranslations.artifactId, id), displayableLocalizedProse()))
     return rows.map((row) => ({
       locale: row.locale,
       updatedAt:
@@ -249,8 +247,7 @@ export class D1ArtifactRepository implements ArtifactRepository {
       .limit(1)
     if (summaryRow?.text === null || summaryRow?.text === undefined) return
     const props = artifact.toProps()
-    const readmeMarkdown =
-      props.readmeMarkdown?.trim() === '' ? undefined : props.readmeMarkdown
+    const readmeMarkdown = props.readmeMarkdown?.trim() === '' ? undefined : props.readmeMarkdown
     const topics = inferTopics({
       keywords: props.keywords,
       text: [props.displayName, props.summary, readmeMarkdown ?? ''].join(' '),
@@ -290,7 +287,9 @@ export class D1ArtifactRepository implements ArtifactRepository {
 
   async saveMany(list: readonly Artifact[]): Promise<void> {
     if (list.length === 0) return
-    const statements = (await Promise.all(list.map((artifact) => this.writeStatements(artifact)))).flat()
+    const statements = (
+      await Promise.all(list.map((artifact) => this.writeStatements(artifact)))
+    ).flat()
     // D1 caps the number of statements in one batch; chunk so a large crawl
     // cannot exceed it.
     for (let index = 0; index < statements.length; index += 50) {
@@ -329,7 +328,12 @@ export class D1ArtifactRepository implements ArtifactRepository {
       return this.db
         .select({ stars: artifactMetrics.stars, capturedAt: artifactMetrics.capturedAt })
         .from(artifactMetrics)
-        .where(and(eq(artifactMetrics.artifactId, props.id as string), lte(artifactMetrics.capturedAt, cutoff)))
+        .where(
+          and(
+            eq(artifactMetrics.artifactId, props.id as string),
+            lte(artifactMetrics.capturedAt, cutoff),
+          ),
+        )
         .orderBy(desc(artifactMetrics.capturedAt))
         .limit(1)
     }
@@ -396,10 +400,7 @@ export class D1ArtifactRepository implements ArtifactRepository {
             .leftJoin(
               artifactReadmeTranslations,
               and(
-                eq(
-                  artifactReadmeTranslations.artifactId,
-                  artifactSummaryTranslations.artifactId,
-                ),
+                eq(artifactReadmeTranslations.artifactId, artifactSummaryTranslations.artifactId),
                 eq(artifactReadmeTranslations.locale, artifactSummaryTranslations.locale),
               ),
             )
@@ -479,48 +480,8 @@ export class D1ArtifactRepository implements ArtifactRepository {
   }
 
   private async writeStatements(artifact: Artifact): Promise<BatchStatement[]> {
-    const props = artifact.toProps()
-    const readmeMarkdown =
-      props.readmeMarkdown?.trim() === '' ? undefined : props.readmeMarkdown
-    const summaryHash = await readmeDigest(props.summary)
-    const readmeHash =
-      readmeMarkdown === undefined ? null : await readmeDigest(readmeMarkdown)
-    const topics = inferTopics({
-      keywords: props.keywords,
-      text: [props.displayName, props.summary, readmeMarkdown ?? ''].join(' '),
-    })
-    const values = {
-      id: props.id as string,
-      kind: props.kind,
-      displayName: props.displayName,
-      summary: props.summary,
-      summaryHash,
-      readmeHash,
-      source: props.source,
-      sourceOrigin: props.source.origin,
-      sourceCommitSha: props.sourceCommitSha ?? null,
-      payload: props.payload,
-      keywords: props.keywords,
-      categories: props.categories.map(String),
-      license: props.license ?? null,
-      authorName: props.author?.name ?? null,
-      authorUrl: props.author?.url ?? null,
-      readmeMarkdown: props.readmeMarkdown ?? null,
-      ogImageUrl: props.ogImageUrl ?? null,
-      stars: props.stats.stars,
-      downloads: props.stats.downloads,
-      installs: props.stats.installs,
-      starVelocity7d: props.starVelocity7d,
-      starVelocity30d: props.starVelocity30d,
-      popularity: artifact.popularity,
-      ownerAccountId: props.ownerAccountId ?? null,
-      deprecated: props.deprecated,
-      publishedAt: props.publishedAt,
-      updatedAt: props.updatedAt,
-      indexedAt: props.indexedAt,
-    }
-
-    const haystack = normalizeSearchText([props.displayName, props.summary, ...props.keywords].join(' '))
+    const { props, values, topics, haystack, summaryHash, readmeHash } =
+      await projectArtifact(artifact)
 
     const statements: BatchStatement[] = [
       this.db
@@ -531,7 +492,12 @@ export class D1ArtifactRepository implements ArtifactRepository {
       this.db.delete(artifactTopics).where(eq(artifactTopics.artifactId, values.id)),
       this.db
         .delete(artifactSearchDocuments)
-        .where(and(eq(artifactSearchDocuments.artifactId, values.id), sql`${artifactSearchDocuments.locale} != 'und'`)),
+        .where(
+          and(
+            eq(artifactSearchDocuments.artifactId, values.id),
+            sql`${artifactSearchDocuments.locale} != 'und'`,
+          ),
+        ),
       this.db
         .insert(artifactSearch)
         .values({ artifactId: values.id, haystack })
@@ -574,9 +540,9 @@ export class D1ArtifactRepository implements ArtifactRepository {
 
     if (topics.length > 0) {
       statements.push(
-        this.db.insert(artifactTopics).values(
-          topics.map((topicId) => ({ artifactId: values.id, topicId })),
-        ),
+        this.db
+          .insert(artifactTopics)
+          .values(topics.map((topicId) => ({ artifactId: values.id, topicId }))),
       )
     }
 
@@ -612,7 +578,8 @@ function orderFor(query: ArtifactQuery, ftsSearchEnabled: boolean) {
       // `listRank` uses, so a text search still surfaces the artifact people
       // actually install rather than the shortest name.
       return [
-        ...(query.text !== undefined && usesFtsIndex(ftsSearchEnabled, normalizeSearchText(query.text))
+        ...(query.text !== undefined &&
+        usesFtsIndex(ftsSearchEnabled, normalizeSearchText(query.text))
           ? [
               asc(sql`coalesce((
                 select bm25(artifact_search_fts, 8.0, 5.0, 3.0, 2.0)
@@ -692,41 +659,4 @@ const listingColumns = {
   updatedAt: artifacts.updatedAt,
   indexedAt: artifacts.indexedAt,
   hasReadme: sql<number>`(${artifacts.readmeHash} is not null)`.as('has_readme'),
-}
-
-function toListingEntity(row: Omit<ArtifactRow, 'readmeMarkdown'> & { hasReadme: number }): Artifact {
-  const { hasReadme, ...rest } = row
-  return toEntity({
-    ...rest,
-    readmeMarkdown: Number(hasReadme) === 0 ? null : '#',
-  })
-}
-
-function toEntity(row: ArtifactRow): Artifact {
-  const props: ArtifactProps = {
-    id: slug(row.id),
-    kind: artifactKind(row.kind),
-    displayName: row.displayName,
-    summary: row.summary,
-    source: row.source as SourceRef,
-    ...(row.sourceCommitSha === null ? {} : { sourceCommitSha: row.sourceCommitSha }),
-    payload: row.payload as ArtifactPayload,
-    keywords: (row.keywords as string[]) ?? [],
-    categories: ((row.categories as string[]) ?? []).map((value) => slug(value)),
-    ...(row.license === null ? {} : { license: row.license }),
-    ...(row.authorName === null
-      ? {}
-      : { author: { name: row.authorName, ...(row.authorUrl === null ? {} : { url: row.authorUrl }) } }),
-    ...(row.readmeMarkdown === null ? {} : { readmeMarkdown: row.readmeMarkdown }),
-    ...(row.ogImageUrl === null ? {} : { ogImageUrl: row.ogImageUrl }),
-    stats: { stars: row.stars, downloads: row.downloads, installs: row.installs },
-    starVelocity7d: row.starVelocity7d,
-    starVelocity30d: row.starVelocity30d,
-    ...(row.ownerAccountId === null ? {} : { ownerAccountId: row.ownerAccountId }),
-    publishedAt: row.publishedAt,
-    updatedAt: row.updatedAt,
-    indexedAt: row.indexedAt,
-    deprecated: row.deprecated,
-  }
-  return Artifact.rehydrate(props)
 }

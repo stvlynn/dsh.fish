@@ -58,12 +58,21 @@ function ensureDevVars(frontend: string): void {
     BETTER_AUTH_SECRET: 'e2e-test-secret-not-for-production',
     ARTIFACT_ASK_ENABLED: 'true',
     CATALOG_FTS_SEARCH: 'true',
+    STORAGE_BACKEND: 'd1',
+    CATALOG_SEARCH_PAUSED: 'false',
+    CATALOG_WRITES_PAUSED: 'false',
+    CATALOG_CRON_PAUSED: 'true',
   }
   let existing = ''
   try {
     existing = readFileSync(path, 'utf8')
   } catch {
-    writeFileSync(path, Object.entries(required).map(([key, value]) => `${key}=${value}`).join('\n') + '\n')
+    writeFileSync(
+      path,
+      Object.entries(required)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n') + '\n',
+    )
     return
   }
   let next = existing
@@ -73,7 +82,17 @@ function ensureDevVars(frontend: string): void {
     if (pattern.test(next)) {
       // The ask feature and canonical origin must match this test run. Other
       // developer-owned values remain untouched.
-      if (key === 'ARTIFACT_ASK_ENABLED' || key === 'PUBLIC_BASE_URL' || key === 'CATALOG_FTS_SEARCH') {
+      if (
+        [
+          'ARTIFACT_ASK_ENABLED',
+          'PUBLIC_BASE_URL',
+          'CATALOG_FTS_SEARCH',
+          'STORAGE_BACKEND',
+          'CATALOG_SEARCH_PAUSED',
+          'CATALOG_WRITES_PAUSED',
+          'CATALOG_CRON_PAUSED',
+        ].includes(key)
+      ) {
         next = next.replace(pattern, line)
       }
       continue
@@ -84,7 +103,7 @@ function ensureDevVars(frontend: string): void {
 }
 
 function wrangler(frontend: string, args: string): void {
-  execSync(`pnpm exec wrangler ${args}`, {
+  execSync(`pnpm exec wrangler --config .generated-e2e.wrangler.jsonc ${args}`, {
     cwd: frontend,
     stdio: 'inherit',
     env: { ...process.env, CI: '1' },

@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { prepareE2eDevVars, seedLocalCatalog } from './lib/seed-local-catalog.ts'
 import { KITCHEN_SINK_ARTIFACT_ID } from './lib/kitchen-sink-readme.ts'
 import { E2E_ORIGIN, E2E_PORT as port } from './lib/origin.ts'
+import { prepareE2eWorkerConfig } from './lib/worker-config.ts'
 
 const root = process.cwd()
 const frontend = resolve(root, 'frontend')
@@ -19,15 +20,17 @@ void main()
  */
 async function main(): Promise<void> {
   prepareE2eDevVars(root)
-  const child = spawn(
-    'pnpm',
-    ['exec', 'react-router', 'dev', '--port', port, '--strictPort'],
-    {
-      cwd: frontend,
-      stdio: 'inherit',
-      env: { ...process.env, CI: '1', ARTIFACT_ASK_ENABLED: 'true' },
+  const workerConfig = prepareE2eWorkerConfig(root)
+  const child = spawn('pnpm', ['exec', 'react-router', 'dev', '--port', port, '--strictPort'], {
+    cwd: frontend,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      CI: '1',
+      ARTIFACT_ASK_ENABLED: 'true',
+      DSH_E2E_WORKER_CONFIG: workerConfig,
     },
-  )
+  })
 
   function shutdown(signal: NodeJS.Signals): void {
     child.kill(signal)

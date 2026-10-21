@@ -48,8 +48,13 @@ pnpm run db:migrate:remote                         # production recovery/manual 
 ```
 
 Normal production releases do not run the remote migration command separately.
-`pnpm run deploy` applies every pending D1 migration after a successful build
-and before it uploads the new Worker. Keeping the standalone command is useful
+`pnpm run deploy` selects the migration step from `STORAGE_BACKEND` in the Worker
+configuration. D1 releases apply pending D1 migrations; MySQL releases run the
+checksum-verified `backend/scripts/migrate-mysql.mjs` using the seven CI
+`MYSQL_*` build variables/secrets documented below, or `MYSQL_MIGRATION_CONFIG`
+pointing to an owner-only local credential file outside git.
+Both migration paths run after a successful build and before Worker upload.
+See [mysql-migration.md](mysql-migration.md) for full-data cutover and recovery. Keeping the standalone command is useful
 for incident recovery and for inspecting a migration outside the release path.
 
 Regenerating the auth half after changing `createAuth`:
@@ -197,7 +202,8 @@ pnpm run deploy
 This is the only production deploy command. It runs these steps in order:
 
 1. Build the client assets and SSR bundle.
-2. Apply pending migrations to the remote D1 database.
+2. Apply pending migrations for `STORAGE_BACKEND`: D1 migrations or numbered
+   MySQL migrations checked against the production checksum ledger.
 3. Run `wrangler deploy` only if both earlier steps succeeded.
 
 Wrangler captures a D1 backup before applying migrations and rolls back a
@@ -222,11 +228,97 @@ Workers Builds stages as:
 - Preview version command: `pnpm --filter @dsh-fish/frontend exec wrangler versions upload`.
 
 `deploy:built` deliberately skips the build that Workers Builds already
-completed; it applies remote D1 migrations and deploys the resulting Worker.
+completed; it runs the selected D1/MySQL migration gate and deploys the resulting Worker.
 Workers Builds uses the separate preview command on other branches, so previews
-do not mutate production D1. Without the integration, run `pnpm run deploy`
+do not run the production migration gate. Preview builds must not receive production
+migration credentials. Without the integration, run `pnpm run deploy`
 after the push. The README stock backfill begins on the first minutely Cron
 invocation after the new Worker and its trigger configuration are active.
+
+### Production build-time MySQL secrets
+
+Cloudflare Workers Builds is the chosen sole production deployer. GitHub Actions
+continues to validate only; do not add a second push-triggered deployment pipeline.
+The following seven encrypted repository Actions secrets have been stored for
+`stvlynn/dsh.fish`, but GitHub secrets are **not inherited by Cloudflare Builds**.
+Cloudflare requires the same fields under **Worker → Settings → Build → Build
+variables and secrets**, not Worker runtime Variables & Secrets. Restrict the
+credential-bearing production trigger to `main`; disable preview builds on this
+trigger or use a separate preview trigger/environment without production secrets.
+Do not expose migration credentials to untrusted pull-request or branch builds.
+
+| Field | Meaning |
+| --- | --- |
+| `MYSQL_HOST` | TLS gateway host/IP, not the raw TencentDB public endpoint |
+| `MYSQL_PORT` | TLS gateway port |
+| `MYSQL_DATABASE` | Must be `dsh_fish` for production |
+| `MYSQL_MIGRATION_USER` | Database-scoped DDL migration account, not app credentials or root |
+| `MYSQL_MIGRATION_PASSWORD` | Migration account password; always secret |
+| `MYSQL_TLS_SERVER_NAME` | DNS SAN used for TLS identity verification |
+| `MYSQL_SSL_CA` | Inline PEM CA certificate, not a CA/server private key or a local path |
+
+All seven may be stored as secrets. The migrator reads them directly; no credential
+file or local CA path is required in CI. Do not set `MYSQL_MIGRATION_CONFIG` to a
+path on a developer laptop in a cloud build. The existing Cloudflare build token
+authenticates Worker upload; the MySQL password is a separate credential.
+
+Cloudflare configuration is verified using the installed `cf` CLI (v0.15.0).
+Its existing OAuth profile has `workers_builds:read/write`; the separate Wrangler
+OAuth profile lacks these scopes and returned 403. No new management token,
+Global API key, or competing GitHub deployment pipeline was created.
+
+Account `cd649aedbd3b02589e9eab812c0944d3`, Worker `dsh-fish`, repository root `/`:
+
+| Trigger | Branch filter | Build/deploy commands | Production secrets |
+| --- | --- | --- | --- |
+| `1658268e-20f2-4aa7-b7f3-20e4febf8054` | include `main` only | `pnpm run build` then `pnpm --filter @dsh-fish/frontend run deploy:built` | All seven present, `is_secret=true`, listed values null |
+| `23f850dc-b3bb-4767-a2e9-599c4f70c2ff` | include `*`, exclude `main` | `pnpm run build` then `pnpm --filter @dsh-fish/frontend exec wrangler versions upload` | None of the seven production fields |
+
+The production deploy command and branch filters were already correct and were
+left unchanged. Only the main trigger received the MySQL build secrets. The
+existing Cloudflare build token is unchanged. Preview builds remain separate.
+
+Use `cf builds triggers environment-variables upsert <trigger> --body @<file>`
+with a private `0600` temporary JSON map of `{is_secret:true,value:...}` records,
+then list metadata to verify without reading back values. Delete the temporary
+file after use. Never put passwords in CLI arguments or logs.
+
+Safe verification commands:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=cd649aedbd3b02589e9eab812c0944d3 \
+  cf builds triggers list --external-script-id 82bf6bf80b9445729cd3c8236afae29c
+CLOUDFLARE_ACCOUNT_ID=cd649aedbd3b02589e9eab812c0944d3 \
+  cf builds triggers environment-variables list \
+  --trigger-uuid 1658268e-20f2-4aa7-b7f3-20e4febf8054
+```
+
+MySQL migrations are immutable files under `backend/mysql-migrations/` named
+`0001_initial.sql`, `0002_<change>.sql`, and so on. The runner checks all applied
+checksums, rejects missing/incomplete/out-of-order history, serializes with a
+database advisory lock, and applies only pending versions before Worker upload.
+Never edit an applied file to change the schema. MySQL DDL can partially commit;
+a failure leaves an incomplete marker and blocks later deployments until reviewed.
+
+Safe local history validation (no migration SQL/ledger mutation):
+
+```sh
+MYSQL_MIGRATION_CONFIG="$PRIVATE_CONFIG_PATH" \
+  node backend/scripts/migrate-mysql.mjs --production --check
+node --test backend/scripts/migrate-mysql.test.mjs
+```
+
+The production history check reported no pending versions in both local-file
+and CI-environment modes; the runner has 26 passing mock tests. Secret presence
+and preview separation are verified. Configuring secrets alone does not deploy
+code or update the remote checkout. Publish the MySQL code/configuration together,
+then verify the commit-specific GitHub CI and main-branch Cloudflare build. Do not
+publish an old D1-backed configuration over a MySQL Worker.
+
+Once those changes are committed, each main push invokes the migration gate
+before upload; only pending numbered SQL files run. Unchanged migrations are
+checked and skipped. Missing credentials, checksum drift or incomplete history
+stop deployment. Never edit an already-applied migration.
 
 The social cards are committed rather than generated at build time, so no
 browser is needed in CI. Regenerate them with
@@ -436,9 +528,32 @@ production bindings rather than a Node emulation of them. Local values come from
 ## Operational notes
 
 - **Per-request container.** D1 and KV bindings arrive per request, so
-  `createContainer` runs per request. It is cheap: no pools, no warm-up.
+  `createContainer` is async and runs per invocation. D1 has no client pool;
+  MySQL leases from a bounded invocation-local client pool and disposes it after
+  response streaming and tracked background work finish.
 - **KV minimum TTL is 60s**, which is why the Better Auth rate-limit window is
   60 and cannot be shorter.
 - **D1 has no cross-statement transactions.** Multi-table writes go through
   `db.batch`, which D1 applies atomically; large crawls are chunked to stay
   within the batch cap.
+
+## Catalog overload recovery
+
+During D1 overload recovery, the Worker temporarily returns an empty `503`
+with `Retry-After: 300` and `Cache-Control: no-store` for query-bearing
+`browse`, `kind`, `category`, and `artifacts` routes, including localized
+pages, React Router data routes, and artifact API routes. Any request carrying
+`q` is also rejected. Bare catalog routes remain available. Scheduled ingestion
+and localization backfill are temporarily paused in the `scheduled` handler. This
+incident controls are separate Worker variables: `CATALOG_SEARCH_PAUSED` and
+`CATALOG_CRON_PAUSED` remain paused unless explicitly set to `"false"`. Restore
+query-bearing reads and scheduled work independently after validation.
+`CATALOG_WRITES_PAUSED="true"` enables a short full-maintenance window: all
+requests except `/api/health` return 503, including GET-side counters and auth
+writes; cron stops and Agent callbacks fail explicitly for retry. Do not infer
+that `/api/health` has verified the database.
+
+Migration `0015_catalog_facet_counts.sql` is applied in production. Restoring
+unrestricted traffic after that migration immediately reproduced D1 `7429`,
+so remove the gate only after the remaining search/filter query load is
+controlled. Do not roll back the pre-aggregation migration to lift the gate.

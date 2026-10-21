@@ -8,14 +8,19 @@ import type { CatalogSnapshotStore } from '../../application/port/catalog-snapsh
 const SNAPSHOT_TTL_SECONDS = 86_400
 
 export class KvCatalogSnapshotStore implements CatalogSnapshotStore {
-  constructor(private readonly kv: KVNamespace) {}
+  constructor(
+    private readonly kv: KVNamespace,
+    private readonly generation = '',
+  ) {}
 
   async read(dataVersion: string): Promise<string | undefined> {
-    return (await this.kv.get(snapshotKey(dataVersion))) ?? undefined
+    return (await this.kv.get(this.generation + snapshotKey(dataVersion))) ?? undefined
   }
 
   async write(dataVersion: string, body: string): Promise<void> {
-    await this.kv.put(snapshotKey(dataVersion), body, { expirationTtl: SNAPSHOT_TTL_SECONDS })
+    await this.kv.put(this.generation + snapshotKey(dataVersion), body, {
+      expirationTtl: SNAPSHOT_TTL_SECONDS,
+    })
   }
 }
 

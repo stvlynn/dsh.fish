@@ -1,4 +1,4 @@
-import { drizzle } from 'drizzle-orm/d1'
+import { openPersistence } from './persistence/open-persistence.js'
 import type { IncomingRequestCfProperties } from '@cloudflare/workers-types'
 import { GetArtifactDetail } from '../application/use-case/get-artifact-detail.js'
 import { AskArtifact } from '../application/use-case/ask-artifact.js'
@@ -34,20 +34,13 @@ import { KvListCursor, listCursorKey } from './ingestion/list-cursor.js'
 import { RepoProber } from './ingestion/repo-prober.js'
 import { KvSweepCursor, sweepCursorKey } from './ingestion/sweep-cursor.js'
 import { KvHomeRailCache } from './persistence/kv-home-rail-cache.js'
-import { D1ArtifactRepository } from './persistence/d1-artifact-repository.js'
-import { D1ReadmeTranslationRepository } from './persistence/d1-readme-translation-repository.js'
-import { D1SummaryTranslationRepository } from './persistence/d1-summary-translation-repository.js'
-import { D1ReadmeLocalizationBackfillSource } from './persistence/d1-readme-localization-backfill-source.js'
-import { D1LinkedIdentityReader } from './persistence/d1-linked-identity.js'
-import { D1ReviewRepository } from './persistence/d1-review-repository.js'
-import { D1SubmissionRepository } from './persistence/d1-submission-repository.js'
 import { KvCatalogSnapshotStore } from './persistence/kv-catalog-snapshot-store.js'
 import { KvReadmeLocalizationBackfillProgress } from './agents/kv-readme-localization-backfill-progress.js'
 import { AdaClient } from './ada/ada-client.js'
 import { KvAskRateLimiter } from './ask/kv-ask-rate-limiter.js'
-import * as schema from './persistence/schema.js'
 
 export interface Container {
+  readonly dispose: () => Promise<void>
   readonly config: HubConfig
   readonly auth: HubAuth
   readonly artifacts: ArtifactRepository
@@ -87,91 +80,101 @@ export interface ContainerOptions {
  * request, so the container is built per request rather than cached at module
  * scope. Everything it builds is cheap: no connection pools, no warm-up.
  */
-export function createContainer(env: HubEnv, options: ContainerOptions): Container {
+export async function createContainer(env: HubEnv, options: ContainerOptions): Promise<Container> {
   const config = readConfig(env)
-  const db = drizzle(env.DB, { schema })
-
-  const artifacts = new D1ArtifactRepository(db, config.catalogFtsSearch)
-  const readmeTranslations = new D1ReadmeTranslationRepository(db)
-  const summaryTranslations = new D1SummaryTranslationRepository(db)
   const supportedLocales = options.supportedLocales ?? ['en']
-  const readmeBackfillSource = new D1ReadmeLocalizationBackfillSource(db, supportedLocales)
-  const submissions = new D1SubmissionRepository(db)
-  const reviews = new D1ReviewRepository(db)
-  const identities = new D1LinkedIdentityReader(db)
-  const socialPreview = new GitHubSocialPreview(config.githubToken)
-  const indexers: readonly SourceIndexer[] = [
-    new GitHubIndexer(
-      config.githubToken,
-      new KvSweepCursor(env.KV, sweepCursorKey('github')),
-      socialPreview,
-    ),
-    new NpmIndexer(socialPreview),
-    new AwesomeListIndexer(
-      new RepoProber(config.githubToken, socialPreview),
-      new KvListCursor(env.KV, listCursorKey('awesome-list')),
-    ),
-  ]
+  const persistence = await openPersistence(env, supportedLocales)
+  try {
+    const {
+      artifacts,
+      readmes: readmeTranslations,
+      summaries: summaryTranslations,
+      backfill: readmeBackfillSource,
+      submissions,
+      reviews,
+      identities,
+    } = persistence
+    const socialPreview = new GitHubSocialPreview(config.githubToken)
+    const indexers: readonly SourceIndexer[] = [
+      new GitHubIndexer(
+        config.githubToken,
+        new KvSweepCursor(env.KV, sweepCursorKey('github')),
+        socialPreview,
+      ),
+      new NpmIndexer(socialPreview),
+      new AwesomeListIndexer(
+        new RepoProber(config.githubToken, socialPreview),
+        new KvListCursor(env.KV, listCursorKey('awesome-list')),
+      ),
+    ]
 
-  return {
-    config,
-    auth: createAuth(env, options.cf, config.baseUrl),
-    artifacts,
-    submissions,
-    reviews,
-    useCases: {
-      searchArtifacts: new SearchArtifacts(
-        artifacts,
-        summaryTranslations,
-        new KvHomeRailCache(env.KV),
-      ),
-      getArtifactDetail: new GetArtifactDetail(
-        artifacts,
-        readmeTranslations,
-        summaryTranslations,
-        config.artifactAskEnabled,
-      ),
-      getArtifactReviews: new GetArtifactReviews(reviews, artifacts),
-      getCatalogSnapshot: new GetCatalogSnapshot(artifacts, new KvCatalogSnapshotStore(env.KV)),
-      describeScoring: new DescribeScoring(),
-      listCatalogFacets: new ListCatalogFacets(artifacts),
-      refreshCatalogFacets: new RefreshCatalogFacets(artifacts),
-      listSitemapEntries: new ListSitemapEntries(
-        artifacts,
-        supportedLocales,
-        config.seoLocaleGating,
-      ),
-      rateArtifact: new RateArtifact(reviews, artifacts),
-      resolveInstallPlan: new ResolveInstallPlan(artifacts),
-      submitArtifact: new SubmitArtifact(
-        submissions,
-        artifacts,
-        indexers,
-        ids,
-        identities,
-        options.readmeLocalization,
-      ),
-      ingestCatalog: new IngestCatalog(artifacts, indexers, options.readmeLocalization),
-      reclassifyCatalog: new ReclassifyCatalog(
-        artifacts,
-        new HttpCuratedCategoryOverlay(),
-        new KvOffsetCursor(env.KV, reclassifyCursorKey()),
-      ),
-      backfillReadmeLocalization: new BackfillReadmeLocalization(
-        readmeBackfillSource,
-        new KvReadmeLocalizationBackfillProgress(env.KV),
-        options.readmeLocalization,
-      ),
-      askArtifact: new AskArtifact(
-        artifacts,
-        new AdaClient(),
-        new KvAskRateLimiter(env.KV, {
-          ...(config.artifactAskMaxPerIp === undefined
-            ? {}
-            : { maxPerIp: config.artifactAskMaxPerIp }),
-        }),
-        config.artifactAskEnabled,
-      ),
-    },
+    return {
+      config,
+      dispose: persistence.dispose,
+      auth: createAuth(env, options.cf, config.baseUrl, persistence.mysqlDb),
+      artifacts,
+      submissions,
+      reviews,
+      useCases: {
+        searchArtifacts: new SearchArtifacts(
+          artifacts,
+          summaryTranslations,
+          new KvHomeRailCache(env.KV, env.STORAGE_BACKEND === 'mysql' ? 'mysql-v1:' : ''),
+        ),
+        getArtifactDetail: new GetArtifactDetail(
+          artifacts,
+          readmeTranslations,
+          summaryTranslations,
+          config.artifactAskEnabled,
+        ),
+        getArtifactReviews: new GetArtifactReviews(reviews, artifacts),
+        getCatalogSnapshot: new GetCatalogSnapshot(
+          artifacts,
+          new KvCatalogSnapshotStore(env.KV, env.STORAGE_BACKEND === 'mysql' ? 'mysql-v1:' : ''),
+        ),
+        describeScoring: new DescribeScoring(),
+        listCatalogFacets: new ListCatalogFacets(artifacts),
+        refreshCatalogFacets: new RefreshCatalogFacets(artifacts),
+        listSitemapEntries: new ListSitemapEntries(
+          artifacts,
+          supportedLocales,
+          config.seoLocaleGating,
+        ),
+        rateArtifact: new RateArtifact(reviews, artifacts),
+        resolveInstallPlan: new ResolveInstallPlan(artifacts),
+        submitArtifact: new SubmitArtifact(
+          submissions,
+          artifacts,
+          indexers,
+          ids,
+          identities,
+          options.readmeLocalization,
+        ),
+        ingestCatalog: new IngestCatalog(artifacts, indexers, options.readmeLocalization),
+        reclassifyCatalog: new ReclassifyCatalog(
+          artifacts,
+          new HttpCuratedCategoryOverlay(),
+          new KvOffsetCursor(env.KV, reclassifyCursorKey()),
+        ),
+        backfillReadmeLocalization: new BackfillReadmeLocalization(
+          readmeBackfillSource,
+          new KvReadmeLocalizationBackfillProgress(env.KV),
+          options.readmeLocalization,
+        ),
+        askArtifact: new AskArtifact(
+          artifacts,
+          new AdaClient(),
+          new KvAskRateLimiter(env.KV, {
+            ...(config.artifactAskMaxPerIp === undefined
+              ? {}
+              : { maxPerIp: config.artifactAskMaxPerIp }),
+          }),
+          config.artifactAskEnabled,
+        ),
+      },
+    }
+  } catch (error) {
+    await persistence.dispose()
+    throw error
   }
 }

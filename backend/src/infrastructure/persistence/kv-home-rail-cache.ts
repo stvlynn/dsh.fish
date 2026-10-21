@@ -16,14 +16,17 @@ function railKey(sort: string, limit: number, locale: string): string {
 }
 
 export class KvHomeRailCache {
-  constructor(private readonly kv: KVNamespace) {}
+  constructor(
+    private readonly kv: KVNamespace,
+    private readonly generation = '',
+  ) {}
 
   async read(
     sort: string,
     limit: number,
     locale: string,
   ): Promise<PageDto<ArtifactSummaryDto> | undefined> {
-    const value = await this.kv.get(railKey(sort, limit, locale), 'json')
+    const value = await this.kv.get(this.generation + railKey(sort, limit, locale), 'json')
     return value === null ? undefined : asPage(value)
   }
 
@@ -33,7 +36,7 @@ export class KvHomeRailCache {
     locale: string,
     page: PageDto<ArtifactSummaryDto>,
   ): Promise<void> {
-    await this.kv.put(railKey(sort, limit, locale), JSON.stringify(page), {
+    await this.kv.put(this.generation + railKey(sort, limit, locale), JSON.stringify(page), {
       expirationTtl: RAIL_TTL_SECONDS,
     })
   }

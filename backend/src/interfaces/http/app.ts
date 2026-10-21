@@ -44,13 +44,22 @@ export function createApiApp(options: {
   app.get('/health', (context) => context.json({ status: 'ok' }))
 
   app.use('*', async (context, next) => {
-    const container = createContainer(context.env, {
+    if (catalogRequestPaused(context.req.raw, context.env)) return pausedResponse()
+    const container = await createContainer(context.env, {
       cf: context.req.raw.cf as IncomingRequestCfProperties,
       readmeLocalization: options.readmeLocalization(context.env),
     })
-    context.set('container', container)
-    context.set('actor', await resolveActor(container, context.req.raw))
-    await next()
+    context.res = await withContainerLifecycle(
+      container,
+      async () => {
+        context.set('container', container)
+        context.set('actor', await resolveActor(container, context.req.raw))
+        await next()
+        return context.res
+      },
+      context.executionCtx,
+      context.req.method === 'HEAD',
+    )
   })
 
   app.onError((error, context) => {
@@ -88,6 +97,9 @@ export function createApiApp(options: {
     return context.json(body, 404)
   })
 
+  const fetch = app.fetch.bind(app)
+  app.fetch = (request, env, executionContext) =>
+    fetch(request, env, createInvocationContext(executionContext))
   return app
 }
 
@@ -124,3 +136,141 @@ async function resolveActor(container: Container, request: Request): Promise<Act
 }
 
 export type ApiApp = ReturnType<typeof createApiApp>
+
+/** The cutover gates run before opening persistence or reading a session. */
+export function catalogRequestPaused(request: Request, env: HubEnv): boolean {
+  const url = new URL(request.url)
+  // A short cutover maintenance window also blocks GET-side session/catalog writes.
+  if (env.CATALOG_WRITES_PAUSED === 'true' && url.pathname !== '/api/health') return true
+  return (
+    env.CATALOG_SEARCH_PAUSED !== 'false' &&
+    (url.searchParams.has('q') ||
+      (url.search !== '' &&
+        /(?:^|\/)(?:browse|kind|category|artifacts)(?:[/.]|$)/.test(url.pathname)))
+  )
+}
+
+export function pausedResponse(): Response {
+  return new Response(null, {
+    status: 503,
+    headers: { 'retry-after': '300', 'cache-control': 'no-store' },
+  })
+}
+
+type BackgroundContext = Pick<ExecutionContext, 'waitUntil' | 'passThroughOnException'>
+const invocationTasks = new WeakMap<object, Set<Promise<void>>>()
+const invocationParents = new WeakMap<object, BackgroundContext>()
+
+/** Track background work without mutating the platform's shared context. */
+export function createInvocationContext<T extends BackgroundContext>(context?: T): T {
+  const parent = context ?? {
+    waitUntil: (_task: Promise<unknown>) => {},
+    passThroughOnException: () => {},
+  }
+  const tasks = new Set<Promise<void>>()
+  const scoped = new Proxy(parent, {
+    get(target, property) {
+      if (property === 'waitUntil')
+        return (task: Promise<unknown>) => {
+          const settled = task.then(
+            () => {},
+            () => {},
+          )
+          tasks.add(settled)
+          void settled.then(() => tasks.delete(settled))
+          target.waitUntil(task)
+        }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  }) as T
+  invocationTasks.set(scoped, tasks)
+  invocationParents.set(scoped, parent)
+  return scoped
+}
+
+/** Keep request-local persistence alive through body streaming and background work. */
+export async function withContainerLifecycle(
+  container: Pick<Container, 'dispose'>,
+  handle: () => Promise<Response>,
+  context: BackgroundContext,
+  head = false,
+): Promise<Response> {
+  let disposal: Promise<void> | undefined
+  const dispose = () =>
+    (disposal ??= (async () => {
+      const tasks = invocationTasks.get(context)
+      while (tasks !== undefined && tasks.size > 0) await Promise.all([...tasks])
+      await container.dispose()
+    })())
+  const keepAlive = (task: Promise<void>) =>
+    (invocationParents.get(context) ?? context).waitUntil(task)
+
+  try {
+    let response = await handle()
+    if (head && response.body !== null) {
+      await response.body.cancel()
+      response = new Response(null, response)
+    }
+    if (response.body === null) {
+      const cleanup = dispose()
+      keepAlive(cleanup)
+      return response
+    }
+    const reader = response.body.getReader()
+    let finishBody!: () => void
+    const bodyFinished = new Promise<void>((resolve) => {
+      finishBody = resolve
+    })
+    const cleanup = bodyFinished.then(dispose)
+    keepAlive(cleanup)
+    let bodySettled = false
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const next = await reader.read()
+          if (bodySettled) return
+          if (next.done) {
+            bodySettled = true
+            reader.releaseLock()
+            finishBody()
+            await cleanup
+            controller.close()
+          } else {
+            controller.enqueue(next.value)
+          }
+        } catch (error) {
+          if (bodySettled) return
+          bodySettled = true
+          reader.releaseLock()
+          finishBody()
+          try {
+            await cleanup
+          } finally {
+            controller.error(error)
+          }
+        }
+      },
+      async cancel(reason) {
+        bodySettled = true
+        try {
+          await reader.cancel(reason)
+        } finally {
+          reader.releaseLock()
+          finishBody()
+          await cleanup
+        }
+      },
+    })
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  } catch (error) {
+    const cleanup = dispose()
+    keepAlive(cleanup)
+    await cleanup
+    throw error
+  }
+}

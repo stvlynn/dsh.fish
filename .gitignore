@@ -21,6 +21,7 @@ out/
 build/
 .wrangler/
 .dev.vars
+frontend/.generated-e2e.wrangler.jsonc
 node-compile-cache/
 packages/*/lib/
 *.tgz

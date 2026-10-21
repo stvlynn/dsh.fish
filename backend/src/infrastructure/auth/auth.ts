@@ -1,4 +1,6 @@
-import { betterAuth } from 'better-auth'
+import type { MySql2Database } from 'drizzle-orm/mysql2'
+import * as mysqlSchema from '../persistence/mysql-schema.js'
+import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { bearer, deviceAuthorization } from 'better-auth/plugins'
 import { withCloudflare } from 'better-auth-cloudflare'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
@@ -30,15 +32,20 @@ export const DEVICE_USER_CODE_LENGTH = 8
  * Keeping it one function is what stops the generated migration from drifting
  * away from the configuration that actually runs.
  */
-export function createAuth(env?: HubEnv, cf?: IncomingRequestCfProperties, baseURL?: string) {
-  const db = env ? drizzle(env.DB, { schema }) : ({} as ReturnType<typeof drizzle>)
+export function createAuth(
+  env?: HubEnv,
+  cf?: IncomingRequestCfProperties,
+  baseURL?: string,
+  mysqlDb?: MySql2Database<typeof mysqlSchema>,
+) {
+  const db = env && !mysqlDb ? drizzle(env.DB, { schema }) : ({} as ReturnType<typeof drizzle>)
 
   const cloudflare = withCloudflare(
     {
       autoDetectIpAddress: true,
       geolocationTracking: false,
       cf: cf ?? ({} as IncomingRequestCfProperties),
-      d1: env ? { db, options: { usePlural: true } } : undefined,
+      d1: env && !mysqlDb ? { db, options: { usePlural: true } } : undefined,
       ...(env?.KV === undefined ? {} : { kv: env.KV }),
     },
     {
@@ -108,9 +115,27 @@ export function createAuth(env?: HubEnv, cf?: IncomingRequestCfProperties, baseU
     ...(env === undefined ? {} : { secret: env.BETTER_AUTH_SECRET }),
     ...(baseURL === undefined ? {} : { baseURL, trustedOrigins: [baseURL] }),
     ...cloudflare,
+    // Preserve database-backed sessions when the Cloudflare D1 option is absent.
+    ...(mysqlDb
+      ? {
+          session: { ...(cloudflare as { session?: BetterAuthOptions['session'] }).session, storeSessionInDatabase: true },
+          verification: { storeInDatabase: true },
+        }
+      : {}),
     // D1 rejects Better Auth's drizzle `consumeOne` DELETE subquery. Wrap the
     // live adapter; the CLI schema-generation path below has no D1.
-    ...(database === undefined ? {} : { database: d1SafeConsumeOne(database) }),
+    ...(mysqlDb
+      ? {
+          database: drizzleAdapter(mysqlDb, {
+            provider: 'mysql',
+            usePlural: true,
+            schema: mysqlSchema,
+            transaction: true,
+          }),
+        }
+      : database === undefined
+        ? {}
+        : { database: d1SafeConsumeOne(database) }),
     // The CLI has no bindings; give it a bare adapter purely so it can read the
     // configured schema shape.
     ...(env

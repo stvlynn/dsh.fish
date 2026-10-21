@@ -13,6 +13,7 @@ export const CATALOG_SCRAPE_ASNS = new Set([
 ])
 
 export const CATALOG_SEARCH_BUDGET_PER_MINUTE = 10
+export const MYSQL_SEARCH_BUDGET_PER_MINUTE = 120
 
 export interface SearchBudgetStore {
   get(key: string): Promise<string | null>
@@ -33,15 +34,18 @@ export async function catalogSearchBudgetShed(
   url: URL,
   kv: SearchBudgetStore,
   now = Date.now(),
+  budget = CATALOG_SEARCH_BUDGET_PER_MINUTE,
 ): Promise<Response | undefined> {
   if (!isMeteredCatalogSearch(url)) return undefined
-  const key = `catalog:search-budget:${Math.floor(now / 60_000)}`
+  if (!Number.isSafeInteger(budget) || budget < 1) throw new Error('Invalid catalog search budget')
+  const prefix = budget === CATALOG_SEARCH_BUDGET_PER_MINUTE ? 'catalog:search-budget' : `catalog:search-budget:${budget}`
+  const key = `${prefix}:${Math.floor(now / 60_000)}`
   const raw = await kv.get(key)
   const used = raw === null ? 0 : Number(raw)
   if (!Number.isFinite(used) || used < 0) {
     throw new Error('catalog search budget held a malformed counter')
   }
-  if (used >= CATALOG_SEARCH_BUDGET_PER_MINUTE) return shed429('60')
+  if (used >= budget) return shed429('60')
   await kv.put(key, String(used + 1), { expirationTtl: 120 })
   return undefined
 }

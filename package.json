@@ -18,7 +18,7 @@
   "scripts": {
     "check": "pnpm -r --parallel run typecheck && pnpm run lint && pnpm run test",
     "typecheck": "pnpm -r --parallel run typecheck && tsc -p e2e/tsconfig.json",
-    "test": "pnpm -r run test",
+    "test": "pnpm -r run test && node --experimental-strip-types --test e2e/lib/worker-config.test.ts",
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -38,6 +38,7 @@
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
+    "jsonc-parser": "^3.3.1",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.67.0",

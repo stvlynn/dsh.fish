@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CATALOG_SEARCH_BUDGET_PER_MINUTE,
+  MYSQL_SEARCH_BUDGET_PER_MINUTE,
   catalogSearchBudgetShed,
   isMeteredCatalogSearch,
   scrapeShedResponse,
@@ -37,6 +38,15 @@ describe('catalogSearchBudgetShed', () => {
     const shed = await catalogSearchBudgetShed(url, kv, 1_000_000)
     expect(shed?.status).toBe(429)
     expect(shed?.headers.get('retry-after')).toBe('60')
+  })
+
+  it('uses a separate bounded MySQL budget without inheriting exhausted D1 counters', async () => {
+    const kv = memoryKv()
+    const url = new URL('https://dsh.fish/browse?q=python')
+    for (let i = 0; i < CATALOG_SEARCH_BUDGET_PER_MINUTE; i++) await catalogSearchBudgetShed(url, kv, 1_000_000)
+    expect((await catalogSearchBudgetShed(url, kv, 1_000_000))?.status).toBe(429)
+    for (let i = 0; i < MYSQL_SEARCH_BUDGET_PER_MINUTE; i++) expect(await catalogSearchBudgetShed(url, kv, 1_000_000, MYSQL_SEARCH_BUDGET_PER_MINUTE)).toBeUndefined()
+    expect((await catalogSearchBudgetShed(url, kv, 1_000_000, MYSQL_SEARCH_BUDGET_PER_MINUTE))?.status).toBe(429)
   })
 
   it('does not consume the budget for listings without q=', async () => {

@@ -63,13 +63,80 @@ binding and Cron configuration. A bounded live request verifies production-key
 and model availability; model quality remains an operational evaluation, not a
 deterministic unit test.
 
+### MySQL repository validation
+
+[mysql-artifact-repository.test.ts](../../backend/src/infrastructure/persistence/mysql-artifact-repository.test.ts)
+runs 21 SQL/mock checks across the six MySQL repositories using real Drizzle
+builders with distinct pool/transaction driver mocks. It pins transaction query
+ownership and rollback, localized document mappings/invalidation, install rank
+assignment order/grouping, retained translation bodies, review timestamps,
+submission decisions and contiguous source-hash-isolated chunks.
+
+[mysql-artifact-repository.node.test.ts](../../backend/src/infrastructure/persistence/mysql-artifact-repository.node.test.ts)
+is opt-in and otherwise skips its seven tests. It requires an already migrated,
+authorized **isolated** `dsh_fish_validation` schema; it must never target the
+production `dsh_fish` database. The test process alone reads `MYSQL_TEST_CONFIG`
+internally, uses only its validation `user`/`password`, fixes the target database,
+and asserts `SELECT database()`. Do not inspect or print credential files during
+normal source review or put their contents in logs.
+
+```sh
+pnpm --filter @dsh-fish/backend test src/infrastructure/persistence/mysql-artifact-repository.test.ts
+MYSQL_TEST_CONFIG=/Users/steven/.config/dsh-fish/mysql-validation.json \
+  pnpm --filter @dsh-fish/backend test src/infrastructure/persistence/mysql-artifact-repository.node.test.ts
+pnpm --filter @dsh-fish/backend typecheck
+```
+
+The supplied configuration has `host`, `port`, `user`, `password`, an absolute
+CA-file path `ca`, and `tls_server_name`. TLS is mandatory with CA verification,
+`rejectUnauthorized: true` and `verifyIdentity: true`. To avoid mysql2 omitting
+SNI for IP literals, the client uses the DNS TLS name as `host` while its stream
+opens the socket to the configured IP/port. Never retry over plaintext. This
+validates the gateway TLS leg, not the unencrypted final private-network hop.
+
+The real suite covers NULL/JSON/epoch/NUL round-trips, English and Chinese ngram
+search, catalog/sitemap behavior, concurrent installs/metrics and rollback,
+reviews/submissions, prior generated prose, complete localized upserts, and
+resumable chunks. Each test creates unique UUID-scoped fixtures and deletes only
+its own rows afterward; it does not create/drop schemas or truncate shared tables.
+Do not run fixtures while the operator is importing or verifying the complete
+snapshot into that validation schema. Passing these tests is not production
+cutover approval, relevance parity or a load benchmark.
+
+The opt-in [auth integration suite](../../backend/src/infrastructure/auth/auth-mysql.node.test.ts)
+uses the same isolated TLS configuration and memory-only KV. Five real tests verify
+user/session epoch dates, cold-cache signed cookie and bearer reads, device grant
+issue/expiry/single redemption, and concurrent verification consumption. MySQL
+explicitly persists sessions and verification data in the database; keep the
+production KV binding and signing secret unchanged. Only UUID-scoped fixtures
+are cleaned up. Run it with `MYSQL_TEST_CONFIG` and the same no-overlap rule.
+
+Runtime lifecycle tests additionally pin async container opening, disposal after
+streams/background work, independent Agent invocation persistence, maintenance
+before auth/cache access, and explicitly resumed serial cron work. Migration and
+deployment checks follow the [cutover runbook](../operations/mysql-migration.md):
+MySQL-selected deployment runs the checksum-ledger MySQL migration rather than D1
+migrations. Full import acceptance requires all 17 table counts and canonical
+primary-key-ordered SHA-256 comparisons, not just passing fixture tests.
+
+The backend test command also runs `node --test scripts/migrate-mysql.test.mjs`,
+so GitHub CI exercises numbered migration ordering, checksum/incomplete-history
+rejection, TLS/environment validation, advisory locking and fail-closed deploy
+behavior without accessing production credentials or databases.
+
 ## End-to-end tests
 
 - Cover the most important user journeys only.
 - Keep them stable and fast enough to run in CI.
 - Use deterministic test data.
 
-`pnpm run test:e2e` runs Playwright. Project groups share one config:
+`pnpm run test:e2e` runs Playwright. Its harness generates an ignored
+`frontend/.generated-e2e.wrangler.jsonc` next to the production config, preserving
+relative paths while selecting local D1, removing Hyperdrive, enabling fixture
+reads/writes and keeping cron paused. Vite and the seed CLI use that same file;
+production builds do not set `DSH_E2E_WORKER_CONFIG` and retain MySQL. No production
+MySQL credentials are needed or passed to PR/E2E jobs. A Node contract test checks
+this isolation as part of `pnpm run test`. Project groups share one config:
 **Product docs** (`e2e/docs/`) covers the Fumadocs section at one desktop
 viewport (1280×900) and one phone (Pixel 7). It asserts the sidebar, nested
 guides, live scoring, sidebar filter, indexable Japanese MDX, controlled video

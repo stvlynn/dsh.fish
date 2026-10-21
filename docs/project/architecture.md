@@ -19,7 +19,7 @@ an agent drives.
 | Runtime                   | Cloudflare Workers (`nodejs_compat`)                                            |
 | Frontend                  | React 19 + React Router 8 (SSR), Tailwind CSS 4, beui components                |
 | Backend                   | Hono, layered DDD                                                               |
-| Database                  | Cloudflare D1 (SQLite) via Drizzle ORM                                          |
+| Database                  | MySQL/TencentDB via Hyperdrive in production; frozen D1 source retained; Drizzle ORM |
 | Cache / secondary storage | Cloudflare KV                                                                   |
 | README localization       | Cloudflare Agents SDK + Workers VPC + LM Studio (`hy-mt2-1.8b`)              |
 | Auth                      | Better Auth (`better-auth-cloudflare`), GitHub OAuth + OAuth device grant       |
@@ -27,7 +27,9 @@ an agent drives.
 
 ## Deployment topology
 
-One Worker serves both halves of the product.
+One Worker serves both halves of the product. Production uses MySQL through
+Hyperdrive and the verified-TLS gateway. The former D1 database is retained as a
+frozen source snapshot; see the [cutover runbook](../operations/mysql-migration.md).
 
 ```text
                     ┌──────────────────────────────────────────┐
@@ -38,7 +40,9 @@ One Worker serves both halves of the product.
                     │   cron    → ingest + reclassify          │
                     └───────┬───────────┬───────────┬──────────┘
                             ▼           ▼           ▼
-                     D1 (catalog)    KV (sessions,   README i18n Agent
+                     Hyperdrive      KV (sessions,   README i18n Agent
+                     → TLS gateway
+                     → MySQL
                                      crawl state,    → Workers VPC
                                      ask limiter)
                                           │              │
@@ -47,13 +51,28 @@ One Worker serves both halves of the product.
                                     (GitHub ask)      → Mac mini LM Studio
 ```
 
+The production persistence path is Worker → Hyperdrive → verified-TLS
+gateway on Lighthouse → CCN/private TCP → TencentDB MySQL. **The gateway-to-MySQL
+private hop is not TLS** because this instance edition lacks native TLS; do not
+claim end-to-end encryption. Catalog, ownership, OAuth/device/session state,
+reviews/submissions, metrics, translations and resumable chunks move together.
+KV auth secondary storage and durable localization queue/cursor state remain.
+
+`STORAGE_BACKEND=mysql` selects the MySQL adapters with no silent D1 fallback.
+Maintenance uses `CATALOG_WRITES_PAUSED=true` for all non-health requests and
+Agent retries; search and cron remain paused unless explicitly set `false`.
+MySQL rail/snapshot/edge cache names are separated by `mysql-v1`. The completed
+17-table snapshot verification and active deployment are recorded in the runbook.
+Search and application writes are enabled; cron remains paused pending observed
+end-to-end connection latency acceptance.
+
 Sharing an origin is a deliberate choice, not an accident of packaging:
 
 - Better Auth's session cookie needs no cross-subdomain configuration.
 - The browser makes no CORS preflight before a search.
 - **Loaders call use cases in-process.** A server-rendered artifact page costs
-  one D1 round trip rather than an HTTP hop back into the same Worker. See
-  `frontend/src/shared/api/hub-context.ts`.
+  a repository call rather than an HTTP hop back into the same Worker. See
+  [hub-context.ts](../../frontend/src/shared/api/hub-context.ts).
 
 ## Module boundaries
 
@@ -65,12 +84,16 @@ Sharing an origin is a deliberate choice, not an accident of packaging:
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `domain/`         | `Artifact` aggregate, `ArtifactKind`, `ArtifactPayload`, `InstallPlan`, `Submission`, `Account`, `ogImageUrl`, the `quality-score` value object, repository ports |
 | `application/`    | Use cases (`SearchArtifacts`, `ResolveInstallPlan`, `SubmitArtifact`, `IngestCatalog`, `ReclassifyCatalog`, …), DTOs, indexer ports |
-| `infrastructure/` | D1 repositories, Better Auth composition, GitHub/npm/awesome-list indexers, the container                                                                         |
+| `infrastructure/` | D1/MySQL repositories, Better Auth composition, GitHub/npm/awesome-list indexers, the async container                                                                         |
 | `interfaces/`     | Hono routers, Zod request schemas, the domain-error → HTTP mapping                                                                                                |
 
 The domain has no dependency on Hono, Drizzle, Better Auth or Workers types
-beyond value objects. `infrastructure/container.ts` is the composition root and
-is built **per request**, because D1 and KV bindings arrive per request.
+beyond value objects. [container.ts](../../backend/src/infrastructure/container.ts)
+is the async composition root, built **per request/invocation**. MySQL uses an
+invocation-scoped two-connection pool; transactions lease exclusive connections.
+The handle outlives response streams and background work, then is disposed;
+Agents open/dispose independently and scheduled operations run serially. Neither
+Worker globals nor durable Agent fields retain MySQL connections.
 
 ### Frontend — Feature-Sliced Design
 

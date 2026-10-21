@@ -1,9 +1,9 @@
+import { toEntity } from './review-row.js'
 import { count, desc, eq } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import { Review } from '../../domain/review/review.js'
 import type {
   RatingDistribution,
-  ReviewProps,
   ReviewRepository,
   ReviewSummary,
 } from '../../domain/review/review.js'
@@ -75,18 +75,4 @@ export class D1ReviewRepository implements ReviewRepository {
       distribution: distribution as RatingDistribution,
     }
   }
-}
-
-function toEntity(row: typeof artifactReviews.$inferSelect): Review {
-  const props: ReviewProps = {
-    artifactId: row.artifactId,
-    accountId: row.accountId,
-    authorName: row.authorName,
-    ...(row.authorAvatarUrl === null ? {} : { authorAvatarUrl: row.authorAvatarUrl }),
-    rating: row.rating,
-    ...(row.comment === null ? {} : { comment: row.comment }),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  }
-  return Review.rehydrate(props)
 }

@@ -14,7 +14,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node-tests.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/migrate-mysql.test.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
@@ -28,6 +28,7 @@
     "better-auth-cloudflare": "^0.3.1",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.2",
+    "mysql2": "^3.15.3",
     "yaml": "^2.7.0",
     "zod": "^4.0.0"
   },

@@ -1,5 +1,11 @@
 import { createRequestHandler, RouterContextProvider } from 'react-router'
-import { createApiApp } from '@dsh-fish/backend'
+import {
+  createApiApp,
+  createInvocationContext,
+  withContainerLifecycle,
+  catalogRequestPaused,
+  pausedResponse,
+} from '@dsh-fish/backend'
 import { createContainer } from '@dsh-fish/backend/infrastructure/container.js'
 import { AgentsReadmeLocalizationScheduler } from '@dsh-fish/backend/infrastructure/agents/agents-readme-localization-scheduler.js'
 import type { HubEnv } from '@dsh-fish/backend/infrastructure/config/env.js'
@@ -18,7 +24,7 @@ import {
   supportsMarkdownNegotiation,
 } from '@/pages/markdown'
 import { withEdgeCache } from './edge-cache'
-import { scrapeShedResponse, catalogSearchBudgetShed } from './catalog-scrape-gate'
+import { scrapeShedResponse, catalogSearchBudgetShed, MYSQL_SEARCH_BUDGET_PER_MINUTE } from './catalog-scrape-gate'
 import { retiredCategoryRedirect } from '@/shared/lib/retired-category-path'
 import { retiredKindRedirect, retiredPublishDocsRedirect } from '@/shared/lib/retired-kind-path'
 
@@ -112,58 +118,74 @@ async function handleRequest(
 
   // Loaders resolve use cases in-process. A server-rendered page therefore
   // costs one D1 round trip, not an HTTP hop back into the same Worker.
-  const container = createContainer(env, {
+  const container = await createContainer(env, {
     cf: request.cf,
     readmeLocalization: readmeLocalization(env),
     supportedLocales: LOCALE_CODES,
   })
 
-  // Agents get the catalog as markdown when they ask for it (`Accept:
-  // text/markdown`) or follow a `.md` alias; browsers on HTML URLs never
-  // send that type, so nothing changes for them.
-  const markdown = await maybeMarkdownResponse(request, container)
-  if (markdown !== null) {
-    return withDiscoveryLinks(markdown, request.url, false)
-  }
-
-  const routerContext = new RouterContextProvider()
-  routerContext.set(hubContext, {
+  const invocationContext = createInvocationContext(ctx)
+  return withContainerLifecycle(
     container,
-    env,
-    ctx,
-  })
+    async () => {
+      // Agents get the catalog as markdown when they ask for it (`Accept:
+      // text/markdown`) or follow a `.md` alias; browsers on HTML URLs never
+      // send that type, so nothing changes for them.
+      const markdown = await maybeMarkdownResponse(request, container)
+      if (markdown !== null) {
+        return withDiscoveryLinks(markdown, request.url, false)
+      }
 
-  const response = await requestHandler(request, routerContext)
+      const routerContext = new RouterContextProvider()
+      routerContext.set(hubContext, {
+        container,
+        env,
+        ctx: invocationContext,
+      })
 
-  // A missing HTML path stays a real 404. Agents that asked for markdown —
-  // or that sent curl's default `*/*` — get a short recovery map instead of
-  // the HTML error page, so they can find llms.txt, the sitemap, and the API.
-  if (response.status === 404 && shouldServeMarkdownNotFound(request)) {
-    const { locale } = splitLocalePath(url.pathname)
-    return withDiscoveryLinks(
-      notFoundMarkdownResponse(container.config.baseUrl, locale),
-      request.url,
-      false,
-    )
-  }
+      const response = await requestHandler(request, routerContext)
 
-  // Agent discovery (RFC 8288 / RFC 9727 / llms.txt v2): HTML documents name
-  // their machine-readable counterparts in Link headers, so an agent never
-  // has to parse markup to find the api-catalog, the OpenAPI document, the
-  // covering llms.txt, or the markdown alias of the page it is already reading.
-  return withDiscoveryLinks(response, request.url, supportsMarkdownNegotiation(url.pathname))
+      // A missing HTML path stays a real 404. Agents that asked for markdown —
+      // or that sent curl's default `*/*` — get a short recovery map instead of
+      // the HTML error page, so they can find llms.txt, the sitemap, and the API.
+      if (response.status === 404 && shouldServeMarkdownNotFound(request)) {
+        await response.body?.cancel()
+        const { locale } = splitLocalePath(url.pathname)
+        return withDiscoveryLinks(
+          notFoundMarkdownResponse(container.config.baseUrl, locale),
+          request.url,
+          false,
+        )
+      }
+
+      // Agent discovery (RFC 8288 / RFC 9727 / llms.txt v2): HTML documents name
+      // their machine-readable counterparts in Link headers, so an agent never
+      // has to parse markup to find the api-catalog, the OpenAPI document, the
+      // covering llms.txt, or the markdown alias of the page it is already reading.
+      return withDiscoveryLinks(response, request.url, supportsMarkdownNegotiation(url.pathname))
+    },
+    invocationContext,
+    request.method === 'HEAD',
+  )
 }
 
 export default {
   async fetch(request, env, ctx) {
+    if (catalogRequestPaused(request, env)) return pausedResponse()
+
     const shed =
       scrapeShedResponse(request.cf?.asn) ??
-      (await catalogSearchBudgetShed(new URL(request.url), env.KV))
+      (await catalogSearchBudgetShed(new URL(request.url), env.KV, Date.now(), env.STORAGE_BACKEND === 'mysql' ? MYSQL_SEARCH_BUDGET_PER_MINUTE : undefined))
     if (shed !== undefined) {
       return withPublicSignals(shed, request)
     }
     return withPublicSignals(
-      await withEdgeCache(request, ctx, () => handleRequest(request, env, ctx)),
+      await withEdgeCache(
+        request,
+        ctx,
+        () => handleRequest(request, env, ctx),
+        env.STORAGE_BACKEND === 'mysql' ? 'mysql-v1' : '',
+      ),
       request,
     )
   },
@@ -184,71 +206,47 @@ export default {
    * whole reachable result set is covered across runs.
    */
   async scheduled(controller, env, ctx) {
-    const container = createContainer(env, {
-      readmeLocalization: readmeLocalization(env),
-      supportedLocales: LOCALE_CODES,
-    })
-
-    if (controller.cron === '* * * * *') {
-      ctx.waitUntil(
-        container.useCases.backfillReadmeLocalization
-          // The stale-failure rescan reads every README-bearing row; the
-          // hourly branch below pays for it once an hour instead.
-          // One artifact per minute matches the four-slot Mac mini model's
-          // measured capacity and avoids building a D1-heavy queue backlog.
-          .execute(1, { retryStaleFailures: false })
-          .then((report) => {
-            console.log('readme_i18n_backfill', report)
-          })
-          .catch((error: unknown) => {
-            console.error('readme_i18n_backfill_failed', String(error))
-          }),
-      )
-      return
-    }
-
+    // Only an explicit resume can enable cron after production validation.
+    if (env.CATALOG_CRON_PAUSED !== 'false' || env.CATALOG_WRITES_PAUSED === 'true') return
     ctx.waitUntil(
-      Promise.all([
-        // Ingestion and reclassification move artifacts between categories and
-        // topics; the rails are rebuilt once both settle, so a rail read never
-        // aggregates the catalog (ADR 0009).
-        Promise.all([
-        container.useCases.ingestCatalog
-          .execute({
-            limitPerSource: 100,
-            limitByOrigin: { github: 200, 'awesome-list': 50 },
-          })
-          .then((report) => {
-            console.log('catalog_ingest', report)
-          })
-          .catch((error: unknown) => {
-            console.error('catalog_ingest_failed', String(error))
-          }),
-        container.useCases.reclassifyCatalog
-          .execute({ limit: 100 })
-          .then((report) => {
-            console.log('catalog_reclassify', report)
-          })
-          .catch((error: unknown) => {
-            console.error('catalog_reclassify_failed', String(error))
-          }),
-        ])
-          .then(() => container.useCases.refreshCatalogFacets.execute())
-          .catch((error: unknown) => {
-            console.error('catalog_facets_refresh_failed', String(error))
-          }),
-        container.useCases.backfillReadmeLocalization
-          // The hourly run overlaps D1-heavy ingestion and reclassification.
-          // Admit one forward item and at most one cooled retry rather than
-          // recreating the old 100 + 100 write burst.
-          .execute(1)
-          .then((report) => {
-            console.log('readme_i18n_backfill', report)
-          })
-          .catch((error: unknown) => {
-            console.error('readme_i18n_backfill_failed', String(error))
-          }),
-      ]),
+      (async () => {
+        const container = await createContainer(env, {
+          readmeLocalization: readmeLocalization(env),
+          supportedLocales: LOCALE_CODES,
+        })
+        try {
+          if (controller.cron !== '* * * * *') {
+            // The invocation owns a request-scoped pool; scheduled jobs run serially.
+            console.log(
+              'catalog_ingest',
+              await container.useCases.ingestCatalog.execute({
+                limitPerSource: 100,
+                limitByOrigin: { github: 200, 'awesome-list': 50 },
+              }),
+            )
+            console.log(
+              'catalog_reclassify',
+              await container.useCases.reclassifyCatalog.execute({
+                limit: 100,
+              }),
+            )
+            await container.useCases.refreshCatalogFacets.execute()
+          }
+          console.log(
+            'readme_i18n_backfill',
+            await container.useCases.backfillReadmeLocalization.execute(1, {
+              retryStaleFailures: controller.cron !== '* * * * *',
+            }),
+          )
+        } finally {
+          await container.dispose()
+        }
+      })().catch((error: unknown) => {
+        console.error('catalog_scheduled_failed', {
+          cron: controller.cron,
+          error: String(error),
+        })
+      }),
     )
   },
 } satisfies ExportedHandler<HubEnv>
@@ -264,5 +262,9 @@ function withPublicSignals(response: Response, request: Request): Response {
   if (publicRead && !headers.has('content-signal')) {
     headers.set('content-signal', 'ai-train=no, search=yes, ai-input=yes, use=reference')
   }
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }

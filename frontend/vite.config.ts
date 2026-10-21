@@ -73,6 +73,9 @@ export default defineConfig({
     // bindings rather than a Node emulation of them.
     cloudflare({
       viteEnvironment: { name: 'ssr' },
+      ...(process.env.DSH_E2E_WORKER_CONFIG
+        ? { configPath: process.env.DSH_E2E_WORKER_CONFIG }
+        : {}),
       // CI uses local fixtures and has no Cloudflare account credentials.
       // Production deployment still reads the remote VPC binding from Wrangler.
       remoteBindings: !process.env.CI,
