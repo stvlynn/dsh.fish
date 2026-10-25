@@ -86,7 +86,9 @@ describe('translateWithLmStudio', () => {
   it('allows natural-language hyphenated compounds to be translated', async () => {
     const service = {
       fetch: vi.fn(async () =>
-        Response.json({ choices: [{ message: { content: 'A search interface driven by keys.' } }] }),
+        Response.json({
+          choices: [{ message: { content: 'A search interface driven by keys.' } }],
+        }),
       ),
     } as unknown as Fetcher
 
@@ -97,13 +99,19 @@ describe('translateWithLmStudio', () => {
 
   it('masks and restores protected literals without adding prompt instructions', async () => {
     const fetch = vi.fn(async (request: Request) => {
-      const body = (await request.json()) as { messages: readonly { content: string }[] }
+      const body = (await request.json()) as {
+        messages: readonly { content: string }[]
+      }
       expect(body.messages[0]?.content).toContain(
         '\n\nUse __I18N_0__ from __I18N_1__ at __I18N_2__.',
       )
       return Response.json({
         choices: [
-          { message: { content: '请从 __I18N_1__ 使用 __I18N_0__，地址为 __I18N_2__。' } },
+          {
+            message: {
+              content: '请从 __I18N_1__ 使用 __I18N_0__，地址为 __I18N_2__。',
+            },
+          },
         ],
       })
     })
@@ -116,5 +124,47 @@ describe('translateWithLmStudio', () => {
         'summary',
       ),
     ).resolves.toBe('请从 `@dsh-fish/hub` 使用 dsh-plugin，地址为 https://dsh.fish。')
+  })
+})
+
+describe('OpenCode translation transport', () => {
+  it('pins the free model, preserves technical literals, and surfaces quota errors', async () => {
+    const { translateWithChatModel } = await import('./lm-studio-readme-translator.js')
+    const options = {
+      url: 'https://opencode.ai/inference/openai/v1/chat/completions',
+      model: 'mimo-v2.6-flash-free',
+      provider: 'opencode',
+      apiKey: 'fixture-key',
+    }
+    const fetch = vi.fn(async (request: Request) => {
+      expect(request.url).toBe(options.url)
+      expect(request.headers.get('authorization')).toBe('Bearer fixture-key')
+      expect(await request.json()).toMatchObject({ model: options.model })
+      return Response.json({
+        choices: [{ message: { content: '使用 __I18N_0__ 安装。' } }],
+      })
+    })
+    await expect(
+      translateWithChatModel(
+        { fetch } as unknown as Fetcher,
+        'Install using `pnpm`.',
+        'zh-CN',
+        'summary',
+        options,
+      ),
+    ).resolves.toBe('使用 `pnpm` 安装。')
+    const limited = {
+      fetch: vi.fn(async () => new Response('FreeUsageLimitError', { status: 429 })),
+    }
+    await expect(
+      translateWithChatModel(
+        limited as unknown as Fetcher,
+        'Install tools.',
+        'zh-CN',
+        'summary',
+        options,
+      ),
+    ).rejects.toThrow('HTTP 429')
+    expect(limited.fetch).toHaveBeenCalledOnce()
   })
 })

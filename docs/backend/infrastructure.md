@@ -5,12 +5,11 @@ The infrastructure layer implements the abstractions that the domain layer defin
 ## What belongs in `infrastructure/`
 
 - **Repository implementations** — D1 and MySQL adapters for the same domain
-  ports. Production remains D1 until the planned
-  [MySQL cutover](../operations/mysql-migration.md) passes its acceptance gates.
+  ports. Production uses private TencentDB MySQL; D1 is a frozen backup.
 - **External service clients** — HTTP clients, SDK wrappers, message publishers.
 - **Messaging adapters** — event bus, queue producers/consumers.
-- **Agent adapters** — Cloudflare Agent classes, durable task queues, the
-  Workers VPC LM Studio client, resumable translation chunks, and
+- **Agent adapters** — BullMQ consumers, the shared localization processor,
+  pinned OpenCode translation transport, resumable MySQL chunks, and
   scheduler/backfill adapters behind application ports.
 - **Ada client** — `AdaClient` POSTs `https://api.devin.ai/ada/query` (Fast)
   then opens the query WebSocket. Live Fast tokens arrive as
@@ -24,8 +23,7 @@ The infrastructure layer implements the abstractions that the domain layer defin
   port and rebuilt atomically: D1 `db.batch`, MySQL `db.transaction`. Home, browse
   and `GET /api/v1/facets` share that persisted projection. Assembled rail DTOs
   and catalog snapshots also use KV; MySQL catalog cache keys and edge responses
-  have a `mysql-v1` namespace. Auth secondary storage stays on the existing KV
-  binding and is not purged with catalog caches.
+  have a `mysql-v1` namespace. Auth secondary storage uses Redis in Node and KV in the retained adapter and is not purged with catalog caches.
 - **Ask rate limiter** — `KvAskRateLimiter` on the existing `KV` binding:
   12 asks / IP / 10 min, 4 concurrent streams / IP, 30 asks / artifact / hour,
   60 asks / Worker / minute. Consume/release is serialized inside one Worker
@@ -33,6 +31,15 @@ The infrastructure layer implements the abstractions that the domain layer defin
   circuit.
 - **Configuration and environment access** — reading env vars, config files.
 - **Framework-specific code** — ORM mappings, database migrations, cache integrations.
+
+## Node runtime adapters
+
+The [VPS runtime](../operations/vps-deployment.md) implements the same use cases
+with Redis, BullMQ and a process-owned MySQL pool. Translation processing is
+shared with the Agent adapter. Each borrowed request/job handle has a no-op
+release; only the runtime owner closes the underlying pool during shutdown.
+The `KeyValueStore` port keeps cache and cursor consumers independent of the
+Cloudflare binding shape. Node uses its native WebSocket API for Ada.
 
 ## Persistence lifecycle and cutover controls
 

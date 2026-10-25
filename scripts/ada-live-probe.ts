@@ -17,6 +17,9 @@ const SEQUENTIAL = 8
 const PARALLEL = 8
 const PARALLEL_CONCURRENCY = 2
 const GAP_MS = 2000
+const REQUESTED = Number(process.env.ADA_PROBE_COUNT ?? HARD_CAP)
+if (!Number.isSafeInteger(REQUESTED) || REQUESTED < 1 || REQUESTED > HARD_CAP)
+  throw new Error('ADA_PROBE_COUNT must be between 1 and 20')
 
 interface ProbeResult {
   readonly n: number
@@ -46,6 +49,7 @@ async function oneAsk(n: number): Promise<ProbeResult> {
   const post = await fetch(ADA_QUERY, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       mode: 'fast',
       user_query: 'In one short sentence, what is this repository?',
@@ -139,7 +143,7 @@ async function main(): Promise<void> {
   let aborted: string | undefined
 
   const run = async (n: number): Promise<boolean> => {
-    if (results.length >= HARD_CAP) return false
+    if (results.length >= REQUESTED) return false
     const result = await oneAsk(n)
     results.push(result)
     console.log(JSON.stringify(result))
@@ -160,7 +164,7 @@ async function main(): Promise<void> {
   }
 
   let n = 1
-  for (let i = 0; i < SEQUENTIAL && n <= HARD_CAP; i += 1, n += 1) {
+  for (let i = 0; i < SEQUENTIAL && n <= REQUESTED; i += 1, n += 1) {
     const ok = await run(n)
     if (!ok) break
     if (i < SEQUENTIAL - 1) await sleep(GAP_MS)
@@ -170,7 +174,10 @@ async function main(): Promise<void> {
     const pending: Promise<void>[] = []
     let inflight = 0
     let index = 0
-    const tasks = Array.from({ length: PARALLEL }, (_, i) => n + i)
+    const tasks = Array.from(
+      { length: Math.min(PARALLEL, REQUESTED - results.length) },
+      (_, i) => n + i,
+    )
     await new Promise<void>((resolve) => {
       const kick = () => {
         if (aborted !== undefined || index >= tasks.length) {

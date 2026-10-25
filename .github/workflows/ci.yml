@@ -33,8 +33,11 @@ jobs:
       - name: Test
         run: pnpm run test
 
-      - name: Build
+      - name: Build Worker adapter
         run: pnpm run build
+
+      - name: Build VPS runtime
+        run: pnpm run build:vps
 
   e2e:
     runs-on: ubuntu-latest

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { IncomingRequestCfProperties } from '@cloudflare/workers-types'
 import type { Actor } from '../../domain/account/account.js'
 import { createContainer } from '../../infrastructure/container.js'
+import type { ContainerOptions } from '../../infrastructure/container.js'
 import type { Container } from '../../infrastructure/container.js'
 import type { HubEnv } from '../../infrastructure/config/env.js'
 import type { ReadmeLocalizationScheduler } from '../../application/port/readme-localization.js'
@@ -31,6 +32,7 @@ export interface HubBindings {
  * behavior rather than each re-implementing it against raw rows.
  */
 export function createApiApp(options: {
+  readonly containerOptions?: Pick<ContainerOptions, 'persistence' | 'ada'>
   readonly readmeLocalization: (env: HubEnv) => ReadmeLocalizationScheduler
 }) {
   // The Worker forwards the request with its original path, so the router is
@@ -46,6 +48,7 @@ export function createApiApp(options: {
   app.use('*', async (context, next) => {
     if (catalogRequestPaused(context.req.raw, context.env)) return pausedResponse()
     const container = await createContainer(context.env, {
+      ...options.containerOptions,
       cf: context.req.raw.cf as IncomingRequestCfProperties,
       readmeLocalization: options.readmeLocalization(context.env),
     })

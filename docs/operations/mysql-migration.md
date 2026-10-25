@@ -1,3 +1,7 @@
+> Production now runs directly on the [VPS Node runtime](vps-deployment.md).
+> Hyperdrive/Worker gateway deployment details below describe the earlier MySQL
+> cutover and are retained for recovery context. D1 remains frozen.
+
 # MySQL cutover runbook
 
 ## Current state and acceptance gates
@@ -78,12 +82,12 @@ identifiers retain their existing values. `submissions.source_key` is LONGTEXT
 with a 191-character prefix index. The four-column ngram FULLTEXT index covers
 `artifact_search_documents(display_name, summary, keywords, topics)`.
 
-| Scope | Ordinary tables to export and verify |
-| --- | --- |
-| Catalog and ownership | `artifacts`, `artifact_categories`, `artifact_topics`, `artifact_search`, `artifact_search_documents`, `catalog_facet_counts` |
-| Identity, OAuth, sessions and device grants | `users`, `accounts`, `sessions`, `verifications`, `device_codes` |
-| Community and submission workflow | `artifact_reviews`, `submissions` |
-| Metrics and localization | `artifact_metrics`, `artifact_readme_translations`, `artifact_summary_translations`, `artifact_readme_translation_chunks` |
+| Scope                                       | Ordinary tables to export and verify                                                                                          |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Catalog and ownership                       | `artifacts`, `artifact_categories`, `artifact_topics`, `artifact_search`, `artifact_search_documents`, `catalog_facet_counts` |
+| Identity, OAuth, sessions and device grants | `users`, `accounts`, `sessions`, `verifications`, `device_codes`                                                              |
+| Community and submission workflow           | `artifact_reviews`, `submissions`                                                                                             |
+| Metrics and localization                    | `artifact_metrics`, `artifact_readme_translations`, `artifact_summary_translations`, `artifact_readme_translation_chunks`     |
 
 Preserve `artifacts.owner_account_id`, user/account identifiers, OAuth tokens and
 expiry values, session tokens, device authorization state, review creation times,

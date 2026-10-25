@@ -1,4 +1,4 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 import type { CatalogSnapshotStore } from '../../application/port/catalog-snapshot-store.js'
 
 /**
@@ -9,7 +9,7 @@ const SNAPSHOT_TTL_SECONDS = 86_400
 
 export class KvCatalogSnapshotStore implements CatalogSnapshotStore {
   constructor(
-    private readonly kv: KVNamespace,
+    private readonly kv: KeyValueStore,
     private readonly generation = '',
   ) {}
 

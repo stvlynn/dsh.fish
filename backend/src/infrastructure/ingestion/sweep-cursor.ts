@@ -1,4 +1,4 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 
 /**
  * One slice of the discovery query.
@@ -49,7 +49,7 @@ export function sweepCursorKey(origin: string): string {
 
 export class KvSweepCursor implements SweepCursor {
   constructor(
-    private readonly kv: KVNamespace,
+    private readonly kv: KeyValueStore,
     private readonly key: string,
   ) {}
 

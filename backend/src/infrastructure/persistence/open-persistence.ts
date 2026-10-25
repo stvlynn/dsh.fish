@@ -43,19 +43,7 @@ export async function openPersistence(env: HubEnv, locales: readonly string[] = 
     try {
       // Open sockets lazily: cached/static/anonymous-session paths must not queue a probe.
       // The first actual database operation still propagates failures; never fall back to D1.
-      const db = mysqlDrizzle(client, { schema: mysqlSchema, mode: 'default' })
-      return {
-        mysqlDb: db,
-        artifacts: new MysqlArtifactRepository(db),
-        readmes: new MysqlReadmeTranslationRepository(db),
-        summaries: new MysqlSummaryTranslationRepository(db),
-        chunks: new MysqlReadmeTranslationChunkRepository(db),
-        backfill: new MysqlReadmeLocalizationBackfillSource(db, locales),
-        submissions: new MysqlSubmissionRepository(db),
-        reviews: new MysqlReviewRepository(db),
-        identities: new MysqlLinkedIdentityReader(db),
-        dispose: () => client.end(),
-      }
+      return createMysqlPersistence(client, locales)
     } catch (error) {
       await client.end()
       throw error
@@ -64,6 +52,7 @@ export async function openPersistence(env: HubEnv, locales: readonly string[] = 
   if (env.STORAGE_BACKEND !== undefined && env.STORAGE_BACKEND !== 'd1') {
     throw new Error('Unknown STORAGE_BACKEND.')
   }
+  if (!env.DB) throw new Error('D1 storage requires DB.')
   const db = d1Drizzle(env.DB, { schema: d1Schema })
   return {
     mysqlDb: undefined,
@@ -78,3 +67,25 @@ export async function openPersistence(env: HubEnv, locales: readonly string[] = 
     dispose: async () => {},
   }
 }
+
+/** Pool ownership belongs to the runtime: invocation-scoped on Workers, process-scoped on Node. */
+export function createMysqlPersistence(
+  client: ReturnType<typeof createPool>,
+  locales: readonly string[],
+) {
+  const db = mysqlDrizzle(client, { schema: mysqlSchema, mode: 'default' })
+  return {
+    mysqlDb: db,
+    artifacts: new MysqlArtifactRepository(db),
+    readmes: new MysqlReadmeTranslationRepository(db),
+    summaries: new MysqlSummaryTranslationRepository(db),
+    chunks: new MysqlReadmeTranslationChunkRepository(db),
+    backfill: new MysqlReadmeLocalizationBackfillSource(db, locales),
+    submissions: new MysqlSubmissionRepository(db),
+    reviews: new MysqlReviewRepository(db),
+    identities: new MysqlLinkedIdentityReader(db),
+    dispose: () => client.end(),
+  }
+}
+
+export type Persistence = Awaited<ReturnType<typeof openPersistence>>

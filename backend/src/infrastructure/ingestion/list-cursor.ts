@@ -1,4 +1,4 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 
 /**
  * Where an awesome-list sweep resumes: which list, and how far into it.
@@ -31,7 +31,7 @@ export function listCursorKey(origin: string): string {
 
 export class KvListCursor implements ListCursor {
   constructor(
-    private readonly kv: KVNamespace,
+    private readonly kv: KeyValueStore,
     private readonly key: string,
   ) {}
 

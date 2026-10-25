@@ -14,57 +14,48 @@ an agent drives.
 
 ## Technology stack
 
-| Concern                   | Choice                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| Runtime                   | Cloudflare Workers (`nodejs_compat`)                                            |
-| Frontend                  | React 19 + React Router 8 (SSR), Tailwind CSS 4, beui components                |
-| Backend                   | Hono, layered DDD                                                               |
-| Database                  | MySQL/TencentDB via Hyperdrive in production; frozen D1 source retained; Drizzle ORM |
-| Cache / secondary storage | Cloudflare KV                                                                   |
-| README localization       | Cloudflare Agents SDK + Workers VPC + LM Studio (`hy-mt2-1.8b`)              |
-| Auth                      | Better Auth (`better-auth-cloudflare`), GitHub OAuth + OAuth device grant       |
-| Scheduled work            | Workers Cron Triggers                                                           |
+| Concern                   | Choice                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| Runtime                   | Node 24 on Singapore VPS; retained Cloudflare Worker adapter                     |
+| Frontend                  | React 19 + React Router 8 (SSR), Tailwind CSS 4, beui components                 |
+| Backend                   | Hono, layered DDD                                                                |
+| Database                  | TencentDB MySQL over the private network; frozen D1 source retained; Drizzle ORM |
+| Cache / secondary storage | Redis (Node); Cloudflare KV (retained Worker adapter)                            |
+| README localization       | BullMQ + OpenCode `mimo-v2.6-flash-free` (consumer paused on upstream quota)     |
+| Auth                      | Better Auth, GitHub OAuth + OAuth device grant                                   |
+| Scheduled work            | BullMQ durable schedules (Node); retained Workers Cron adapter                   |
 
 ## Deployment topology
 
-One Worker serves both halves of the product. Production uses MySQL through
-Hyperdrive and the verified-TLS gateway. The former D1 database is retained as a
-frozen source snapshot; see the [cutover runbook](../operations/mysql-migration.md).
+Cloudflare provides proxied DNS, CDN and WAF. Its Full (strict) TLS connection
+terminates at the existing Caddy gateway on the Singapore VPS. Only Cloudflare
+source addresses and host-local probes can reach the dsh.fish route. Nginx applies
+per-client limits and caches anonymous documents before forwarding to Node 24.
 
 ```text
-                    ┌──────────────────────────────────────────┐
-   browser ────────▶│  Worker (dsh.fish)                       │
-   harness ────────▶│                                          │
-                    │   /api/*  → Hono app (interfaces layer)  │
-                    │   /*      → React Router SSR handler     │
-                    │   cron    → ingest + reclassify          │
-                    └───────┬───────────┬───────────┬──────────┘
-                            ▼           ▼           ▼
-                     Hyperdrive      KV (sessions,   README i18n Agent
-                     → TLS gateway
-                     → MySQL
-                                     crawl state,    → Workers VPC
-                                     ask limiter)
-                                          │              │
-                                          ▼              ▼
-                                    Ada Fast query    Cloudflare Tunnel
-                                    (GitHub ask)      → Mac mini LM Studio
+browser / harness → Cloudflare CDN/WAF → Caddy TLS → Nginx → Node SSR/API
+                                                           ├→ private TencentDB MySQL
+                                                           ├→ Redis cache/auth/cursors
+                                                           ├→ BullMQ maintenance/localization
+                                                           └→ Ada WebSocket (artifact ask)
 ```
 
-The production persistence path is Worker → Hyperdrive → verified-TLS
-gateway on Lighthouse → CCN/private TCP → TencentDB MySQL. **The gateway-to-MySQL
-private hop is not TLS** because this instance edition lacks native TLS; do not
-claim end-to-end encryption. Catalog, ownership, OAuth/device/session state,
-reviews/submissions, metrics, translations and resumable chunks move together.
-KV auth secondary storage and durable localization queue/cursor state remain.
+Node owns one six-connection MySQL pool. Requests and jobs borrow it and never
+close it individually. MySQL remains authoritative for catalog, ownership,
+OAuth/device/session state, reviews, submissions, metrics and translation chunks.
+This private MySQL connection is not TLS because the instance lacks native TLS.
+Redis is authenticated, private, memory-bounded and persisted with AOF.
 
-`STORAGE_BACKEND=mysql` selects the MySQL adapters with no silent D1 fallback.
-Maintenance uses `CATALOG_WRITES_PAUSED=true` for all non-health requests and
-Agent retries; search and cron remain paused unless explicitly set `false`.
-MySQL rail/snapshot/edge cache names are separated by `mysql-v1`. The completed
-17-table snapshot verification and active deployment are recorded in the runbook.
-Search and application writes are enabled; cron remains paused pending observed
-end-to-end connection latency acceptance.
+The [VPS deployment guide](../operations/vps-deployment.md) describes release
+validation and rollback. Worker code remains an adapter for development, but its
+production deployment is a tombstone with no database or model binding. Worker
+custom domains, default/preview URLs, cron and build triggers are retired. Frozen
+D1 data remains a backup and receives no serving traffic.
+
+Search and application writes are enabled. Maintenance and translation consumers
+remain explicitly paused: maintenance was already paused before cutover, and the
+requested free model currently returns HTTP 429 even with the existing credential.
+No paid model or alternative provider is selected automatically.
 
 Sharing an origin is a deliberate choice, not an accident of packaging:
 
@@ -83,8 +74,8 @@ Sharing an origin is a deliberate choice, not an accident of packaging:
 | Layer             | Contents                                                                                                                                                          |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `domain/`         | `Artifact` aggregate, `ArtifactKind`, `ArtifactPayload`, `InstallPlan`, `Submission`, `Account`, `ogImageUrl`, the `quality-score` value object, repository ports |
-| `application/`    | Use cases (`SearchArtifacts`, `ResolveInstallPlan`, `SubmitArtifact`, `IngestCatalog`, `ReclassifyCatalog`, …), DTOs, indexer ports |
-| `infrastructure/` | D1/MySQL repositories, Better Auth composition, GitHub/npm/awesome-list indexers, the async container                                                                         |
+| `application/`    | Use cases (`SearchArtifacts`, `ResolveInstallPlan`, `SubmitArtifact`, `IngestCatalog`, `ReclassifyCatalog`, …), DTOs, indexer ports                               |
+| `infrastructure/` | D1/MySQL repositories, Better Auth composition, GitHub/npm/awesome-list indexers, the async container                                                             |
 | `interfaces/`     | Hono routers, Zod request schemas, the domain-error → HTTP mapping                                                                                                |
 
 The domain has no dependency on Hono, Drizzle, Better Auth or Workers types
@@ -106,7 +97,7 @@ Worker globals nor durable Agent fields retain MySQL connections.
 | `widgets/`  | `site-header`, `site-footer`, `catalog-grid`, `catalog-filters`, `catalog-pagination`, `install-panel`, `readme-badge`, `artifact-reviews`, `artifact-ask`, `community-toasts`, `docs-shell`, `docs-scoring`                                                                           |
 | `features/` | `account-menu` — the signed-in identity and the actions on it; `locale-switcher` — the language of the page you are on; `catalog-search` — the header palette's live query against `GET /api/v1/artifacts`; `ask-artifact` — POST `/api/v1/artifacts/:id/ask` and the streaming thread |
 | `entities/` | `artifact` — types re-exported from the backend DTO contract, plus `ArtifactCard`, `KindChip`, `AuthorCard`, `artifactLd`                                                                                                                                                              |
-| `shared/`   | beui components (`ui/motion/`, `ui/avatar`, `ui/animated-number`), motion tokens, `config/i18n` (locales and catalogs), `lib/seo`, `lib/analytics`, `lib/adsense`, auth client, `hub-context`                                                                                            |
+| `shared/`   | beui components (`ui/motion/`, `ui/avatar`, `ui/animated-number`), motion tokens, `config/i18n` (locales and catalogs), `lib/seo`, `lib/analytics`, `lib/adsense`, auth client, `hub-context`                                                                                          |
 
 The account slot in the header is the whole signed-in affordance: signed out it
 is the sign-in call to action; signed in it is the portrait Better Auth cached
@@ -244,12 +235,12 @@ Four kinds, each taken from something the harness actually loads, each with a
 distinct install mechanism. `ArtifactKind` names them; `buildInstallPlan` owns
 how each reaches a machine.
 
-| Kind           | What it is                               | How it installs                             |
-| -------------- | ---------------------------------------- | ------------------------------------------- |
-| `bundle`       | npm package declaring `dsh.bundle.patch` | `dsh plugin --profile <p> add <spec>`       |
-| `profile`      | ordered `dsh.profile.bundles` stack      | one `add` per bundle, in order              |
-| `skill`        | `SKILL.md` bundle or flat Markdown       | files written under `$DSH_HOME/skills`      |
-| `agent-preset` | directory holding one `agent.cordis.yml` | written to `$DSH_HOME/.agent-presets/<id>`  |
+| Kind           | What it is                               | How it installs                            |
+| -------------- | ---------------------------------------- | ------------------------------------------ |
+| `bundle`       | npm package declaring `dsh.bundle.patch` | `dsh plugin --profile <p> add <spec>`      |
+| `profile`      | ordered `dsh.profile.bundles` stack      | one `add` per bundle, in order             |
+| `skill`        | `SKILL.md` bundle or flat Markdown       | files written under `$DSH_HOME/skills`     |
+| `agent-preset` | directory holding one `agent.cordis.yml` | written to `$DSH_HOME/.agent-presets/<id>` |
 
 `mcp-server` and `hook-bridge` used to be members. Nobody published them, so
 they left the catalog: leftover `dsh.hub.mcp` / `dsh.hub.hook` declarations are
@@ -262,12 +253,12 @@ is an application that mentions the harness. So a repository is classified by
 what it holds, in this order, and a repository that answers none of the probes
 yields nothing — the harness would load nothing from it either.
 
-| Probe                                               | Row            |
-| --------------------------------------------------- | -------------- |
-| `package.json` with `dsh.profile.bundles`           | `profile`      |
-| `package.json` with `dsh.bundle`                    | `bundle`       |
-| `SKILL.md` with `name` + `description` frontmatter  | `skill`        |
-| `agent.cordis.yml`                                  | `agent-preset` |
+| Probe                                              | Row            |
+| -------------------------------------------------- | -------------- |
+| `package.json` with `dsh.profile.bundles`          | `profile`      |
+| `package.json` with `dsh.bundle`                   | `bundle`       |
+| `SKILL.md` with `name` + `description` frontmatter | `skill`        |
+| `agent.cordis.yml`                                 | `agent-preset` |
 
 A leftover `dsh.hub.mcp` or `dsh.hub.hook` block, or a `hub.kind` of
 `mcp-server` / `hook-bridge`, classifies nothing. Those kinds are not catalog
@@ -332,32 +323,28 @@ executing installs pinned to the SHA is a separate decision.
 When an artifact is created or its README Markdown changes, both ingestion
 paths — scheduled
 discovery and an ownership-verified submission — call the same application
-port to durably accept localization work. Its Cloudflare Agents SDK adapter
-hashes artifacts across four named `ReadmeI18nAgent` instances. Each instance
-drains its FIFO sequentially, so aggregate inference concurrency never exceeds
-the four parallel slots configured in LM Studio.
+port to durably accept localization work. Node uses BullMQ on persistent Redis,
+with one serial localization consumer and bounded retry/retention settings. The
+shared processor pins OpenCode's `mimo-v2.6-flash-free` chat-completions model.
+The retained Worker adapter wraps the same processor for development.
 
-The Worker reaches the Mac mini through an HTTP Workers VPC Service bound to a
-named Cloudflare Tunnel; LM Studio is not published behind a public hostname.
-The model is `hy-mt2-1.8b` behind its OpenAI-compatible chat-completions
-endpoint. README prose is split into at most 4,000-character model chunks.
-Fenced code is not sent to the model, and oversized protected blocks are
-carried in bounded chunks. Completed pieces are stored temporarily in
-`artifact_readme_translation_chunks`, assembled in order, written to
-`artifact_readme_translations`, then deleted. A failed locale resumes from
-the chunks already stored for the same source hash.
+README prose is split into at most 4,000-character model chunks. Fenced code is
+not sent to the model. Completed chunks are stored in MySQL, assembled in order,
+written to the translation repository and removed. Failed work resumes only
+chunks for the same source hash. A model failure is explicit; it never selects
+another model or returns fabricated translated prose.
 
 Every translation carries a SHA-256 hash of its upstream README plus an opaque
 translation-policy version so a replacement can be queued. The detail
 use case keeps serving the last completed body until that replacement
 finishes; pending or failed rows without a retained body expose the original
 README instead. Queue acceptance is deduplicated by artifact, locale and hash.
-The Agent performs bounded retries itself and records terminal failures in D1,
-because the Agents SDK queue has no dead-letter queue. The old cloud-provider
+BullMQ owns bounded retries and retained terminal failures; translation status
+and resumable chunks are recorded in MySQL. The old cloud-provider
 task method remains as a no-op for one release so entries queued before the
 model-policy change can drain without calling a retired provider.
 
-A separate minutely Cron advances a versioned KV cursor over every stored,
+A separate minutely BullMQ schedule advances a versioned Redis cursor over every stored,
 non-empty README in bounded pages. Therefore a deployment that changes the
 translation policy starts a complete stock backfill on its next trigger while
 the existing hourly ingestion Cron remains unchanged. Cursor writes happen

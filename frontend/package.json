@@ -17,10 +17,13 @@
     "cf-typegen": "wrangler types ./.wrangler/worker-configuration.d.ts --include-runtime false",
     "db:migrate:local": "wrangler d1 migrations apply dsh-fish-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply dsh-fish-db --remote",
-    "db:seed:local": "wrangler d1 execute dsh-fish-db --local --file ../backend/scripts/seed-local.sql"
+    "db:seed:local": "wrangler d1 execute dsh-fish-db --local --file ../backend/scripts/seed-local.sql",
+    "build:node": "DSH_RUNTIME=node react-router build && vite build --config vite.server.config.ts",
+    "start": "node build/node/index.js"
   },
   "dependencies": {
     "@dsh-fish/backend": "workspace:*",
+    "@hono/node-server": "^2.1.5",
     "@number-flow/react": "^0.6.2",
     "@phosphor-icons/react": "^2.1.10",
     "@primer/octicons-react": "^19.33.0",

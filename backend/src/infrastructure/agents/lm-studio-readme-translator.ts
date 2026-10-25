@@ -21,32 +21,60 @@ interface ChatCompletionResponse {
   }
 }
 
-export async function translateWithLmStudio(
-  service: Fetcher,
+export interface ChatTranslationOptions {
+  readonly url: string
+  readonly model: string
+  readonly provider: string
+  readonly apiKey?: string
+  readonly sampling?: Readonly<Record<string, number>>
+}
+
+export function translateWithLmStudio(
+  service: Pick<Fetcher, 'fetch'>,
   text: string,
   locale: string,
   kind: 'readme' | 'summary',
+): Promise<string> {
+  return translateWithChatModel(service, text, locale, kind, {
+    url: CHAT_COMPLETIONS_URL,
+    model: MODEL,
+    provider: 'lm-studio',
+    sampling: {
+      temperature: 0.7,
+      top_p: 0.6,
+      top_k: 20,
+      repetition_penalty: 1.05,
+    },
+  })
+}
+
+export async function translateWithChatModel(
+  service: Pick<Fetcher, 'fetch'>,
+  text: string,
+  locale: string,
+  kind: 'readme' | 'summary',
+  options: ChatTranslationOptions,
 ): Promise<string> {
   const language = LANGUAGE_NAMES[locale]
   if (language === undefined) throw new Error(`Unsupported translation locale: ${locale}`)
   const protectedSource = protectLiterals(text)
 
   const response = await service.fetch(
-    new Request(CHAT_COMPLETIONS_URL, {
+    new Request(options.url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}` } : {}),
+      },
       body: JSON.stringify({
-        model: MODEL,
+        model: options.model,
         messages: [
           {
             role: 'user',
             content: prompt(protectedSource.text, language),
           },
         ],
-        temperature: 0.7,
-        top_p: 0.6,
-        top_k: 20,
-        repetition_penalty: 1.05,
+        ...options.sampling,
         max_tokens: 4_096,
         stream: false,
       }),
@@ -55,13 +83,13 @@ export async function translateWithLmStudio(
 
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 500)
-    throw new Error(`LM Studio returned HTTP ${response.status}: ${detail}`)
+    throw new Error(`Translation provider returned HTTP ${response.status}: ${detail}`)
   }
 
   const result = (await response.json()) as ChatCompletionResponse
   const modelOutput = result.choices?.[0]?.message?.content
   if (modelOutput === undefined || modelOutput.trim() === '') {
-    throw new Error('LM Studio returned an empty translation.')
+    throw new Error('Translation provider returned an empty translation.')
   }
   const translated = restoreLiterals(modelOutput, protectedSource.literals)
   validateTranslation(text, translated, locale)
@@ -69,8 +97,8 @@ export async function translateWithLmStudio(
   console.info(
     JSON.stringify({
       event: 'readme_i18n_usage',
-      provider: 'lm-studio',
-      model: MODEL,
+      provider: options.provider,
+      model: options.model,
       kind,
       locale,
       promptTokens: result.usage?.prompt_tokens,
@@ -99,7 +127,10 @@ const PROTECTED_LITERAL =
 
 const placeholder = (index: number) => `__I18N_${index}__`
 
-function protectLiterals(source: string): { readonly text: string; readonly literals: readonly string[] } {
+function protectLiterals(source: string): {
+  readonly text: string
+  readonly literals: readonly string[]
+} {
   const literals: string[] = []
   const text = source.replace(PROTECTED_LITERAL, (literal) => {
     const token = placeholder(literals.length)
@@ -115,7 +146,7 @@ function restoreLiterals(translated: string, literals: readonly string[]): strin
     const token = placeholder(index)
     const first = restored.indexOf(token)
     if (first === -1 || restored.indexOf(token, first + token.length) !== -1) {
-      throw new Error(`LM Studio changed a protected literal: ${literal.slice(0, 120)}`)
+      throw new Error(`Translation provider changed a protected literal: ${literal.slice(0, 120)}`)
     }
     restored = restored.replace(token, literal)
   }
@@ -126,6 +157,6 @@ function validateTranslation(source: string, translated: string, locale: string)
   const sourceLetters = source.match(/\p{L}/gu)?.length ?? 0
   const expectedScript = TARGET_SCRIPT[locale]
   if (sourceLetters >= 4 && expectedScript !== undefined && !expectedScript.test(translated)) {
-    throw new Error(`LM Studio output does not contain the target script for ${locale}.`)
+    throw new Error(`Translation provider output does not contain the target script for ${locale}.`)
   }
 }

@@ -68,7 +68,10 @@ function context() {
     jobs,
   }
 }
-const env = { CATALOG_SEARCH_PAUSED: 'false' } as HubEnv
+const env = {
+  README_I18N_AGENT: {},
+  CATALOG_SEARCH_PAUSED: 'false',
+} as HubEnv
 function container() {
   return {
     config: { baseUrl: 'https://dsh.fish' },

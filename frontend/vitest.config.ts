@@ -13,7 +13,12 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
-    include: ['src/**/*.test.{ts,tsx}', 'workers/**/*.test.ts', 'scripts/**/*.test.mjs'],
+    include: [
+      'src/**/*.test.{ts,tsx}',
+      'workers/**/*.test.ts',
+      'scripts/**/*.test.mjs',
+      'server/**/*.test.ts',
+    ],
     environment: 'node',
   },
 })
