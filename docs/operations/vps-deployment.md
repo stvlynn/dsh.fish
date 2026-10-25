@@ -58,3 +58,7 @@ exhausted tokens return 429 with `Retry-After: 1`. This preserves the previous
 120/minute average while preventing a burst from disabling searches for the rest
 of a minute. Anonymous cached documents bypass admission. Under sustained scraper
 traffic, excess costly requests still receive 429 to protect the one-core database.
+
+The exact public `/api/v1/artifacts` endpoint also uses a 15-second anonymous
+origin cache. Cookie/authorization requests bypass it; other API endpoints and
+SSE stay uncached. Public listing updates can therefore take 15 seconds to appear.

@@ -58,7 +58,10 @@ PNG generation, anonymous and signed sessions, OAuth initialization/device flow,
 and streaming. Redis and admission tests also exercise real atomic Lua and TTLs
 against an isolated instance; no production database fixtures are necessary.
 
-Nginx limits requests and connections before Node. Redis atomically bounds costly
+Nginx limits requests and connections before Node. Anonymous successful catalog
+list/search JSON is cached at the origin for 15 seconds; cookie/Bearer traffic,
+auth, errors, and streaming bypass this cache. This bounds repeated popular
+searches without caching personalized responses. Redis atomically bounds costly
 catalog queries across replicas. Basic catalog pages do not acquire that lease.
 Only Cloudflare/host-local traffic reaches Caddy's dsh.fish origin route; client
 identity headers must never be trusted on an unrestricted public origin.
