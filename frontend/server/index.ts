@@ -1,3 +1,4 @@
+import { withPublicSignals } from './public-signals'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
@@ -80,9 +81,10 @@ app.all('*', async (c) => {
   const canonical = new URL(url.pathname + url.search, runtime.env.PUBLIC_BASE_URL)
   const request = new Request(canonical, c.req.raw)
   if (catalogRequestPaused(request, runtime.env)) return pausedResponse()
-  return withNodeAdmission(request, runtime.redis, () =>
+  const response = await withNodeAdmission(request, runtime.redis, () =>
     withPublicCacheHeaders(request, () => site(request, runtime.env, context)),
   )
+  return withPublicSignals(response, request)
 })
 app.onError((_error, c) => {
   console.error(
