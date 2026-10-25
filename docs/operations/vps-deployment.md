@@ -49,5 +49,12 @@ search, detail and dynamic PNG, and a complete public Ada SSE stream through
 Cloudflare. Redis AOF restart, retry, TTL, owner-specific Lua lease and budget
 checks passed against an isolated instance. D1 analytics returned no new groups
 in the observed post-cutover window; analytics may lag. The repository quality
-gate passed 901 tests, with opt-in MySQL checks run separately against the
+gate passed 903 tests, with opt-in MySQL checks run separately against the
 validation schema. Interactive GitHub consent was not completed by the operator.
+
+Costly catalog misses share one global lease and a Redis-time token bucket that
+refills at two requests per second (burst two). Busy leases wait at most 160 ms;
+exhausted tokens return 429 with `Retry-After: 1`. This preserves the previous
+120/minute average while preventing a burst from disabling searches for the rest
+of a minute. Anonymous cached documents bypass admission. Under sustained scraper
+traffic, excess costly requests still receive 429 to protect the one-core database.

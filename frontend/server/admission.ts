@@ -4,11 +4,16 @@ type AdmissionStore = {
 import { isExpensiveCatalogRequest } from '../workers/catalog-query-admission'
 
 const ACQUIRE = `
-local used = tonumber(redis.call('GET', KEYS[1]) or '0')
-if used >= 120 or redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+local state = redis.call('HMGET', KEYS[1], 'tokens', 'updated')
+local updated = tonumber(state[2]) or now
+local tokens = math.min(2, (tonumber(state[1]) or 2) + math.max(0, now - updated) / 500)
+if tokens < 1 then return 0 end
+if redis.call('EXISTS', KEYS[2]) == 1 then return -1 end
+redis.call('HSET', KEYS[1], 'tokens', tokens - 1, 'updated', now)
+redis.call('EXPIRE', KEYS[1], 10)
 redis.call('SET', KEYS[2], ARGV[1], 'PX', 120000)
-local next = redis.call('INCR', KEYS[1])
-if next == 1 then redis.call('EXPIRE', KEYS[1], 120) end
 return 1`
 const RELEASE = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`
 
@@ -21,13 +26,14 @@ export async function withNodeAdmission(
   if (!isExpensiveCatalogRequest(request)) return handle()
   const token = crypto.randomUUID()
   const lease = 'hub:catalog:lease'
-  const granted = await redis.eval(
-    ACQUIRE,
-    2,
-    `hub:catalog:budget:${Math.floor(Date.now() / 60_000)}`,
-    lease,
-    token,
-  )
+  // Smooth the former 120/minute allowance instead of spending it in an early burst.
+  // Busy requests wait briefly; no database work starts until the lease is theirs.
+  let granted: unknown
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    granted = await redis.eval(ACQUIRE, 2, 'hub:catalog:tokens:v1', lease, token)
+    if (granted !== -1) break
+    if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 40))
+  }
   if (granted !== 1)
     return new Response(null, {
       status: 429,
