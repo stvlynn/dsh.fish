@@ -35,13 +35,12 @@ The deployed origin is `43.160.219.124`; app state is under `/opt/dsh-fish`.
 Cloudflare proxies its A record; `/api/ready` verifies MySQL and Redis. Four crawler
 cursors were preserved. Ten isolated MySQL auth checks cover both runtime adapters,
 including cold cookies, bearer tokens, device redemption and atomic verification.
-The earlier MiMo free probe returned HTTP 429. The current pinned model is
-OpenCode Go `beam-free`; its existing key returns HTTP 401 `api_key_expired` after
-the required client/session headers are supplied. `TRANSLATION_ENABLED=false`
-keeps consumption paused while retaining durable work. Update `OPENCODE_GO_API_KEY`
-in `/opt/dsh-fish/shared/runtime.env` with a newly created key before validation
-and enabling the consumer. `CATALOG_CRON_PAUSED=true` preserves the previous
-maintenance pause. No model/provider fallback is configured.
+The pinned model is OpenCode Go `beam-free`. After credential renewal, a direct
+probe and a real catalog summary passed through BullMQ, the model, MySQL and the
+public Chinese detail API. `TRANSLATION_ENABLED=true` enables one serial consumer;
+the acceptance queue drained with no failed jobs. `CATALOG_CRON_PAUSED=true`
+preserves the previous maintenance pause, so automatic ingestion and bulk
+translation backfill remain paused. No model/provider fallback is configured.
 
 The old Worker has no D1/Hyperdrive/model binding, no routes or URL entry points,
 no schedules, and no build triggers. Its DO namespace data is retained for recovery;

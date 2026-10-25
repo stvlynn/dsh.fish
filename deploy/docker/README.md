@@ -80,10 +80,12 @@ retention is bounded. Queue errors are logged without job bodies or credentials.
 `OPENCODE_GO_API_KEY` bearer credential and a 90-second timeout. Requests identify
 the client as `dsh-fish-localization/1.0` and send a stable `x-opencode-session`
 for each translation job, including retries. Authentication/quota failures remain
-explicit and never select another model. Consumption is currently paused because
-the existing credential returns HTTP 401 `api_key_expired`. Create a replacement
-key in OpenCode Console, update the host's runtime.env, verify it, then recreate
-the app with consumption enabled. Signing in does not renew the expired key.
+explicit and never select another model. Consumption is enabled after credential
+renewal and successful queue/MySQL/public-API acceptance. For future credential
+rotation, create a replacement key in OpenCode Console, update the host's
+runtime.env, probe it, then recreate the app. Signing in does not renew an expired
+key. Maintenance remains paused independently; enabling translation does not
+start a bulk backfill.
 
 MySQL holds translation hashes, status, completed bodies and resumable chunks.
 The Node backfill resubmits pending work using these authoritative records;

@@ -21,7 +21,7 @@ an agent drives.
 | Backend                   | Hono, layered DDD                                                                |
 | Database                  | TencentDB MySQL over the private network; frozen D1 source retained; Drizzle ORM |
 | Cache / secondary storage | Redis (Node); Cloudflare KV (retained Worker adapter)                            |
-| README localization       | BullMQ + OpenCode Go `beam-free` (consumer paused pending credential renewal)     |
+| README localization       | BullMQ + OpenCode Go `beam-free`, one serial consumer                              |
 | Auth                      | Better Auth, GitHub OAuth + OAuth device grant                                   |
 | Scheduled work            | BullMQ durable schedules (Node); retained Workers Cron adapter                   |
 
@@ -52,10 +52,9 @@ production deployment is a tombstone with no database or model binding. Worker
 custom domains, default/preview URLs, cron and build triggers are retired. Frozen
 D1 data remains a backup and receives no serving traffic.
 
-Search and application writes are enabled. Maintenance and translation consumers
-remain explicitly paused: maintenance was already paused before cutover, and the
-requested Go model currently returns HTTP 401 because the existing key expired.
-No paid model or alternative provider is selected automatically.
+Search, application writes and the translation consumer are enabled. Maintenance
+remains explicitly paused, preserving its state before cutover. OpenCode Go
+`beam-free` is pinned; no alternative model or provider is selected automatically.
 
 Sharing an origin is a deliberate choice, not an accident of packaging:
 
