@@ -26,6 +26,8 @@ export interface ChatTranslationOptions {
   readonly model: string
   readonly provider: string
   readonly apiKey?: string
+  readonly userAgent?: string
+  readonly sessionId?: string
   readonly sampling?: Readonly<Record<string, number>>
 }
 
@@ -65,6 +67,8 @@ export async function translateWithChatModel(
       headers: {
         'content-type': 'application/json',
         ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}` } : {}),
+        ...(options.userAgent ? { 'user-agent': options.userAgent } : {}),
+        ...(options.sessionId ? { 'x-opencode-session': options.sessionId } : {}),
       },
       body: JSON.stringify({
         model: options.model,

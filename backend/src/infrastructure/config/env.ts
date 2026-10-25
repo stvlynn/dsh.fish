@@ -41,7 +41,7 @@ export interface HubEnv {
    * without it the crawler still runs but at the far lower anonymous rate limit.
    */
   readonly GITHUB_TOKEN?: string
-  /** Optional OpenCode inference credential; free model remains explicitly pinned. */
+  /** OpenCode Go credential; required when the pinned localization consumer is enabled. */
   readonly OPENCODE_GO_API_KEY?: string
   /** Comma-separated account emails granted administrator rights. */
   readonly ADMIN_EMAILS?: string

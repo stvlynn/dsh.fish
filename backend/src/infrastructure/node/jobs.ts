@@ -1,3 +1,4 @@
+import { OPENCODE_GO_TRANSLATION } from '../config/translation-model.js'
 import { createHash } from 'node:crypto'
 import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions, Job } from 'bullmq'
@@ -112,9 +113,8 @@ export class NodeJobs implements ReadmeLocalizationScheduler {
       open: async () => this.persistence,
       translate: (service, text, locale, kind) =>
         translateWithChatModel(service, text, locale, kind, {
-          url: 'https://opencode.ai/inference/openai/v1/chat/completions',
-          model: 'mimo-v2.6-flash-free',
-          provider: 'opencode',
+          ...OPENCODE_GO_TRANSLATION,
+          sessionId: `dsh-fish-localization-${job.id}`,
           apiKey: this.env.OPENCODE_GO_API_KEY,
         }),
       queue: async (name, task) => this.enqueue(name, task),

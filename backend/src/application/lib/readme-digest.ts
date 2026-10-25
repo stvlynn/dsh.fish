@@ -6,7 +6,7 @@
  * A changed policy clears the previous body when the replacement is queued,
  * preventing output from a retired or invalid policy from being served.
  */
-export const README_TRANSLATION_POLICY_VERSION = 'opencode-mimo-v2.6-flash-free-chunked-v7'
+export const README_TRANSLATION_POLICY_VERSION = 'opencode-go-beam-free-chunked-v8'
 
 /** Stable identity for the exact README bytes and translation policy. */
 export async function readmeDigest(markdown: string): Promise<string> {

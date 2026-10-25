@@ -1,3 +1,4 @@
+import { OPENCODE_GO_TRANSLATION } from '../config/translation-model.js'
 import { createPool } from 'mysql2/promise'
 import { Redis } from 'ioredis'
 import type { ConnectionOptions } from 'bullmq'
@@ -8,6 +9,7 @@ import { NodeJobs } from './jobs.js'
 
 export async function createNodeRuntime(values: NodeJS.ProcessEnv, locales: readonly string[]) {
   const translationEnabled = values.TRANSLATION_ENABLED === 'true'
+  if (translationEnabled) required(values, 'OPENCODE_GO_API_KEY')
   const pool = createPool({
     host: required(values, 'MYSQL_HOST'),
     port: integer(values.MYSQL_PORT ?? '3306', 'MYSQL_PORT'),
@@ -52,7 +54,7 @@ export async function createNodeRuntime(values: NodeJS.ProcessEnv, locales: read
       KV: new RedisStore(redis),
       I18N_MODEL: {
         async fetch(request: Request) {
-          if (request.url !== 'https://opencode.ai/inference/openai/v1/chat/completions')
+          if (request.url !== OPENCODE_GO_TRANSLATION.url)
             throw new Error('Unsupported translation endpoint.')
           return fetch(request, {
             signal: AbortSignal.timeout(90_000),

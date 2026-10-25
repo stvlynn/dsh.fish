@@ -21,7 +21,7 @@ an agent drives.
 | Backend                   | Hono, layered DDD                                                                |
 | Database                  | TencentDB MySQL over the private network; frozen D1 source retained; Drizzle ORM |
 | Cache / secondary storage | Redis (Node); Cloudflare KV (retained Worker adapter)                            |
-| README localization       | BullMQ + OpenCode `mimo-v2.6-flash-free` (consumer paused on upstream quota)     |
+| README localization       | BullMQ + OpenCode Go `beam-free` (consumer paused pending credential renewal)     |
 | Auth                      | Better Auth, GitHub OAuth + OAuth device grant                                   |
 | Scheduled work            | BullMQ durable schedules (Node); retained Workers Cron adapter                   |
 
@@ -54,7 +54,7 @@ D1 data remains a backup and receives no serving traffic.
 
 Search and application writes are enabled. Maintenance and translation consumers
 remain explicitly paused: maintenance was already paused before cutover, and the
-requested free model currently returns HTTP 429 even with the existing credential.
+requested Go model currently returns HTTP 401 because the existing key expired.
 No paid model or alternative provider is selected automatically.
 
 Sharing an origin is a deliberate choice, not an accident of packaging:
@@ -325,7 +325,7 @@ paths — scheduled
 discovery and an ownership-verified submission — call the same application
 port to durably accept localization work. Node uses BullMQ on persistent Redis,
 with one serial localization consumer and bounded retry/retention settings. The
-shared processor pins OpenCode's `mimo-v2.6-flash-free` chat-completions model.
+shared processor pins OpenCode Go's `beam-free` chat-completions model.
 The retained Worker adapter wraps the same processor for development.
 
 README prose is split into at most 4,000-character model chunks. Fenced code is

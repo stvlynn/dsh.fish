@@ -74,13 +74,16 @@ a single localization consumer bounds model concurrency. Completed/failed job
 retention is bounded. Queue errors are logged without job bodies or credentials.
 
 `CATALOG_CRON_PAUSED=false` explicitly resumes maintenance. Set
-`TRANSLATION_ENABLED=true` only after a successful probe of OpenCode's pinned
-`mimo-v2.6-flash-free` model. Its endpoint is
-`https://opencode.ai/inference/openai/v1/chat/completions`, with an optional
-`OPENCODE_GO_API_KEY` bearer credential and a 90-second timeout. This free model
-uses the normal inference endpoint; the Go paid model is a different ID. Quota
-errors remain explicit and never select a paid model. Consumption is currently
-paused because the provider returns HTTP 429.
+`TRANSLATION_ENABLED=true` only after a successful probe of OpenCode Go's pinned
+`beam-free` model. Its endpoint is
+`https://opencode.ai/inference/go/openai/v1/chat/completions`, with the required
+`OPENCODE_GO_API_KEY` bearer credential and a 90-second timeout. Requests identify
+the client as `dsh-fish-localization/1.0` and send a stable `x-opencode-session`
+for each translation job, including retries. Authentication/quota failures remain
+explicit and never select another model. Consumption is currently paused because
+the existing credential returns HTTP 401 `api_key_expired`. Create a replacement
+key in OpenCode Console, update the host's runtime.env, verify it, then recreate
+the app with consumption enabled. Signing in does not renew the expired key.
 
 MySQL holds translation hashes, status, completed bodies and resumable chunks.
 The Node backfill resubmits pending work using these authoritative records;

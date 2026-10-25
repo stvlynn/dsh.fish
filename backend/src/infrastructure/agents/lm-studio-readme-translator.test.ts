@@ -131,13 +131,17 @@ describe('OpenCode translation transport', () => {
   it('pins the free model, preserves technical literals, and surfaces quota errors', async () => {
     const { translateWithChatModel } = await import('./lm-studio-readme-translator.js')
     const options = {
-      url: 'https://opencode.ai/inference/openai/v1/chat/completions',
-      model: 'mimo-v2.6-flash-free',
-      provider: 'opencode',
+      url: 'https://opencode.ai/inference/go/openai/v1/chat/completions',
+      model: 'beam-free',
+      provider: 'opencode-go',
       apiKey: 'fixture-key',
+      userAgent: 'dsh-fish-localization/1.0',
+      sessionId: 'dsh-fish-localization-fixture',
     }
     const fetch = vi.fn(async (request: Request) => {
       expect(request.url).toBe(options.url)
+      expect(request.headers.get('user-agent')).toBe(options.userAgent)
+      expect(request.headers.get('x-opencode-session')).toBe(options.sessionId)
       expect(request.headers.get('authorization')).toBe('Bearer fixture-key')
       expect(await request.json()).toMatchObject({ model: options.model })
       return Response.json({
@@ -153,18 +157,20 @@ describe('OpenCode translation transport', () => {
         options,
       ),
     ).resolves.toBe('使用 `pnpm` 安装。')
-    const limited = {
-      fetch: vi.fn(async () => new Response('FreeUsageLimitError', { status: 429 })),
+    for (const status of [401, 429]) {
+      const limited = {
+        fetch: vi.fn(async () => new Response('upstream rejected the request', { status })),
+      }
+      await expect(
+        translateWithChatModel(
+          limited as unknown as Fetcher,
+          'Install tools.',
+          'zh-CN',
+          'summary',
+          options,
+        ),
+      ).rejects.toThrow(`HTTP ${status}`)
+      expect(limited.fetch).toHaveBeenCalledOnce()
     }
-    await expect(
-      translateWithChatModel(
-        limited as unknown as Fetcher,
-        'Install tools.',
-        'zh-CN',
-        'summary',
-        options,
-      ),
-    ).rejects.toThrow('HTTP 429')
-    expect(limited.fetch).toHaveBeenCalledOnce()
   })
 })
