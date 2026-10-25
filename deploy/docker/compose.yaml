@@ -1,0 +1,90 @@
+name: dsh-fish
+services:
+  app:
+    image: ${DSH_IMAGE:?Set an immutable release image}
+    env_file: runtime.env
+    restart: unless-stopped
+    init: true
+    read_only: true
+    volumes:
+      - /opt/dsh-fish/shared/assets:/app/frontend/build/client/assets:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    mem_limit: 896m
+    cpus: 1.25
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    stop_grace_period: 100s
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks: [private]
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: &logging
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+  redis:
+    image: redis:7.4-alpine
+    command: [redis-server, /run/secrets/redis_config]
+    secrets: [redis_config]
+    restart: unless-stopped
+    mem_limit: 320m
+    cpus: 0.25
+    pids_limit: 32
+    security_opt: [no-new-privileges:true]
+    volumes: [redis-data:/data]
+    networks: [private]
+    healthcheck:
+      test: [CMD-SHELL, "REDISCLI_AUTH=$$(sed -n 's/^requirepass //p' /run/secrets/redis_config) redis-cli ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *logging
+  origin:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports: ["127.0.0.1:3090:8080"]
+    networks:
+      private:
+      edge:
+        aliases: [dsh-origin]
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O- http://127.0.0.1:8080/api/ready | grep -q ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    depends_on:
+      app:
+        condition: service_healthy
+    logging: *logging
+volumes:
+  redis-data:
+networks:
+  private:
+  edge:
+    external: true
+    name: astrafoundry-site_default
+
+secrets:
+  redis_config:
+    file: ./redis.conf

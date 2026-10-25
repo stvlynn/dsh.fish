@@ -1,4 +1,5 @@
-import type { D1Database, KVNamespace } from '@cloudflare/workers-types'
+import type { D1Database } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 import type { ReadmeI18nAgent } from '../agents/readme-i18n-agent.js'
 
 /**
@@ -10,21 +11,22 @@ export interface HubEnv {
   readonly CATALOG_SEARCH_PAUSED?: string
   readonly CATALOG_CRON_PAUSED?: string
   readonly CATALOG_WRITES_PAUSED?: string
+  readonly RUNTIME?: 'node'
   readonly STORAGE_BACKEND?: 'd1' | 'mysql'
   readonly HYPERDRIVE?: Hyperdrive
   /** Global lease coordinator for costly MySQL catalog queries. */
   readonly CAT_QUERY_ADMISSION?: DurableObjectNamespace
 
   /** D1 database holding both the catalog and Better Auth's own tables. */
-  readonly DB: D1Database
+  readonly DB?: D1Database
   /** KV namespace used as Better Auth secondary storage and for rate limiting. */
-  readonly KV: KVNamespace
+  readonly KV: KeyValueStore
   /** React Router client assets served by the same Worker. */
-  readonly ASSETS: Fetcher
+  readonly ASSETS?: Fetcher
   /** A small fixed set of durable Agent queues that bounds model concurrency. */
-  readonly README_I18N_AGENT: DurableObjectNamespace<ReadmeI18nAgent>
+  readonly README_I18N_AGENT?: DurableObjectNamespace<ReadmeI18nAgent>
   /** Private Workers VPC service backed by the Mac mini's LM Studio server. */
-  readonly I18N_MODEL: Fetcher
+  readonly I18N_MODEL: Pick<Fetcher, 'fetch'>
   /** Absolute origin the site is served from, e.g. `https://dsh.fish`. */
   readonly PUBLIC_BASE_URL: string
   readonly BETTER_AUTH_SECRET: string
@@ -39,6 +41,8 @@ export interface HubEnv {
    * without it the crawler still runs but at the far lower anonymous rate limit.
    */
   readonly GITHUB_TOKEN?: string
+  /** OpenCode Go credential; required when the pinned localization consumer is enabled. */
+  readonly OPENCODE_GO_API_KEY?: string
   /** Comma-separated account emails granted administrator rights. */
   readonly ADMIN_EMAILS?: string
   /**

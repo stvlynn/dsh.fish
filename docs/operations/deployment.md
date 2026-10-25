@@ -1,5 +1,9 @@
 # Deployment
 
+Production uses the [VPS runtime](vps-deployment.md). Worker commands below are
+retained adapter/development instructions and must not reclaim the production domain.
+
+
 dsh.fish deploys as a single Cloudflare Worker serving both the API and the
 server-rendered site. See [`project/architecture.md`](../project/architecture.md)
 for why the two share one origin.
@@ -62,7 +66,7 @@ Regenerating the auth half after changing `createAuth`:
 ```sh
 cd backend
 pnpm dlx @better-auth/cli generate \
-  --config src/infrastructure/auth/auth.ts \
+  --config src/infrastructure/auth/schema-config.ts \
   --output src/infrastructure/persistence/auth-schema.ts
 ```
 

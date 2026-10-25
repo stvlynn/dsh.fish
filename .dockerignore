@@ -1,0 +1,8 @@
+**/node_modules
+.git
+.workspace
+**/.wrangler
+**/.dev.vars
+**/.env*
+**/.source
+**/.react-router

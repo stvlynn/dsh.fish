@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer'
+import { readFile } from 'node:fs/promises'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import { reactRouter } from '@react-router/dev/vite'
 import tailwindcss from '@tailwindcss/vite'
@@ -64,22 +66,40 @@ function stubMdxTypesPackage(): Plugin {
 }
 
 export default defineConfig({
+  ssr: { noExternal: ['@dsh-fish/backend'] },
   plugins: [
     stubMdxTypesPackage(),
+    ...(process.env.DSH_RUNTIME === 'node'
+      ? [
+          {
+            name: 'node-wasm-modules',
+            enforce: 'pre' as const,
+            async load(id: string) {
+              if (!id.endsWith('.wasm')) return
+              const bytes = await readFile(id)
+              return `export default new WebAssembly.Module(Uint8Array.from(atob("${Buffer.from(bytes).toString('base64')}"), c => c.charCodeAt(0)))`
+            },
+          },
+        ]
+      : []),
     // Compile MDX at build time and generate separate server/browser indexes.
     // The browser index uses dynamic imports, so each article is its own chunk.
     fumadocsMdx(),
     // Runs dev and preview inside workerd, so local behavior matches production
     // bindings rather than a Node emulation of them.
-    cloudflare({
-      viteEnvironment: { name: 'ssr' },
-      ...(process.env.DSH_E2E_WORKER_CONFIG
-        ? { configPath: process.env.DSH_E2E_WORKER_CONFIG }
-        : {}),
-      // CI uses local fixtures and has no Cloudflare account credentials.
-      // Production deployment still reads the remote VPC binding from Wrangler.
-      remoteBindings: !process.env.CI,
-    }),
+    ...(process.env.DSH_RUNTIME === 'node'
+      ? []
+      : [
+          cloudflare({
+            viteEnvironment: { name: 'ssr' },
+            ...(process.env.DSH_E2E_WORKER_CONFIG
+              ? { configPath: process.env.DSH_E2E_WORKER_CONFIG }
+              : {}),
+            // CI uses local fixtures and has no Cloudflare account credentials.
+            // Production deployment still reads the remote VPC binding from Wrangler.
+            remoteBindings: !process.env.CI,
+          }),
+        ]),
     tailwindcss(),
     reactRouter(),
     tsconfigPaths(),

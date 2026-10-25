@@ -1,4 +1,4 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 import type { ArtifactSummaryDto, PageDto } from '../../application/dto/artifact-dto.js'
 
 /**
@@ -17,7 +17,7 @@ function railKey(sort: string, limit: number, locale: string): string {
 
 export class KvHomeRailCache {
   constructor(
-    private readonly kv: KVNamespace,
+    private readonly kv: KeyValueStore,
     private readonly generation = '',
   ) {}
 

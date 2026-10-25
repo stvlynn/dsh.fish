@@ -1,4 +1,4 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 import { README_TRANSLATION_POLICY_VERSION } from '../../application/lib/readme-digest.js'
 import type {
   ReadmeLocalizationBackfillProgress,
@@ -14,7 +14,7 @@ const KEY = `readme-i18n:backfill:${README_TRANSLATION_POLICY_VERSION}:${BACKFIL
 
 /** One versioned cursor in KV; a policy version bump automatically starts a new pass. */
 export class KvReadmeLocalizationBackfillProgress implements ReadmeLocalizationBackfillProgress {
-  constructor(private readonly kv: KVNamespace) {}
+  constructor(private readonly kv: KeyValueStore) {}
 
   async load(): Promise<ReadmeLocalizationBackfillState> {
     const value = await this.kv.get(KEY)

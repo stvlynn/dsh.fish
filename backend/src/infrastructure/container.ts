@@ -1,3 +1,5 @@
+import type { Persistence } from './persistence/open-persistence.js'
+import type { ArtifactAskPort } from '../application/port/artifact-ask.js'
 import { openPersistence } from './persistence/open-persistence.js'
 import type { IncomingRequestCfProperties } from '@cloudflare/workers-types'
 import { GetArtifactDetail } from '../application/use-case/get-artifact-detail.js'
@@ -68,6 +70,8 @@ export interface Container {
 const ids: IdGenerator = { next: () => crypto.randomUUID() }
 
 export interface ContainerOptions {
+  readonly persistence?: Persistence
+  readonly ada?: ArtifactAskPort
   readonly cf?: IncomingRequestCfProperties
   readonly readmeLocalization: ReadmeLocalizationScheduler
   readonly supportedLocales?: readonly string[]
@@ -84,7 +88,7 @@ export interface ContainerOptions {
 export async function createContainer(env: HubEnv, options: ContainerOptions): Promise<Container> {
   const config = readConfig(env)
   const supportedLocales = options.supportedLocales ?? ['en']
-  const persistence = await openPersistence(env, supportedLocales)
+  const persistence = options.persistence ?? (await openPersistence(env, supportedLocales))
   try {
     const {
       artifacts,
@@ -164,7 +168,7 @@ export async function createContainer(env: HubEnv, options: ContainerOptions): P
         ),
         askArtifact: new AskArtifact(
           artifacts,
-          new AdaClient(),
+          options.ada ?? new AdaClient(),
           new KvAskRateLimiter(env.KV, {
             ...(config.artifactAskMaxPerIp === undefined
               ? {}

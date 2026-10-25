@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dsh-fish",
+  "workers_dev": false,
+  "preview_urls": false,
   "main": "./workers/app.ts",
   "compatibility_date": "2026-08-18",
   "compatibility_flags": ["nodejs_compat"],

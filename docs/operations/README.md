@@ -8,38 +8,27 @@ This section covers how the project is run, built, deployed, and monitored.
 - [`deployment.md`](deployment.md) — Worker deployment and CLI publish.
 - [`mysql-migration.md`](mysql-migration.md) — TencentDB MySQL rehearsal results and cutover requirements.
 
+- [`vps-deployment.md`](vps-deployment.md) — Node/Redis VPS runtime, validation, and rollback.
+
 ## Environment
 
-Fill in concrete environment requirements here once the technology stack is chosen:
-
-- Runtime version: `__RUNTIME_VERSION__`
-- Required environment variables: `DATABASE_URL`, `PORT`, `LOG_LEVEL`, etc.
-- Local services: database, cache, message broker.
+Production uses Node 24, private TencentDB MySQL and authenticated Redis on the
+Singapore VPS. Runtime configuration and release files are listed in the
+[VPS runbook](../../deploy/docker/README.md).
 
 ## Commands
 
-Define the standard commands for this project. Placeholders:
-
 ```sh
-# Install dependencies
-__INSTALL_COMMAND__
-
-# Run tests
-__TEST_COMMAND__
-
-# Run type checks
-__TYPECHECK_COMMAND__
-
-# Start the backend
-__START_BACKEND__
-
-# Start the frontend
-__START_FRONTEND__
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm run build:vps
+DSH_RELEASE=<new-tag> pnpm run deploy
 ```
 
-Replace these with real commands when the stack is selected.
+`pnpm run dev` retains the local Worker adapter and isolated D1 fixture workflow.
+Worker production deployment/build triggers are retired.
 
-## SEO/search rollout
+## Retained Worker SEO/search rollout
 
 1. Apply D1 migration `0009_flimsy_machine_man` with both rollout variables
    false.

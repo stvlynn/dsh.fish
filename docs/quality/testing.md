@@ -46,7 +46,8 @@ README localization tests cover three boundaries without calling a paid model:
   a catalog write with a non-empty README;
 - the detail use case serves generated README/summary prose still on the row,
   including a previous completed body while its replacement is pending;
-- the LM Studio client pins the private chat-completions contract, full target
+- the shared chat client verifies LM Studio compatibility and the pinned OpenCode
+  free-model endpoint, protected literals, explicit quota failures, and full target
   language name and Markdown-preservation instruction, and rejects unsupported
   locales, empty output and failed responses;
 - the Markdown splitter bounds model input, preserves source bytes before
@@ -123,6 +124,15 @@ The backend test command also runs `node --test scripts/migrate-mysql.test.mjs`,
 so GitHub CI exercises numbered migration ordering, checksum/incomplete-history
 rejection, TLS/environment validation, advisory locking and fail-closed deploy
 behavior without accessing production credentials or databases.
+
+## VPS runtime checks
+
+Run `pnpm run build:vps` in CI as well as the Worker build. New tests cover
+Redis TTL/error semantics, shared translation recovery, and catalog admission
+ownership/release. Deployment acceptance additionally checks MySQL/Redis
+readiness, signed-cookie/bearer continuity, OAuth initialization, device grants,
+multilingual SSR/search, PNG generation, streaming and graceful shutdown.
+Production probes are bounded; write fixtures use an isolated validation schema.
 
 ## End-to-end tests
 

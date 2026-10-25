@@ -117,7 +117,7 @@ describe.skipIf(testConfigPath === undefined)(
         sort: 'relevance',
         page: { limit: 10, offset: 0 },
       })
-      expect(matches.items.some((item) => item.id === current.id)).toBe(true)
+      expect(matches.items.map((item) => item.id)).toContain(current.id)
     })
 
     it('retains previous generated prose across source updates and invalidates only search documents', async () => {
@@ -288,10 +288,14 @@ describe.skipIf(testConfigPath === undefined)(
         const matches = await repository.search({
           text,
           locale: 'zh-CN',
-          sort: 'relevance',
+          // Shared snapshot matches may outrank this fixture by popularity.
+          sort: 'recent',
           page: { limit: 100, offset: 0 },
         })
-        expect(matches.items.some((item) => item.id === current.id)).toBe(true)
+        expect(
+          matches.items.map((item) => item.id),
+          text,
+        ).toContain(current.id)
       }
     })
 

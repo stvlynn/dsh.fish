@@ -1,4 +1,4 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
+import type { KeyValueStore } from '../../application/port/key-value-store.js'
 import type { OffsetCursor } from '../../application/port/offset-cursor.js'
 
 /**
@@ -14,7 +14,7 @@ export function reclassifyCursorKey(): string {
 
 export class KvOffsetCursor implements OffsetCursor {
   constructor(
-    private readonly kv: KVNamespace,
+    private readonly kv: KeyValueStore,
     private readonly key: string,
   ) {}
 

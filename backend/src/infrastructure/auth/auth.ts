@@ -38,15 +38,17 @@ export function createAuth(
   baseURL?: string,
   mysqlDb?: MySql2Database<typeof mysqlSchema>,
 ) {
-  const db = env && !mysqlDb ? drizzle(env.DB, { schema }) : ({} as ReturnType<typeof drizzle>)
+  const db = env && !mysqlDb ? drizzle(env.DB!, { schema }) : ({} as ReturnType<typeof drizzle>)
 
-  const cloudflare = withCloudflare(
+  const cloudflareOptions = withCloudflare(
     {
       autoDetectIpAddress: true,
       geolocationTracking: false,
       cf: cf ?? ({} as IncomingRequestCfProperties),
       d1: env && !mysqlDb ? { db, options: { usePlural: true } } : undefined,
-      ...(env?.KV === undefined ? {} : { kv: env.KV }),
+      ...(env?.KV === undefined
+        ? {}
+        : { kv: env.KV as import('@cloudflare/workers-types').KVNamespace }),
     },
     {
       // Sign-in is GitHub only. A password account has no GitHub identity
@@ -109,6 +111,20 @@ export function createAuth(
 
   // withCloudflare's published type omits `database` even though the runtime
   // object includes the drizzle adapter when D1 is configured.
+  const cloudflare =
+    env?.RUNTIME === 'node'
+      ? {
+          ...cloudflareOptions,
+          plugins: cloudflareOptions.plugins?.filter((plugin) => plugin.id !== 'cloudflare'),
+          secondaryStorage: {
+            get: (key: string) => env.KV.get(key),
+            set: (key: string, value: string, ttl?: number) =>
+              env.KV.put(key, value, ttl === undefined ? undefined : { expirationTtl: ttl }),
+            delete: (key: string) => env.KV.delete(key),
+          },
+        }
+      : cloudflareOptions
+
   const database = (cloudflare as { database?: unknown }).database
 
   return betterAuth({
@@ -118,7 +134,10 @@ export function createAuth(
     // Preserve database-backed sessions when the Cloudflare D1 option is absent.
     ...(mysqlDb
       ? {
-          session: { ...(cloudflare as { session?: BetterAuthOptions['session'] }).session, storeSessionInDatabase: true },
+          session: {
+            ...(cloudflare as { session?: BetterAuthOptions['session'] }).session,
+            storeSessionInDatabase: true,
+          },
           verification: { storeInDatabase: true },
         }
       : {}),
@@ -148,8 +167,5 @@ export function createAuth(
         }),
   })
 }
-
-/** Export consumed by `better-auth` CLI schema generation. */
-export const auth = createAuth()
 
 export type HubAuth = ReturnType<typeof createAuth>
