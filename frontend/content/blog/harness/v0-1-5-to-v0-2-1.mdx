@@ -1,0 +1,102 @@
+---
+title: 'From v0.1.5 to v0.2.1: How DeepSeek Harness Grew a Sidebar, Remote Hands, and a Live Plugin Market'
+description: Twenty-seven pre-releases in eight weeks turned a local coding chat into a desktop and remote workstation with Office previews, SSH workspaces, Browser Use, and custom plugin indexes.
+author: Steven Lynn
+date: 2026-10-24
+cover: /blog/covers/harness-v0-2-1-milestones.webp
+series: harness
+---
+
+If you last updated DeepSeek Harness in late August (`dsh-v0.1.2-alpha.1`), opening the late-October build ([`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)) feels like walking into a workshop that doubled in size.
+
+On the right side of the window, a multi-tab Sidebar previews an Excel spreadsheet next to a live terminal and a file-by-file diff. Your local UI is editing files on a remote Linux server over SSH. A background bash command finishes and wakes the agent up on its own. And on macOS or Windows, you did not even install Node or `pnpm`—you installed the `dsh` CLI with one click from the Desktop app's menu bar.
+
+How did the runtime add all of these capabilities across 27 pre-releases without turning its core into a tangled monolith? By turning every new surface into a Cordis capability seam. Let us walk through the four milestones that took DeepSeek Harness from `v0.1.5` to `v0.2.1-rc.3`.
+
+![How v0.1.5 to v0.2.1 expanded the session without bloating the core.](/blog/diagrams/harness-v0-2-1-architecture.svg)
+
+## Milestone 1 (`v0.1.5`): Why a chat column was no longer enough
+
+In early versions of DeepSeek Harness, everything lived inside the chat stream or a cramped detail drawer. That worked when agents only printed short code snippets. It broke down as soon as agents started generating PDF reports, HTML prototypes, and subagent logs.
+
+Released on 10 September 2026, [`dsh-v0.1.5-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1) (rolling up the `0.1.3` and `0.1.5` alphas) solved three problems at once:
+
+1. **The multi-tab Right Sidebar replaced the Detail panel.** Supporting tabs, split panes, and fullscreen views, it renders Markdown, syntax-highlighted source files, HTML, PDFs, and images—even from inactive or subagent sessions. For plugin authors, UI slots moved to `sidebar.panellist` and `main` (with `conversation` nested under `main`).
+2. **Single-process session locks (`SessionHandle`) and Session Format V3.** What happens if you accidentally open the same session in two terminals? Starting in `0.1.3-alpha.1` and finalized in `0.1.5-rc.1`, a lifecycle-scoped `SessionHandle` locks the active session to one process at a time. Session Format V3 also moved system prompts into message history and migrated legacy logs into adjacent `.v3.jsonl` files without deleting your originals.
+3. **`deepseek-flash` became the default for new sessions.** On the exact day DeepSeek announced `DeepSeek-V4.1-Flash`, the official adapter made `deepseek-flash` the default model for new sessions (unless your profile pins another model) and enabled dynamic system-prompt updates that preserve the model's KV cache.
+
+<BlogStructureMap
+  diagram="harness-v0-2-1-architecture"
+  eyebrow="HTML STRUCTURE MAP · v0.1.5–v0.2.1 CAPABILITY SEAMS"
+  title="How workspace UI, remote execution hands, and the plugin market plug into SessionHandle"
+  caption="Instead of bolting features into a monolithic loop, each milestone registered a new Cordis service seam (sidebar.panellist, ctx.browserUse, ctx.workingDirectory, ctx.pluginMarket)."
+  node1Title="1. Workspace & UI Seams"
+  node1Body="The Right Sidebar hosts Office, PDF, and terminal tabs; Desktop v0.2.0-rc.2 installs the dsh CLI directly from the menu bar."
+  node2Title="2. Execution Hands & Protocol"
+  node2Body="SSH remote workspaces, Stagehand/Playwright Browser Use, Cua Computer Use, and Messages-only DeepSeek API calls."
+  node3Title="3. Live Plugin Platform"
+  node3Body="Settings and Agent Presets live as profile bundles, validated by engines.dsh and discoverable via custom plugin index URLs."
+/>
+
+## Milestone 2 (`v0.1.6` & `v0.1.7`): The week the harness grew hands
+
+A local chat window that can only edit files on your laptop hits a wall the moment your code lives on a remote devbox, or when a task requires clicking through a real browser, reading an `.xlsx` sheet, or running on a timer.
+
+Between [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1) (15 September) and [`dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.2) (24 September), the runtime grew hands:
+
+- **SSH Remote Workspaces:** You run the DSH UI locally, point it at an SSH host, and your file reads, shell commands, and Node PTC scripts execute directly against the remote filesystem.
+- **Experimental Browser Use and Computer Use:** New official experimental bundles added `ctx.browserUse` (`@deepseek-ai/dsh-experimental-browser-use-stagehand-native` with `stagehand_navigate`, `stagehand_act`, `stagehand_extract`, `stagehand_screenshot`, plus Playwright and Chrome DevTools MCP) and `ctx.computerUse` (`@deepseek-ai/dsh-experimental-computer-use-cua-driver-native`).
+- **Office previews and background wakeups:** The Right Sidebar gained read-only previews for Word, PowerPoint, and Excel/CSV spreadsheets (sheets, formulas, and cells, powered by `@deepseek-ai/dsh-office-to-pdf` and the bundled LibreOffice runtime). Long-running commands can move to the background (`job_list`, `job_output`, `job_kill`) and automatically wake the session when they finish.
+- **One-minute scheduled tasks (`v0.1.7-rc.2`):** When enabled in settings, `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` let an agent set persistent reminders and recurring tasks (down to once per minute) that survive restarts.
+- **Messages-only protocol and Agent Presets as Bundles (`v0.1.7-rc.1`):** The official DeepSeek adapter locked onto the **Messages** protocol (`https://api.deepseek.com/anthropic`), dropping the legacy Chat Completions `protocol` option. Settings moved out of `settings.yaml` into the active profile's plugin configuration, and **Agent Presets became standard Cordis bundles**.
+
+Step through the interactive mock UI below to watch how each milestone from `v0.1.5` to `v0.2.1` expanded the workspace:
+
+<BlogMockUi
+  scene="harness-sidebar-hands"
+  eyebrow="INTERACTIVE MOCK UI · MILESTONE WORKSTATION (v0.1.5 → v0.2.1)"
+  title="Exploring the Right Sidebar, SSH & Browser Hands, Messages API, and Plugin Market"
+  caption="Click steps 1–4 to inspect the Cordis seams and CLI commands introduced across the September and October milestones."
+  step1Title="1. v0.1.5: Right Sidebar & Session V3"
+  step1Body="The Detail drawer becomes a multi-tab split Sidebar; SessionHandle enforces single-process locks and deepseek-flash becomes the default."
+  step2Title="2. v0.1.6: SSH, Browser Use & Isolated PTC"
+  step2Body="Operate remote SSH trees from a local UI, drive browsers with Stagehand/Playwright, and run Node PTC in an isolated process."
+  step3Title="3. v0.1.7: Messages API, Office & Schedules"
+  step3Body="Official adapter standardizes on Messages + Files API; presets become bundles; Sidebar previews XLSX/DOCX and runs 1-min schedules."
+  step4Title="4. v0.2.0–0.2.1: Menu-Bar CLI & Plugin Indexes"
+  step4Body="Install the dsh CLI from the Desktop menu bar, add custom plugin index URLs, switch directories via working_directory, and check engines.dsh."
+/>
+
+## Milestone 3 (`v0.2.0-rc.2`): Installing `dsh` without touching Node or `pnpm`
+
+For newcomers, the biggest hurdle to trying a CLI agent tool is often Node.js version management.
+
+Released on 29 September 2026, [`dsh-v0.2.0-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) added **Manage dsh command** directly to the macOS and Windows Desktop menu bar. With one click, the Desktop app exposes its signed, bundled `dsh` CLI to your shell—letting you run `dsh` and manage plugins from your terminal without installing Node or `pnpm` separately.
+
+That release also bumped the third-party model catalog to **pi-ai 0.87.1**, loaded your login-shell environment on macOS and Linux desktop launches (so custom PATHs and proxies work out of the box), and introduced an experimental **asynchronous question mode** where an agent keeps working if you do not answer a prompt before the timeout expires.
+
+## Milestone 4 (`v0.2.1-rc.1` to `rc.3`): Maturing the open plugin platform
+
+The October release line ([`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1) on 17 October through [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3) on 23 October) focused on making third-party plugins easier to discover, write, and deploy safely:
+
+- **Custom plugin index sources (`ctx.pluginMarket`):** DeepSeek Harness ships no central marketplace of its own. Instead, `v0.2.1` lets you paste any `http:` or `https:` index URL under **Plugins → Experimental → Custom plugin indexes** to browse and install community catalogs in-app.
+- **Version compatibility via `engines.dsh`:** Plugin packages can now declare an `engines.dsh` range in `package.json`. Install and startup check that range first and explain clearly if a plugin targets an incompatible runtime.
+- **New agent tools and seams (`working_directory` & `DSH_AGENTS_HOME`):** Agents can now inspect or change their active directory cleanly via the `working_directory` tool (`ctx.workingDirectory`), load shared instructions from `DSH_AGENTS_HOME`, and run `/compact` on Web and Desktop.
+- **Persistent-in-memory Node PTC:** `@deepseek-ai/dsh-ptc-runtime-node` added `executionMode: 'persistent-in-memory'`, keeping variables, functions, and imports alive across `run_code` calls inside the session's filesystem sandbox. Meanwhile, the legacy `both` tool presentation mode was removed—only `'native'` and `'ptc'` remain.
+- **Production Web deployment flags:** Hosting `dsh web` behind a reverse proxy or on a LAN is now supported with `--public-url`, specific IPv4/IPv6 host binding (`0.0.0.0` and `::` are rejected by design), and `--tls-cert` / `--tls-key`.
+- **Experimental bundles worth trying:** `v0.2.1` shipped `@deepseek-ai/dsh-experimental-worktree` (isolated Git worktree checkouts per session), `@deepseek-ai/dsh-experimental-client-ui-cot-translation` (live reasoning translation via Bing, Google, or DeepSeek Flash), and `@deepseek-ai/dsh-experimental-claude-code-mods` (a compatibility experiment testing the Claude Code Mods API as a subset of DSH plugins).
+
+## Quick upgrade checklist (`0.1.2` → `0.2.1-rc.3`)
+
+If you are upgrading a profile or plugin from late August to `v0.2.1-rc.3`, verify these six items first:
+
+| Surface | What changed between `0.1.2` and `0.2.1-rc.3` | Action required |
+| --- | --- | --- |
+| **DeepSeek API config** | Official adapter speaks **Messages only**; `protocol` field removed (`0.1.7`). | Remove `protocol` from config; if overriding the official base URL, use `https://api.deepseek.com/anthropic`. |
+| **Agent Presets & Settings** | Directory presets became Cordis bundles; `settings.yaml` imported once into profile config (`0.1.7`). | Package presets as bundles and declare `engines.dsh` in `package.json`. |
+| **Plugin context API** | `ctx.agent` and `./invariant` exports removed; `Inbox` is type-only (`agent.inbox`). | Pass the `Agent` instance explicitly and remove `./invariant` subpath imports. |
+| **Tool presentation mode** | `mode: 'both'` removed on `@deepseek-ai/dsh-tools` (`0.2.1-alpha.2`). | Choose either `'native'` (standard tool schemas) or `'ptc'` (`run_code` SDK). |
+| **Headless API keys** | Headless reads environment variables and `.env` only, ignoring saved GUI credentials (`0.2.1-alpha.3`). | Export `DEEPSEEK_API_KEY` (or provider env vars) explicitly in CI and headless scripts. |
+| **Spill policy budget** | `spill-policy.maxInlineBytes` renamed to `maxInlineTokens` (`0.1.7-alpha.2`). | Express custom tool-output truncation budgets in estimated tokens rather than bytes. |
+
+Release notes index: [dsh-v0.1.5-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1) · [dsh-v0.1.7-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.1) · [dsh-v0.2.0-rc.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) · [dsh-v0.2.1-rc.3](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3).

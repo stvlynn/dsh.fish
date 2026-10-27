@@ -1,69 +1,115 @@
 ---
 title: 모든 것은 플러그인이다
-description: DeepSeek Harness의 코어는 작고 나머지는 로드합니다. dsh.fish는 그 로드 가능한 단위의 카탈로그이지, 두 번째 런타임이 아닙니다.
+description: DeepSeek Harness에 거대한 모놀리식 코어가 없는 이유, Profile이 Cordis를 통해 네 가지 구성 요소를 부팅하는 방식, 그리고 dsh.fish가 설치 과정을 읽기 쉬운 계획으로 바꾸는 방법.
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/everything-is-a-plugin.webp
 series: notes
 ---
 
-DeepSeek Harness 자신의 README는 **everything is a plugin**으로 시작합니다. 시장의 구호가 아니라 프로세스의 서술입니다. 코어는 작게 두고, 능력 — 도구, 제공자, 승인 규칙, UI — 은 모두 profile에 적힌 플러그인으로 도착합니다. 아래의 합성 런타임은 Cordis입니다. 논문은 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)입니다.
+자주 쓰는 코드 에디터에 확장 기능을 하나 설치했는데, 갑자기 터미널이 먹통이 되거나 모델 설정이 마음대로 바뀐 적이 있으신가요? 원인을 찾으려다 보면 에디터 본체는 거대한 블랙박스이고 확장 기능은 그 바깥에 테이프로 덕지덕지 붙여 놓은 구조라는 걸 깨닫게 됩니다.
 
-dsh.fish가 있는 이유는 그 문장에 운영상 결과가 있기 때문입니다. 모든 것이 플러그인이면 「이것을 설치」는 한 줄 명령이 아니라 계획입니다. 어느 profile, 어떤 패키지, 어떤 파일, 어떤 설정. 이 노트는 그 두 사실을 잇는 방법입니다.
+이제 반대로 상상해 봅시다. 만약 애플리케이션의 '코어'가 거의 비어 있다면 어떨까요? 채팅 창, Bash 도구, 모델 연결, 심지어 에이전트의 추론 루프까지 모두 서드파티 확장 기능과 완전히 똑같은 방식으로 로드된다면 말입니다.
+
+이것이 바로 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)의 README 첫 문장이 말하는 **everything is a plugin(모든 것은 플러그인이다)** 의 진짜 의미입니다. 마켓플레이스를 홍보하기 위한 구호가 아니라, 조합형 런타임 [Cordis](https://github.com/cordiverse/cordis)(논문 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)) 위에서 작동하는 아키텍처 원칙입니다.
+
+이 원칙이 디스크 위에서 어떻게 작동하는지 이해하면 DeepSeek Harness와 이 카탈로그(`dsh.fish`)의 구조가 한눈에 들어옵니다. 내 컴퓨터의 폴더에서 시작해 실제 에이전트 세션이 켜지기까지의 과정을 차근차근 따라가 보겠습니다.
 
 ![Profile이 카탈로그 artifact를 권한 범위가 정해진 하나의 Harness session으로 구성하는 흐름.](/blog/diagrams/plugin-composition.svg)
 
-## 기동의 단위는 Profile입니다
+## A profile is the unit that boots
 
-`$DSH_HOME`(기본 `~/.dsh`)에 사용자 데이터가 있습니다. `profiles/<name>` 아래에 한 세트를 정의하는 패키지와 patch가 있습니다. 시작할 때 `--profile`로 고릅니다. v0.1.2-alpha.1에서 Web UI, Python SDK, ACP는 모두 Profile을 통해 시작합니다. 다른 스택을 로드하는 뒷문은 없습니다.
+플러그인을 이야기하기 전에, 터미널에 `npx @deepseek-ai/dsh web`을 입력했을 때 실제로 무슨 일이 일어나는지부터 살펴보겠습니다.
 
-그래서 dsh.fish의 설치 계획은 모두 profile을 지명합니다. 플러그인을 「harness」에 쓰고 profile을 쓰지 않는 것은 어디에도 쓰지 않는 것입니다.
+에이전트는 데이터를 어디에 저장할까요? 기본적으로 DeepSeek Harness는 `~/.dsh`(또는 `$DSH_HOME` 환경 변수 경로)에 홈 디렉터리를 만들고, 그 안에 `profiles/`라는 하위 폴더를 둡니다.
 
-## 네 kind, 네 로드 면
+**Profile**(`$DSH_HOME/profiles/<name>`)은 에이전트 구성을 위한 하나의 '완성된 레시피'라고 생각하면 쉽습니다. 프로세스가 시작될 때 어떤 npm 패키지와 어떤 설정 패치(`cordis.patch.yml`)를 불러올지가 모두 이곳에 정의됩니다.
 
-카탈로그는 유형을 발명하지 않습니다. harness가 이미 로드하는 것에 이름을 붙입니다.
+`dsh`를 실행할 때 우리는 언제나 특정 Profile을 부팅합니다.
 
-| Kind         | harness가 하는 일                                                      |
-| ------------ | ---------------------------------------------------------------------- |
-| Bundle       | `dsh.bundle`을 선언하는 npm 패키지 — `dsh plugin add`가 profile에 넣음 |
-| Skill        | 모델이 필요할 때 로드하는 `SKILL.md`                                   |
-| Agent preset | 한 agent의 도구, prompt 절, 페르소나                                   |
-| Profile      | 순서 있는 bundle 더미. 실행 가능한 합성 전체                           |
+- `dsh web`은 `web` Profile을 부팅합니다(`http://127.0.0.1:3080` 브라우저 UI).
+- `dsh --profile headless`는 서버 없이 한 번 실행하고 끝나는 CLI 러너를 부팅합니다.
+- `dsh --profile sdk`와 `dsh --profile acp`는 Python/TypeScript SDK나 외부 자동화 도구를 위한 프로토콜 서버를 부팅합니다.
 
-폐기된 kind(`mcp-server`, `hook-bridge`)는 301됩니다. 카탈로그 허구였기 때문입니다. harness에는 그 이름에 맞는 일등 로드 슬롯이 없었습니다. 런타임이 넣을 수 없는 kind를 레지스트리가 남기는 것은 존재하지 않는 제품을 파는 일입니다.
+Profile을 거치지 않고 숨겨진 기본 스택을 불러오는 뒷문은 없습니다. 모든 진입점이 Profile로 시작하기 때문에, 막연하게 "DeepSeek Harness에 플러그인을 설치한다"는 말은 성립하지 않습니다. 어느 Profile에 넣을지 지정하지 않는 설치는 주소 없는 우편물과 같습니다.
 
-## 문서가 되는 것은 설치 계획입니다
+<BlogStructureMap
+  diagram="plugin-composition"
+  eyebrow="HTML 구조도 · 조합 및 부팅 파이프라인"
+  title="디스크의 카탈로그 아티팩트에서 권한이 격리된 실행 세션까지"
+  caption="네 가지 아티팩트 종류는 모두 $DSH_HOME 아래의 명확한 경로에 대응하며, Cordis 패치를 통해 @deepseek-ai/dsh-base 위에 쌓여 워크스페이스 권한 경계 안에서 실행됩니다."
+  node1Title="1. 아티팩트와 설치 계획"
+  node1Body="카탈로그는 npm 패키지나 Git 저장소를 명확한 설치 단계로 풀어내고 .dsh-fish-lock.json에 기록합니다."
+  node2Title="2. Cordis 레이어 스택"
+  node2Body="Cordis가 dsh-base, Profile 번들, cordis.patch.yml을 합쳐 공유 컨텍스트 서비스(ctx.tools, ctx.llm, ctx.sessions)를 구성합니다."
+  node3Title="3. 권한 범위가 지정된 세션"
+  node3Body="부팅된 Profile은 단일 워크스페이스를 열고 workspace-write 권한 아래에서 추가 전용 로그에 대화를 기록합니다."
+/>
 
-사이트, CLI(`npx @dsh-fish/cli`), hub 플러그인은 같은 계획을 인쇄합니다. 계획은 무엇이든 돌기 전에 다 읽을 수 있는 단계 목록입니다. 빌드 스크립트를 돌려야 하는 git 패키지는 별도 승인을 요청합니다. 그 스크립트는 agent 샌드박스 밖에서 실행되기 때문입니다.
+## 가장 가벼운 문서부터 전체 스택까지, 네 가지 블록
 
-계획은 식별자를 번역하지 않고 다국어를 하는 이유이기도 합니다. `dsh plugin add`, `SKILL.md`, 패키지 이름은 모든 언어에서 영어입니다. 둘러싼 프레임은 아닙니다.
+Profile이 부팅 단위라면 그 안에는 어떤 재료를 넣을 수 있을까요?
 
-## 코어가 여전히 가진 것
+`dsh.fish`를 둘러보면 아티팩트 종류(Kind)가 딱 네 가지뿐이라는 것을 알 수 있습니다. 우리가 임의로 만든 분류가 아니라, DeepSeek Harness 런타임이 실제로 읽어들일 수 있는 네 가지 표면입니다.
 
-「모든 것은 플러그인」은 코어가 비었다는 뜻이 아닙니다. 세션은 여전히 추가만 하는 이벤트 로그입니다. 워크스페이스는 여전히 agent에게 넘기는 디렉터리입니다. 권한은 여전히 이름 있는 프리셋입니다(기본 `workspace-write`). 공식 DeepSeek 어댑터는 여전히 키를 기기에 두는 방식입니다.
+| 종류(Kind)         | 언제 선택하면 좋을까요?                                      | DeepSeek Harness가 로드하는 방식                                                                 |
+| ------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Skill**        | 순수 Markdown 문서로 재사용 가능한 작업 절차를 모델에 가르치고 싶을 때           | `$DSH_HOME/skills/<name>/SKILL.md`에 저장되며 모델이 필요할 때 온디맨드로 읽음                |
+| **Agent preset** | 특정 역할, 프롬프트 앞뒤 규칙, 도구 구성을 하나로 묶고 싶을 때   | `agent.cordis.yml`로 선언(최신 Harness에서는 Bundle 형태로 패키징 및 관리)        |
+| **Bundle**       | 코드로 새 도구, UI 패널, 모델 어댑터, 런타임 훅을 추가하고 싶을 때 | `package.json`에 `dsh.bundle`을 선언한 npm 패키지이며 `dsh plugin add`로 설치            |
+| **Profile**      | 잘 조합된 Bundle 목록 전체를 팀원들과 그대로 공유하고 싶을 때      | `@deepseek-ai/dsh-base` 위에 순서대로 적용되는 Bundle 스택(`dsh.profile.bundles`)  |
 
-플러그인은 그 권한 아래에서 움직입니다. 그것이 허브가 지키는 신뢰 경계입니다. profile을 바꾸기 전에 플러그인이 무엇인지, 계획이 무엇을 쓸지를 봅니다.
+초기에 있었던 `mcp-server`와 `hook-bridge`는 현재 모두 `/browse`로 `301` 리다이렉트됩니다. 런타임에 그런 이름의 독립된 로드 슬롯이 없었기 때문입니다. MCP 서버나 훅은 Bundle이나 Profile 안에 담겨 전달됩니다. 런타임이 직접 설치할 수 없는 가상 분류를 남겨 두면 사용자만 혼란스러워질 뿐입니다.
 
-## bundle을 install하면 무슨 일이 일어나는가
+## 무작정 실행하는 스크립트 대신 '설치 계획'을 먼저 보여주는 이유
 
-쓸모 있는 mental model은 “package를 download한다”가 아닙니다. **composition을 바꾼 다음 그 composition을 boot한다**입니다. hub는 artifact를 명시적인 plan으로 해석하고, client는 그 step을 하나의 Profile에 적용하며, 다음 launch에서 Cordis가 만들어진 package graph를 해석합니다. Discovery와 execution은 분리된 채로 남습니다.
+많은 생태계에서 플러그인 설치란 명령어 한 줄을 복사해 넣고 아무 일도 없기를 바라는 과정입니다. 하지만 DeepSeek Harness는 여러 레이어를 조합해 Profile을 구성하므로, `dsh.fish`는 **실행 전에 무엇이 바뀌는지 눈으로 읽을 수 있는 설치 계획(Install Plan)**을 중심에 두었습니다.
 
-이 분리 덕분에 inspect할 수 있습니다. 제3자 package가 실행되기 전에 target Profile, package source, files, build-script allowance를 검토할 수 있습니다. 동시에 한계도 분명합니다. dsh.fish는 install이 무엇을 바꿀지 설명할 수 있지만 임의의 plugin code가 안전하다고 증명할 수는 없습니다. 높은 catalog score는 maintenance의 증거이지 sandbox certificate가 아닙니다.
+웹사이트에서 보든, 터미널에서 `npx @dsh-fish/cli`로 조회하든, 실행 중인 세션 안에서 `@dsh-fish/hub` 플러그인으로 검색하든 항상 똑같은 설치 계획이 출력됩니다.
 
-bundle을 확인하는 가장 짧은 경로는 다음과 같습니다.
+아래 인터랙티브 Mock UI의 1~4단계를 클릭해 설치 계획이 실제 Cordis 세션으로 이어지는 과정을 확인해 보세요.
+
+<BlogMockUi
+  scene="profile-composer"
+  eyebrow="인터랙티브 MOCK UI · PROFILE 컴포저"
+  title="읽기 쉬운 설치 계획에서 Cordis 세션 부팅까지의 4단계"
+  caption="왼쪽 탭(1~4)을 클릭하면 각 단계에서 실행되는 명령어, 락파일 변경 사항, Cordis 컨텍스트 상태를 살펴볼 수 있습니다."
+  step1Title="1단계: 설치 계획 먼저 확인하기"
+  step1Body="show 명령으로 대상 Profile, 패키지 출처, 빌드 스크립트 요구 여부를 먼저 확인합니다. 아직 디스크는 바뀌지 않습니다."
+  step2Title="2단계: 지정한 Profile에 추가하기"
+  step2Body="CLI가 대상 Profile 안에서 dsh plugin add를 실행하고 정확한 다이제스트를 .dsh-fish-lock.json에 기록합니다."
+  step3Title="3단계: Cordis 설정 레이어 합성"
+  step3Body="부팅 시 dsh-base, 설치된 Bundle, cordis.patch.yml이 합쳐져 되돌릴 수 있는 런타임 서비스로 마운트됩니다."
+  step4Title="4단계: 권한 경계 안에서 실행"
+  step4Body="새 도구가 활성화된 상태로 시작되며, workspace-write 권한과 로컬 API 키는 안전하게 내 컴퓨터에 유지됩니다."
+/>
+
+실제로 새로운 Bundle을 테스트할 때는 아래 세 줄이면 충분합니다.
 
 ```bash
-npx @dsh-fish/cli info <artifact-id>
-npx @dsh-fish/cli install <artifact-id> --profile <profile-name>
-dsh --profile <profile-name> web
+npx @dsh-fish/cli show <artifact-id>
+npx @dsh-fish/cli add <artifact-id> --profile web
+dsh --profile web
 ```
 
-앞의 두 command가 출력하는 plan을 읽으십시오. 특히 source, Profile, 요청된 build allowance가 예상과 다르면 멈추십시오.
+왜 `show`와 `add`를 나누었을까요? 서드파티 플러그인 코드는 현재 로그인한 운영체제 사용자의 권한으로 실행되기 때문입니다. 특히 Git 저장소에서 가져온 패키지가 빌드 스크립트 실행을 요구할 경우, 그 스크립트는 에이전트 샌드박스 바깥에서 돌아갑니다. 설치 계획은 이 사실을 미리 알려 주며, `--allow-build-scripts` 플래그를 명시적으로 넘기지 않으면 빌드 스크립트를 절대 실행하지 않습니다.
 
-## 이 카탈로그가 거부하는 것
+## 모든 것이 플러그인이라면 코어는 무엇을 지킬까요?
 
-두 번째 harness가 아닙니다. Cordis를 감싸지 않습니다. PTC mode나 `@Remote`를 다시 만들지 않습니다. Harness가 Code Mode를 PTC mode로 바꿀 때 카탈로그의 일은 옛 이름을 쓰는 것을 멈추는 것이지, 호환 패드를 내는 것이 아닙니다.
+여기서 자연스러운 의문이 하나 생깁니다. 도구도, 모델도, UI도 모두 플러그인이라면 무엇이 시스템의 중심을 잡아 줄까요?
 
-공식 문서도 아닙니다. DeepSeek 가이드는 [deepseek-harness.github.io](https://deepseek-harness.github.io/deepseek-harness/)입니다. dsh.fish 문서는 허브에 게시하는 법과 점수가 계산되는 법을 가르칩니다. 두 나무는 일부러 갈라져 있습니다. 하나는 런타임, 하나는 레지스트리.
+플러그인 중심 런타임에서도 다음 네 가지 경계만큼은 모든 세션에서 변하지 않습니다.
 
-플러그인 문장이 연결 키입니다. 미래의 Harness가 다섯 번째 로드 면을 더하면 여기 kind가 늘거나, 색인하지 않습니다. 프로세스가 로드할 수 없는 유형을 발명하는 세 번째 선택은 없습니다.
+1. **세션 로그는 추가 전용(append-only)이며 단일 프로세스 잠금을 유지합니다.** 모든 대화와 도구 실행 기록은 `session.v4.jsonl.zstd`에 순서대로 기록되며, `SessionHandle` 잠금이 두 프로세스가 동시에 같은 세션을 망가뜨리는 일을 막아 줍니다.
+2. **워크스페이스는 사용자가 직접 지정한 폴더입니다.** 에이전트는 사용자가 열어 준 디렉터리 안에서만 작동하며, Web UI 입력창은 워크스페이스를 고르기 전까지 잠겨 있습니다.
+3. **권한은 이름이 붙은 프리셋으로 관리됩니다.** 새 세션은 기본적으로 `workspace-write` 모드로 시작합니다. 사용자가 승인하거나 `danger-full-access`로 바꾸지 않는 한 플러그인 도구도 이 경계를 넘어설 수 없습니다.
+4. **API 키는 내 컴퓨터를 떠나지 않습니다.** 인증 키는 `$DSH_HOME/.credentials.yaml`이나 환경 변수에 저장되며, `dsh.fish`는 키나 모델 요청을 절대 거치지 않습니다.
+
+## 런타임과 카탈로그의 명확한 역할 분담
+
+이 경계를 이해하면 두 프로젝트의 관계가 명확해집니다.
+
+- **DeepSeek Harness(`dsh`)**는 Cordis를 통해 플러그인을 조합하고 에이전트 세션을 실행하는 공식 런타임입니다. 공식 문서는 [deepseek-harness.github.io](https://deepseek-harness.github.io/deepseek-harness/)에 있습니다.
+- **`dsh.fish`**는 네 가지 로드 가능한 단위(`bundle`, `skill`, `agent-preset`, `profile`)를 탐색하고 설치 계획을 검증하는 카탈로그입니다. 패키징 방법과 품질 점수 산정 방식은 [제품 문서](/docs)에서 자세히 다루고 있습니다.
+
+이제 카탈로그에서 플러그인을 보게 되면 한 가지만 질문해 보세요. *"이 플러그인은 내 Profile 레시피의 어느 레이어를 바꾸는가?"* 블랙박스 확장 프로그램이 아니라 조합 가능한 Profile의 관점으로 바라보는 순간, 에이전트 환경을 온전히 내 뜻대로 설계할 수 있습니다.

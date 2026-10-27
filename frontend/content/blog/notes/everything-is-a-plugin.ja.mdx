@@ -1,69 +1,115 @@
 ---
 title: すべてはプラグイン
-description: DeepSeek Harness のコアは小さく、残りは載せる。dsh.fish はそれらの載る単位のカタログであり、第二のランタイムではない。
+description: DeepSeek Harness が巨大なモノリスを持たない理由、Profile が Cordis を通じて 4 種類の構成要素を起動する仕組み、そして dsh.fish がインストールを読み取れる計画に変える方法。
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/everything-is-a-plugin.webp
 series: notes
 ---
 
-DeepSeek Harness 自身の README は **everything is a plugin** で始まります。市場のスローガンではなく、プロセスの記述です。コアは小さく保ち、能力 — ツール、提供元、承認規則、UI — はすべて profile に列挙されたプラグインとして届きます。下の合成ランタイムは Cordis。論文は [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512) です。
+普段使っているコードエディタに拡張機能を入れたところ、突然ターミナルが動かなくなったり、モデル設定が勝手に書き換わったりした経験はないでしょうか。原因を調べようとしても、エディタ本体が巨大なブラックボックスになっていて、拡張機能が外側から無理やり貼り付けられているだけだと気づくことは少なくありません。
 
-dsh.fish があるのは、その文に運用上の帰結があるからです。すべてがプラグインなら、「これを入れる」は一条のコマンドではなく計画です。どの profile、どのパッケージ、どのファイル、どの設定。このノートは、その二つの事実のつなぎ方です。
+では、発想を逆転させてみましょう。もしアプリケーションの「コア」がほとんど空っぽだったらどうなるでしょうか？チャット画面も、Bash ツールも、モデルへの接続も、さらにはエージェントの思考ループそのものまで、サードパーティ製の拡張機能とまったく同じ仕組みで読み込まれるとしたら？
+
+それこそが、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）の README が冒頭で掲げる **everything is a plugin（すべてはプラグイン）** という言葉の本当の意味です。これはマーケットプレイス向けのキャッチコピーではなく、合成ランタイム [Cordis](https://github.com/cordiverse/cordis)（論文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)）に基づくアーキテクチャ上の原則です。
+
+この原則がディスク上でどう動いているかが分かると、DeepSeek Harness とこのカタログ（`dsh.fish`）のつながりが一気に見えてきます。手元のフォルダから起動中のセッションまで、順番にたどってみましょう。
 
 ![Profile がカタログ artifact を一つの権限制約付き Harness session に構成する流れ。](/blog/diagrams/plugin-composition.svg)
 
-## 起動の単位は Profile
+## A profile is the unit that boots
 
-`$DSH_HOME`（既定 `~/.dsh`）にユーザーデータが入ります。`profiles/<name>` の下に、一つのセットアップを定義するパッケージと patch があります。起動時は `--profile` で選びます。v0.1.2-alpha.1 では Web UI、Python SDK、ACP はすべて Profile 経由で起動します。別のスタックを載せる裏口はありません。
+プラグインの話に入る前に、ターミナルで `npx @deepseek-ai/dsh web` と入力したとき、内部で何が起きているのかを見てみましょう。
 
-だから dsh.fish のインストール計画はどれも profile を指名します。プラグインを「harness」に書いて profile を書かないのは、どこにも書かないことです。
+エージェントはどこにデータを保存するのでしょうか？デフォルトでは `~/.dsh`（または `$DSH_HOME` で指定したパス）にホームディレクトリが作られ、その中に `profiles/` というフォルダが用意されます。
 
-## 四つの kind、四つの載面
+**Profile**（`$DSH_HOME/profiles/<name>`）は、エージェントを動かすための「レシピ一式」だと考えてください。どの npm パッケージを読み込み、どの設定パッチ（`cordis.patch.yml`）を当てるかがそこに記録されています。
 
-カタログは型を発明しません。harness がすでに載せるものに名前を付けます。
+`dsh` を起動するときは、常にいずれかの Profile を起動しています。
 
-| Kind         | harness がすること                                                            |
-| ------------ | ----------------------------------------------------------------------------- |
-| Bundle       | `dsh.bundle` を宣言する npm パッケージ — `dsh plugin add` が profile に入れる |
-| Skill        | モデルが必要に応じて載せる `SKILL.md`                                         |
-| Agent preset | 一つの agent のツール、prompt 節、人格                                        |
-| Profile      | 順序付きの bundle の束。実行可能な合成そのもの                                |
+- `dsh web` は `web` Profile を起動します（`http://127.0.0.1:3080` のブラウザ UI）。
+- `dsh --profile headless` はサーバーを持たない単発実行用の CLI ランナーを起動します。
+- `dsh --profile sdk` や `dsh --profile acp` は、Python/TypeScript SDK や外部ツール向けのプロトコルサーバーを起動します。
 
-退役した kind（`mcp-server`、`hook-bridge`）は 301 されます。カタログのフィクションだったからです。harness にそれらの名前に合う一等の載スロットはありませんでした。ランタイムが入れられない kind を登録表が残すのは、存在しない製品を売ることです。
+Profile を通さずに別のスタックを読み込む裏口はありません。だからこそ、「とりあえず DeepSeek Harness 本体にプラグインを入れる」という曖昧な操作は存在しないのです。どの Profile に入れるかを決めないインストールは、宛先のない手紙と同じです。
 
-## 文書はインストール計画
+<BlogStructureMap
+  diagram="plugin-composition"
+  eyebrow="HTML 構造図 · 合成と起動のパイプライン"
+  title="ディスク上のカタログ成果物から、権限制約付きの実行セッションまで"
+  caption="4 種類の成果物はすべて $DSH_HOME 下の明確なパスに対応し、Cordis パッチを通じて @deepseek-ai/dsh-base の上に重なり、ワークスペースの権限境界内で動作します。"
+  node1Title="1. 成果物とインストール計画"
+  node1Body="カタログは npm パッケージや Git リポジトリを具体的な手順へと解決し、.dsh-fish-lock.json に記録します。"
+  node2Title="2. Cordis レイヤースタック"
+  node2Body="Cordis が dsh-base、Profile の Bundle、cordis.patch.yml を統合し、共有コンテキスト（ctx.tools、ctx.llm、ctx.sessions）を構築します。"
+  node3Title="3. 権限スコープ付きセッション"
+  node3Body="起動した Profile は 1 つのワークスペースを開き、workspace-write 権限のもとで追記専用ログに履歴を記録します。"
+/>
 
-サイト、CLI（`npx @dsh-fish/cli`）、hub プラグインは同じ計画を印字します。計画は、何かが走る前に読み切れる手順の一覧です。ビルドスクリプトを走らせねばならない git パッケージは別の承認を求めます。そのスクリプトは agent サンドボックスの外で実行されるからです。
+## シンプルなものから順に並べる 4 つの構成単位
 
-計画は、識別子を訳さずに多言語にする理由でもあります。`dsh plugin add`、`SKILL.md`、パッケージ名はどの言語でも英語のままです。囲む枠はそうではありません。
+Profile が起動単位だとすると、その中にはどんな材料を入れられるのでしょうか？
 
-## コアが今も持つもの
+`dsh.fish` には 4 つの種類（Kind）しかありません。これはカタログ側で勝手に作った分類ではなく、DeepSeek Harness が実際に読み込める 4 つの単位そのものです。
 
-「すべてはプラグイン」はコアが空であることではありません。セッションは今も追記専用のイベントログです。ワークスペースは今も agent に渡すディレクトリです。権限は今も名前付きプリセット（既定 `workspace-write`）です。公式 DeepSeek アダプタは今もキーをマシンに留める方法です。
+| 種類（Kind）         | こんなときに選ぶ                                      | DeepSeek Harness での読み込み方                                                                 |
+| ------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Skill**        | Markdown だけで再利用可能な手順や知識をモデルに教えたいとき           | `$DSH_HOME/skills/<name>/SKILL.md` に配置され、モデルが必要に応じて読み込む                |
+| **Agent preset** | 役割・プロンプトの前後付け・ツール構成をひとまとめにしたいとき   | `agent.cordis.yml` で定義（新しい Harness では Bundle として配布・管理）        |
+| **Bundle**       | コードで新しいツール、UI パネル、モデルアダプターを追加したいとき | `package.json` に `dsh.bundle` を持つ npm パッケージ。`dsh plugin add` で Profile に追加する            |
+| **Profile**      | 複数の Bundle を組み合わせた完成済み環境をそのまま共有したいとき      | `@deepseek-ai/dsh-base` の上に順番に適用される Bundle のリスト（`dsh.profile.bundles`）  |
 
-プラグインはそれらの権限の下で動きます。それがハブが守る信頼境界です。profile を変える前に、プラグインが何か、計画が何を書くかを見ます。
+以前このカタログにあった `mcp-server` と `hook-bridge` は廃止され、現在は `/browse` へ `301` リダイレクトされています。理由は単純で、Harness 側にそのような名前の読み込みスロットが存在しなかったからです。MCP サーバーやフックは Bundle や Profile の一部として提供されます。ランタイムが直接読み込めない分類を残しておくと、利用者が迷う原因になってしまいます。
 
-## bundle を install すると何が起きるか
+## なぜワンライナーの即時実行ではなく「インストール計画」なのか
 
-役に立つ mental model は「package を download する」ではありません。**composition を変え、その composition を boot する**ことです。hub は artifact を明示的な plan に解決し、client はその step を一つの Profile に適用し、次の launch で Cordis が出来上がった package graph を解決します。Discovery と execution は分離されたままです。
+多くのツールでは、拡張機能の導入は「コマンドを貼り付けて Enter を押し、壊れないことを祈る」作業になりがちです。しかし DeepSeek Harness は Profile のレイヤー合成で動くため、`dsh.fish` では**実行前に変更内容を読めるインストール計画（Install Plan）**を中心据えました。
 
-この分離により inspect できます。第三者 package が実行される前に、target Profile、package source、files、build-script allowance を確認できます。ただし限界も明確です。dsh.fish は install で何が変わるかを記述できますが、任意の plugin code が安全だとは証明できません。高い catalog score は maintenance の証拠であり、sandbox certificate ではありません。
+Web サイトで見ても、ターミナルの `npx @dsh-fish/cli` で調べても、セッション内の `@dsh-fish/hub` プラグインから検索しても、出力される計画はまったく同じです。
 
-bundle の最短の確認は次です。
+下のインタラクティブ Mock UI のステップ 1〜4 を切り替えて、計画の確認からセッション起動までの流れを確かめてみてください。
+
+<BlogMockUi
+  scene="profile-composer"
+  eyebrow="インタラクティブ MOCK UI · PROFILE コンポーザー"
+  title="読み取れるインストール計画から Cordis セッション起動までの 4 ステップ"
+  caption="左側のステップ（1〜4）をクリックすると、各段階のコマンド、ロックファイルの更新、Cordis コンテキストの状態を確認できます。"
+  step1Title="ステップ 1：まず計画を確認する"
+  step1Body="show コマンドで対象 Profile、取得元、ビルドスクリプトの有無を確認します。この時点ではファイルは書き換わりません。"
+  step2Title="ステップ 2：指定 Profile に追加する"
+  step2Body="CLI が対象 Profile 内で dsh plugin add を実行し、ダイジェストを .dsh-fish-lock.json に記録します。"
+  step3Title="ステップ 3：Cordis レイヤーを合成する"
+  step3Body="起動時に dsh-base、追加された Bundle、cordis.patch.yml が統合され、可逆的なサービスとして登録されます。"
+  step4Title="ステップ 4：権限境界の中で動かす"
+  step4Body="新しいツールが有効な状態で起動しつつ、workspace-write 権限とローカルの API キーは手元で安全に保たれます。"
+/>
+
+実際に Bundle を試すときは、次の 3 コマンドだけで完結します。
 
 ```bash
-npx @dsh-fish/cli info <artifact-id>
-npx @dsh-fish/cli install <artifact-id> --profile <profile-name>
-dsh --profile <profile-name> web
+npx @dsh-fish/cli show <artifact-id>
+npx @dsh-fish/cli add <artifact-id> --profile web
+dsh --profile web
 ```
 
-最初の二つの command が表示する plan を読んでください。特に source、Profile、要求された build allowance が期待と違えば停止します。
+なぜ `show` と `add` を分けているのでしょうか？サードパーティのプラグインコードは、あなた自身のユーザー権限で動作するからです。とくに Git リポジトリ由来のパッケージがビルドスクリプトを要求する場合、そのスクリプトはエージェントのサンドボックス外で実行されます。インストール計画はそれを事前に明示し、`--allow-build-scripts` を明示的に渡さない限りビルドスクリプトを実行しません。
 
-## このカタログが拒否するもの
+## 「すべてがプラグイン」なら、コアは何を守っているのか？
 
-第二の harness ではありません。Cordis を包みません。PTC mode も `@Remote` も再実装しません。Harness が Code Mode を PTC mode に改名したとき、カタログの仕事は旧名を書くのを止めることであり、互換パッドを出すことではありません。
+ここで自然な疑問が湧くはずです。ツールもモデルも UI もすべてプラグインなら、システム全体の秩序はどこで保たれているのでしょうか？
 
-公式ドキュメントでもありません。DeepSeek のガイドは [deepseek-harness.github.io](https://deepseek-harness.github.io/deepseek-harness/) です。dsh.fish のドキュメントはハブへの公開と点数の計算を教えます。二つの木は意図して分かれています。一つはランタイム、一つは登録表。
+答えは、すべてのセッションで共通して守られる 4 つの境界にあります。
 
-プラグインの文が結合キーです。将来の Harness が第五の載面を足すなら、ここに kind が増えるか、索引しないかです。プロセスが載せられない型を発明する第三の選択肢はありません。
+1. **追記専用のセッションログと単一プロセスロック。** 会話やツール実行の履歴は追記専用ログ（`session.v4.jsonl.zstd`）に記録され、`SessionHandle` によって同時に 1 つのプロセスしか書き込めないよう保護されます。
+2. **明示的に選ばれたワークスペース。** エージェントはあなたが渡したディレクトリの中だけで作業します。Web UI ではワークスペースを選ぶまで入力欄がロックされます。
+3. **名前付きの権限プリセット。** セッションはデフォルトで `workspace-write` 権限で始まります。個別に承認するか `danger-full-access` に切り替えない限り、プラグインのツールもこの境界に従います。
+4. **ローカルに留まる API キー。** 認証情報は `$DSH_HOME/.credentials.yaml` や環境変数に保存され、`dsh.fish` に送信されることは一切ありません。
+
+## ランタイムとカタログの役割分担
+
+この境界を押さえておくと、2 つのサイトの目的がはっきりと分かります。
+
+- **DeepSeek Harness（`dsh`）** は Cordis 上でプラグインを合成してエージェントを動かすランタイムです。公式ガイドは [deepseek-harness.github.io](https://deepseek-harness.github.io/deepseek-harness/) にあります。
+- **`dsh.fish`** は 4 種類の構成単位（`bundle`、`skill`、`agent-preset`、`profile`）を探すためのカタログであり、インストール計画のリゾルバーです。パッケージの公開方法やスコアの算出基準は[製品ドキュメント](/docs)で解説しています。
+
+このカタログでプラグインを見かけたら、まず「これは自分の Profile のどのレイヤーを変えるものか？」と考えてみてください。ブラックボックスの拡張機能ではなく、Profile の合成として捉えられるようになれば、DeepSeek Harness を自在に組み立てられるようになります。

@@ -1,84 +1,119 @@
 ---
 title: DeepSeek Harness v0.1.2-alpha.1
-description: 官方 API 請求會帶上已啟用外掛的套件名稱與版本，應用統一由 Profile 啟動，ApiProxy 已移除，公網 WebFetch 預設開啟。
+description: 為什麼無頭腳本突然在最終結果出來前「一聲不吭」，子智慧體如何告別昂貴的父模型繼承，以及當 Profile 成為唯一啟動入口後發生了什麼。
 author: Steven Lynn
 date: 2026-08-27
 cover: /blog/covers/harness-v0-1-2-alpha-1.webp
 series: harness
 ---
 
-[v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) 是 2026 年 8 月 27 日發布的預覽版。changelog 很長，因為好幾條線同時動了：工作階段怎麼啟動、外掛如何向 DeepSeek 表明身分、子代理怎麼拉起，以及 headless 行程允許往哪裡打日誌。下面按這些線對照它們點名的程式碼來讀，而不是複述一遍列表。
+設想這樣一個場景：你把 DeepSeek Harness 升級到了 [v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1)（發佈於 2026 年 8 月 27 日，Git 標籤為 `dsh-v0.1.2-alpha.1`），像往常一樣執行自動化腳本，結果終端機畫面一片空白。十秒過去了，二十秒過去了，正當以為行程卡死準備按 `Ctrl+C` 時，完整的最終回答突然一次性印了出來。
 
-標籤是 `dsh-v0.1.2-alpha.1`。`npx @deepseek-ai/dsh web` 仍然會解析到目前預覽套件；排查迴歸時請釘死這個 tag。
+行程並沒有卡死。相反地，`dsh-v0.1.2-alpha.1` 首次在**給人看的進度日誌**與**給機器讀的結果輸出**之間畫下了一條乾淨的分界線。這也是本次預發佈版四大結構性演進之一：從工作階段如何啟動、子智慧體（Subagent）如何選模型，到請求標頭裡攜帶哪些外掛資訊，都在這一版完成了定型。
+
+如果你平時使用 `npx @deepseek-ai/dsh web` 或為目錄開發外掛，不妨跟著我們從終端機表現一路追查到底層協定。
 
 ![Harness v0.1.2 將請求 metadata 與 headless process output 分開。](/blog/diagrams/harness-request-path.svg)
 
-## 外掛會出現在請求裡
+## 為什麼腳本突然「安靜」了：`stderr` 與 `stdout` 的徹底分流
 
-官方 DeepSeek 適配器會把**每個已啟用外掛的套件名稱與版本**附在出站請求上。部署側可以關掉。同一條鏈路上還有一個**預設關閉、需顯式打開**的 Session 日誌增量上傳。
+先從剛才那個「終端機空白」的現象說起，因為它解決了一個長期困擾自動化開發者的痛點。
 
-這對目錄同樣成立。dsh.fish 上的一列是寫入某個 named profile 的安裝計畫。這個版本之後，模型提供方能看見這些套件裡哪些真正載入了。你發布的 bundle 名字，就是官方適配器在用時離開本機的那個名字。
+在早期版本中，無頭模式（Headless）會把所有內容混在標準輸出（`stdout`）裡印出：工具呼叫軌跡、中間思考進度、以及最終答案全擠在一條流裡。如果你想把 `dsh` 的輸出透過管線傳給 `jq`，就不得不先寫一堆脆弱的正規表示式去過濾中間日誌。
 
-外掛還可以**在模型設定頁註冊提供方登入控制項**。這不是通用設定卡片，而是專門把 OAuth 或 token 登入放在內建提供方旁邊。
+從 `dsh-v0.1.2-alpha.1` 開始，無頭執行將兩條輸出流徹底分開：
 
-## 啟動就是 Profile，包括 Python 和 ACP
+- **`stderr`（標準錯誤流，檔案描述元 2）** 即時輸出執行進度與工具呼叫軌跡。
+- **`stdout`（標準輸出流，檔案描述元 1）** 在任務完成前保持絕對安靜，最後**只印出最終結果**。
 
-即使用 Python SDK 或 ACP 進入，應用也透過 `dsh` Profile 啟動。Python SDK runtime 增加了 **Windows x64** 發行包。
-
-ACP（Agent Client Protocol）不再是半截實作。工作階段控制、模型設定、MCP、權限和取消都列為已補齊。如果之前卡在缺某個控制，用這個版本重新測——仍然是 preview，仍然沒有穩定性承諾。
-
-## 子代理可以選自己的模型
-
-兩件相關的事：
-
-- 在父任務已有的授權範圍內，Agent 可以為子代理選擇提供方、模型和推理力度。
-- 啟動子代理時可以指定提供方、模型、推理力度和**最大輸出長度**。
-- Claude Code 與 Codex 子代理使用**設定的模型**，不再預設繼承父工作階段。
-
-第一項是策略：子代理不是父模型槽的複製。後兩項是你在 profile 裡釘死它的方式。把 Claude Code 或 Codex 當 bundle 裝進 hub profile 的，現在還應該寫明這些子行程跑哪個模型。
-
-## 從樹裡拿掉的東西
-
-**ApiProxy 已移除。** changelog 寫明遷移到 `@Remote` 閘道已完成。仍在 import 舊呼叫路徑的程式碼不會載入。
-
-**Code Mode 現名為 PTC mode。** 既有工作階段紀錄仍可讀。截圖裡還寫著 “Code mode” 的英文預設已經過時；執行時名字是 PTC。
-
-**公網 WebFetch 預設開啟**，帶 SSRF 防護，公網請求不再逐次審批。這和以前的「每次都問」相反。如果某個 profile 把那次審批當成閘門，對公網 URL 它已經不在了。
-
-**經網路存取 Web UI 時，啟動連結必須帶一次性 token。** 本機 loopback 上的 `dsh web` 不變；綁到網上的監聽現在用連結本身鑑權。
-
-Headless 執行把進度打到 **stderr**。**stdout 只輸出最終結果。** 從 stdout 裡 grep 工具軌跡的指令碼，在這一輪結束前會什麼都看不到。
-
-## 相容性檢查很短，但不會留情
-
-把 Profile 遷到這個 preview 前，先在 package 與 automation 裡查四個假設：`ApiProxy` 還存在、Code Mode 仍是公開名稱、subagent 會繼承父層 model、stdout 會帶進度 event。四個假設的失敗方式不同，所以一句「preview 把我的 script 弄壞了」很難定位問題。
-
-實用的遷移方式是保持 stdout 可由機器讀取，把診斷資訊送到別處：
+這意味著你現在可以用一行標準重新導向，同時拿到乾淨的機器結果與即時進度日誌：
 
 ```bash
 dsh --profile <profile-name> run "your task" >result.txt 2>progress.log
 ```
 
-接著分別重測需要網路的 WebFetch 與任何暴露到外部的 Web UI。公共 fetch 的新預設值和一次性 launch token 解決的是兩個問題；把任一個當成通用 security boundary 都是錯的。
+<BlogStructureMap
+  diagram="harness-request-path"
+  eyebrow="HTML 結構圖 · 請求鏈路與輸出分流"
+  title="v0.1.2-alpha.1 如何將工作階段啟動、請求中繼資料與終端機輸出流解耦"
+  caption="所有入口統一由 Profile 啟動，官方介面卡請求攜帶已啟用外掛標識，無頭模式則將 stderr 進度與 stdout 最終結果徹底分離。"
+  node1Title="1. 統一的 Profile 啟動入口"
+  node1Body="Web UI、Headless、Python SDK 與 ACP 全部透過具名 Profile 啟動；子智慧體可獨立設定更輕量的模型。"
+  node2Title="2. 官方介面卡請求中繼資料"
+  node2Body="發往 DeepSeek 官方介面的請求預設附帶已啟用外掛的套件名與版本號，並提供需手動開啟的工作階段日誌流。"
+  node3Title="3. 乾淨的標準輸出分流"
+  node3Body="Headless 工作階段將即時工具軌跡發往 stderr，讓 stdout 僅保留最終答案以方便腳本管線消費。"
+/>
 
-## 這個 preview 仍需謹慎的地方
+## 子智慧體終於不必「被迫繼承」昂貴的父模型
 
-這是 alpha。ACP coverage 標成 complete，表示具名 control 已經存在，不表示所有 client 組合都有穩定相容契約。Plugin identity 只屬於官方 DeepSeek adapter，session-log upload 需要主動開啟，deployment 也可以關閉 metadata header。請圍繞這些事實建立 observability，不要假設每個 provider 看到的 request shape 都相同。
+解決了輸出解析問題後，多步任務裡的下一個瓶頸往往是成本與延遲。
 
-## 工作階段 UI 與儲存
+在此之前，當主智慧體派生一個子智慧體（比如去翻閱某個子目錄或彙整測試日誌）時，子智慧體預設直接複製父工作階段的模型槽位。如果你的主工作階段正在跑高強度的重型推理模型，哪怕是打雜的小任務也會按最高規格消耗 Token 與等待時間。
 
-工作階段流會在每條已完成回答前摺疊過程內容和 System prompt，回答後可展開精確 token 用量，正文寬度可拖。這些是 UI。對大歷史更要緊的是儲存：工作階段紀錄更省磁碟；截斷的日誌尾會自動修復，並警告受影響的工作階段。
+在 `v0.1.2-alpha.1` 中，子智慧體獲得了獨立的模型選擇權：
 
-macOS/Linux 上持久 PowerShell 不再過早啟動。Linux 上持久 Bash 不再在管線中途回傳空輸出。Bash 拉起大量子行程時 macOS 宿主不再卡死。Profile 設定的 Agent Preset 目錄啟動時不再遺失；無法載入的 preset 會在切換前被標出來。
+1. **在父級授權範圍內按需選型：** 主智慧體可以在自己已獲授權的供應商與金鑰範圍內，為子智慧體指定不同的供應商、模型與推理強度（reasoning effort）。
+2. **啟動時設定輸出上限：** 呼叫方在派生子智慧體時，可以直接指定供應商、模型、推理強度以及**最大輸出長度（maximum output length）**。
+3. **Claude Code 與 Codex 子智慧體支援固定模型：** 如果你在 Profile 中掛載了 Claude Code 或 Codex 作為子智慧體，它們現在會讀取各自設定的專屬模型，而不再盲目繼承父工作階段模型。
 
-## 安全說明
+對於 `dsh.fish` 上的設定作者來說，這意味著你可以在同一個 Profile 裡實現「主模型深度規劃 + 輕量 Flash 子模型並行執行」的高效組合。
 
-本 tag 更新了 Safety Notice：DeepSeek Harness **尚未接受安全稽核**。沙箱、審批與權限控制**不能保證隔離**。這是官方文字，不是論壇傳言。繼續把 `danger-full-access` 當成它一直是的那樣。不要把新的 WebFetch 預設理解成沙箱變嚴了。它沒有。
+## 當外掛啟用時，哪些資訊會隨請求發出？
 
-## 本目錄會怎麼對待它
+當你把目錄裡的擴充包（Bundle）安裝進 Profile 後，模型服務商知道你載入了哪些外掛嗎？
 
-dsh.fish 的安裝計畫仍然只寫 `$DSH_HOME` 下的 named profile。它們不會打開 Session 日誌上傳，也不會發明 ApiProxy 回退。文件還在寫 ApiProxy 的外掛，應視為面向比這個 tag 更舊的樹。
+從 `dsh-v0.1.2-alpha.1` 起，在使用**官方 DeepSeek 介面卡**時，發出的 API 請求預設會附帶目前 Profile 中**所有已啟用外掛的套件名與版本號**。
 
-評分模型沒變。變的是分數所描述的執行時：README 仍寫 Code Mode、仍貼 ApiProxy 片段，相對 v0.1.2-alpha.1 是文件缺陷，不是另一個產品。
+這裡有兩個關鍵的邊界設計：
 
-完整 changelog：[dsh-v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.1-rc.2...dsh-v0.1.2-alpha.1)。
+- **外掛標識標頭預設開啟，但允許關閉。** 私有化或注重邊界的部署環境可以在設定中關閉該請求標頭。
+- **增量工作階段日誌上傳預設關閉（Opt-in）。** 同一通道還支援隨請求串流上傳增量工作階段日誌，但預設保持**關閉**，除非你明確開啟（`dsh.fish` 產生的安裝計畫絕不會開啟此開關）。
+
+此外，外掛作者還獲得了一個實用的介面擴充點：外掛現在可以**在「設定 → 模型（Models）」頁面直接註冊自訂的登入控制項**，把自己的 OAuth 或 Token 登入卡片與內建供應商並排展示。
+
+點擊下方互動式模擬檢查器，逐步查看這四項核心變更在執行期的工作方式：
+
+<BlogMockUi
+  scene="harness-inspector"
+  eyebrow="互動式模擬 UI · HARNESS v0.1.2 執行檢查器"
+  title="追蹤 Profile 統一啟動、子智慧體模型路由、請求標頭與輸出分流"
+  caption="點擊左側階段（1–4），查看 v0.1.2-alpha.1 在執行期如何處理 Profile、子智慧體、官方介面卡請求標頭以及終端機輸出流。"
+  step1Title="1. 所有入口統一透過 Profile 啟動"
+  step1Body="Web、Headless、Python SDK（新增 Windows x64 支援）與 ACP 均由具名 Profile 啟動，並用 @Remote 閘道全面替代 ApiProxy。"
+  step2Title="2. 子智慧體獨立選擇輕量模型"
+  step2Body="使用重型推理模型的主智慧體可派生帶輸出長度上限的 Flash 子智慧體，並透過雙向訊息協同工作。"
+  step3Title="3. 官方介面卡附帶已啟用外掛標識"
+  step3Body="發往官方 DeepSeek 介面的請求攜帶啟用外掛的套件名與版本；外掛還可在模型設定頁掛載專屬 OAuth 登入卡。"
+  step4Title="4. 無頭模式分離 stderr 與 stdout"
+  step4Body="即時工具呼叫軌跡走標準錯誤流（fd 2），標準輸出流（fd 1）僅輸出最終結果，直接相容下游腳本管線。"
+/>
+
+## Python SDK 與 ACP 走入同一扇大門
+
+如果你只用瀏覽器介面（`dsh web`），你其實已經在用 Profile 了。`v0.1.2-alpha.1` 的重要變化在於，**所有其他呼叫方式也全部統一到了 Profile 體系下**：
+
+- **Python SDK** 現在同樣透過 `dsh` Profile 啟動，並且本版本新增了 **Windows x64** 預編譯執行期套件（wheel）。
+- **ACP（Agent Client Protocol）** 不再是半成品程式碼：工作階段控制、模型設定、MCP 掛載、權限審批和取消操作已全部補齊。如果你之前因為缺少某個控制介面而擱置了 ACP 整合，現在正是重新聯調的節點。
+
+## 升級前必查的四項不相容變更
+
+由於本版本一次性清理了多處舊介面，在遷移舊 Profile 或腳本前，請務必核對以下四項假設：
+
+| `v0.1.2-alpha.1` 之前的舊假設 | 現在的實際行為 | 遷移與修復方式 |
+| --- | --- | --- |
+| 外掛程式碼仍然匯入 `ApiProxy` | **無法載入。** 已全面遷移至 `@Remote` 閘道。 | 將所有 `ApiProxy` 呼叫替換為 `@Remote` 閘道介面。 |
+| 預設或文件仍使用 **Code Mode** 名稱 | 正式更名為 **PTC mode**（`run_code`），舊工作階段歷史仍可正常讀取。 | 將設定與 README 中的 Code Mode 統一更新為 PTC mode。 |
+| 公網 `WebFetch` 每次都彈窗請求批准 | 公網 URL 取得**預設開啟**（內建 SSRF 防護），不再逐次彈窗。 | 不要再把審批彈窗當作公網 HTTP 請求的攔截閥門。 |
+| 跨區域網路直接裸連 `dsh web` | 透過網路存取 Web UI 必須在啟動連結中攜帶**一次性權杖（one-time token）**。 | 本機迴路（`127.0.0.1`）不受影響；跨機器存取請使用終端機印出的帶權杖完整 URL。 |
+
+## 介面體驗打磨與安全聲明（Safety Notice）更新
+
+除了底層協定演進，日常使用體驗也有不少紮實的改進：
+
+- **更清爽的工作階段介面與更省空間的日誌：** 每條已完成的回答預設折疊中間過程細節與 System 提示詞，回答末尾提供可展開的 Token 統計，並支援拖曳調整對話欄寬。磁碟上的工作階段記錄體積更小，遇到截斷的日誌尾部時會自動修復並指明對應的工作階段。
+- **跨平台持久終端機修復：** 修復了 macOS/Linux 上持久 PowerShell 過早啟動、Linux 上持久 Bash 在管線中途傳回空輸出、以及 macOS 在 Bash 瞬間派生大量子行程時卡死的問題。
+
+最後，請留意本版本更新的 **Safety Notice（安全聲明）**：官方明確寫道，DeepSeek Harness **尚未經過安全稽核**，沙箱、審批與權限機制**不保證絕對隔離**。公網 `WebFetch` 預設開啟只是為了減少重複點擊，絕不代表沙箱邊界變得堅不可摧。請繼續將敏感憑證保存在工作區之外，並謹慎對待 `danger-full-access`。
+
+完整變更對比：[dsh-v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.1-rc.2...dsh-v0.1.2-alpha.1)。

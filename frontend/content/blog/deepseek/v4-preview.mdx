@@ -1,74 +1,102 @@
 ---
 title: DeepSeek-V4 Preview, and what it does to the harness
-description: The April 2026 V4 announcement set 1M context as the default. The harness followed with Flash-Vision, Files API uploads, and a retirement date for the old model names.
+description: When your context window jumps to 1,000,000 tokens overnight, why do naive agents still hit a wall? How DeepSeek-V4 reshaped the Harness adapter, Files API image reuse, and model names.
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/deepseek-v4-preview.webp
 series: deepseek
 ---
 
-DeepSeek published [DeepSeek-V4 Preview](https://www.deepseek.com/en/news/v4-preview/) on 24 April 2026. The post is the primary source. This note is not a reprint. It is what that announcement did to the agent runtime this catalog indexes, as of Harness v0.1.2-alpha.1.
+When an AI model expands its context window from 128,000 tokens to **1,000,000 tokens**, the first temptation is obvious: stop worrying about what to read, dump the entire repository into the prompt, attach every screenshot, and let the model sort it out.
+
+Then you try it in a real coding session. By turn fifteen, latency creeps up, repeated screenshots bloat your request payload, and irrelevant files drown out the three lines of code that actually caused the bug.
+
+When DeepSeek published [DeepSeek-V4 Preview](https://www.deepseek.com/en/news/v4-preview/) on 24 April 2026, the headline number was that 1M token default window. What mattered even more for everyday users and plugin authors was what happened *next*: how DeepSeek Harness evolved its official adapter over the summer so an agent could actually use a 1M window, handle images via the Files API, and retire the legacy model strings cleanly.
 
 ![The V4 announcement led to staged adapter changes in DeepSeek Harness.](/blog/diagrams/v4-adapter-timeline.svg)
 
-## What the post actually said
+## Two open-weight models, one standard 1M window
 
-Two open-weight models, both with a **1M token** context as the default on official DeepSeek services:
+Let us start with what the April announcement actually put on the table.
 
-| Model             | Total / active parameters | Role in the post                                                    |
-| ----------------- | ------------------------- | ------------------------------------------------------------------- |
-| DeepSeek-V4-Pro   | 1.6T / 49B                | Coding, world knowledge, math — claimed against closed-source peers |
-| DeepSeek-V4-Flash | 284B / 13B                | Faster, cheaper; “on par with Pro on simple agent tasks”            |
+Instead of selling long context as a separate, high-priced tier, DeepSeek made **1M tokens the standard window** across two open-weight Mixture-of-Experts (MoE) models powered by **token-wise compression plus DSA (DeepSeek Sparse Attention)**:
 
-The architectural claim is **token-wise compression plus DSA** (DeepSeek Sparse Attention). 1M context is not an optional long-context SKU. It is the standard window.
+| Model | Total / Active Parameters | API `model` string | Best used for... |
+| --- | --- | --- | --- |
+| **DeepSeek-V4-Pro** | 1.6T total / 49B active | `deepseek-v4-pro` | Complex architecture, multi-file debugging, math, and deep reasoning (`thinking: max`) |
+| **DeepSeek-V4-Flash** | 284B total / 13B active | `deepseek-v4-flash` | Fast iteration, subagent tasks, and everyday tool loops at a fraction of the cost |
 
-API access keeps the existing `base_url`. The `model` field becomes `deepseek-v4-pro` or `deepseek-v4-flash`. Both names support thinking and non-thinking modes. The post tells agent workloads to use thinking at intensity `max`.
+Both models use the existing API `base_url` and support thinking and non-thinking modes (in the web chat and mobile app, you see these as **Expert Mode** and **Instant Mode**). For agent workloads, the announcement explicitly recommends running thinking mode at intensity `max`.
 
-**Retirement:** `deepseek-chat` and `deepseek-reasoner` stop on **24 July 2026, 15:59 UTC**. Until then they route to V4-Flash non-thinking and thinking respectively. After that date those strings are dead names, not aliases.
+Just as important was the sunset notice: the old model names **`deepseek-chat` and `deepseek-reasoner` were scheduled to stop working on 24 July 2026 at 15:59 UTC**. Until that cutoff, they acted as temporary aliases routing to V4-Flash; after that date, they became dead strings.
 
-Chat and App expose the pair as Expert Mode / Instant Mode. Weights and the technical report are linked from the post (Hugging Face / ModelScope, arXiv).
+<BlogStructureMap
+  diagram="v4-adapter-timeline"
+  eyebrow="HTML STRUCTURE MAP · ADAPTER EVOLUTION"
+  title="How the V4 model family drove four waves of DeepSeek Harness adapter upgrades"
+  caption="A 1M context window on paper required native image plumbing, Files API deduplication, and compaction awareness inside the Harness runtime."
+  node1Title="1. The V4 Model Foundation"
+  node1Body="1M token standard context via DeepSeek Sparse Attention (DSA), splitting workloads between V4-Pro (49B active) and V4-Flash (13B active)."
+  node2Title="2. Harness Adapter Plumbing"
+  node2Body="Across v0.1.0-rc.8 to v0.1.2-alpha.1, the official adapter added native image prompts, Files API upload caching, and image-aware compaction."
+  node3Title="3. The V4.1 Next Step"
+  node3Body="In September and October 2026, deepseek-flash unified native vision into the main Flash model while deepseek-v4-pro stayed on for heavy reasoning."
+/>
 
-## What the harness did with it
+## How DeepSeek Harness turned the announcement into working plumbing
 
-The V4 post is from April. The harness preview that people actually run in August already treats V4 as the live family:
+A model announcement says what the weights can do. An agent runtime has to turn those capabilities into reliable tool calls.
 
-- **v0.1.1-rc.1** added `DeepSeek-V4-Flash-Vision-Exp` on the official adapter — image input, experimental, named as such.
-- **v0.1.1-rc.2** made the adapter prefer the **Files API** for image uploads and reuse uploaded files, and resize/convert to whatever the model asked for.
-- **v0.1.0-rc.8** had already turned native image requests on for DeepSeek adapters (`/goal`, `/plan`, `@` file and session references).
-- **v0.1.2-alpha.1** attaches **enabled plugin package names and versions** to official DeepSeek requests, and offers opt-in session-log upload on that same path.
+If you trace the DeepSeek Harness releases leading up to August's `v0.1.2-alpha.1`, you can watch the official adapter build out the V4 integration step by step:
 
-So the V4 announcement’s “agent integrations” line (Claude Code, OpenClaw, OpenCode, plus DeepSeek’s own coding agents) is not marketing copy sitting next to an unchanged runtime. The harness spent the following months making vision, Files API, and plugin identity first-class on that API.
+1. **Native image prompts (`v0.1.0-rc.8`):** The DeepSeek adapter gained native image request support across `/goal`, `/plan`, and `@` file or session references.
+2. **Experimental vision sidecar (`v0.1.1-rc.1`):** Added `DeepSeek-V4-Flash-Vision-Exp` (`deepseek-v4-flash-vision-exp`) on the official adapter so sessions could send screenshots and diagrams as visual inputs.
+3. **Files API upload reuse and auto-resize (`v0.1.1-rc.2`):** Instead of re-uploading megabytes of base64 image data on every turn, the adapter switched to the **Files API**, reusing uploaded file IDs across turns and automatically resizing or converting images to match the model's requirements.
+4. **Plugin telemetry and image-aware compaction (`v0.1.2-alpha.1`):** The adapter began counting images properly during session compaction and attaching enabled plugin package names and versions to official requests.
 
-The experimental vision model is a separate `model` string: `deepseek-v4-flash-vision-exp`. API docs currently note that `deepseek-v4-flash` resolves to DeepSeek-V4-Flash-0731 and `deepseek-v4-pro` to DeepSeek-V4-Pro-0813 — same names, newer snapshots. The calling convention does not change.
+*(Note for readers on newer builds: as covered in our [DeepSeek-V4.1-Flash follow-up](/blog/deepseek/v4-1-flash-and-search), the September 2026 `v0.1.5` release folded native vision directly into `deepseek-flash`, retiring the separate `deepseek-v4-flash-vision-exp` string while keeping `deepseek-v4-pro` (`DeepSeek-V4-Pro-0813`) as the heavy reasoning SKU.)*
 
-## A 1M window changes budgeting, not the need for retrieval
+## Why a 1M window changes budgeting, not the need for retrieval
 
-A larger context window removes some clipping pressure, but it does not make indiscriminate repository dumps free. Input still has latency and cost, repeated files still compete with tool results, and a long session still needs compaction. Plugin authors should treat 1M as a larger budget with the same accounting problem: select evidence, preserve the decisions that matter, and leave room for the answer.
+Here is the trap that catches many developers when they first get a 1M context window: **having more room does not make wasted context free.**
 
-Vision adds a second budget. The Files API avoids uploading the same asset repeatedly, while the adapter’s resize and conversion path makes an image acceptable to the selected model. Neither step decides whether the image is relevant. A tool that emits ten near-identical screenshots should deduplicate them before returning the result.
+Even when a model can hold 1,000,000 tokens without clipping:
 
-## A minimal migration check
+- **Every input token still costs latency and money** on every step of an agent loop.
+- **Noisy tool outputs dilute attention.** If a search tool dumps 80,000 tokens of unindexed logs into history, the model has to wade through all of it on every subsequent turn.
+- **Vision has its own budget.** The Files API saves network bandwidth by reusing uploaded file handles, and auto-resize keeps pixel dimensions in check, but neither mechanism knows whether ten nearly identical browser screenshots are actually useful. Good plugins deduplicate visual evidence before returning it to the session.
 
-Audit configuration and examples for retired model strings, then exercise the actual modality your plugin produces:
+Click through the interactive mock UI below to see how the adapter manages the 1M token window and Files API cache across a multi-step agent turn:
+
+<BlogMockUi
+  scene="v4-context-budget"
+  eyebrow="INTERACTIVE MOCK UI · 1M CONTEXT & FILES API"
+  title="Managing a 1M context budget and Files API image reuse across turns"
+  caption="Step through stages 1–4 to see how model migration, Files API file_id caching, compaction budgeting, and the V4.1 bridge work together."
+  step1Title="1. Replace retired model names"
+  step1Body="Move off dead deepseek-chat and deepseek-reasoner strings to explicit V4/V4.1 model identifiers with deliberate thinking intensity."
+  step2Title="2. Cache images via the Files API"
+  step2Body="Instead of resending base64 blobs on every step, the adapter resizes an image once, uploads it to the Files API, and reuses its file_id."
+  step3Title="3. Budget the 1M window deliberately"
+  step3Body="Select targeted file slices and deduplicate screenshots so compaction preserves key decisions and leaves full headroom for output."
+  step4Title="4. Follow the September V4.1 bridge"
+  step4Body="Starting in Harness v0.1.5+, deepseek-flash handles both text and native vision, while deepseek-v4-pro serves deep reasoning tasks."
+/>
+
+## A practical migration checklist for users and plugin authors
+
+If you maintain a plugin, skill, or profile on `dsh.fish`, run through this four-point check:
 
 ```text
-deepseek-chat       → deepseek-v4-flash
-deepseek-reasoner   → deepseek-v4-pro (choose thinking explicitly)
+Legacy string (retired)      August V4 string         Current V4.1+ string (Sept/Oct 2026)
+-----------------------      ------------------       ------------------------------------
+deepseek-chat             -> deepseek-v4-flash     -> deepseek-flash (text + native vision)
+deepseek-reasoner         -> deepseek-v4-pro       -> deepseek-v4-pro (DeepSeek-V4-Pro-0813)
 ```
 
-Do not apply that mapping blindly to a workload. Flash and Pro have different cost and capability targets, and thinking intensity is an independent choice. Pin the intended model in the profile, run a representative task, and verify image/file behavior against the official adapter before updating a README.
+1. **Purge `deepseek-chat` and `deepseek-reasoner` from your READMEs and examples.** Those strings stopped resolving after 24 July 2026. On `dsh.fish`, a README that still instructs users to export dead model names is treated as a maintenance defect.
+2. **Design skills around targeted evidence, not blind repo dumps.** Use the 1M window to hold architectural context and multi-file diffs across long debugging sessions, not as an excuse to skip search and filtering.
+3. **Treat images as first-class tool results.** If your plugin generates plots, UI screenshots, or visual diffs, return clean, deduplicated image files so the official adapter can cache them through the Files API and account for them during compaction.
+4. **Keep model selection in the user's profile.** `dsh.fish` install plans never write API keys and never hardcode a user's billing choice. Let the user's profile decide whether a task warrants `deepseek-v4-pro` or `deepseek-flash`.
 
-## What a plugin author should not ignore
-
-1. **Do not document `deepseek-chat` / `deepseek-reasoner` as the way to call DeepSeek.** Those names have a kill date. A README that still uses them will be wrong on 24 July 2026 even if it was right in April.
-2. **1M context is the window the official adapter is built around.** A skill that assumes a 128k clip, or that dumps a whole repo into one prompt without a retrieval story, is now leaving a large fraction of the window unused — or overflowing it in a different way than last year’s models.
-3. **Images are a first-class tool result**, not a sidebar. If your plugin produces screenshots, plots, or diffs as images, the Files API path and the vision-exp model are how the official adapter will send them. Count them in compaction (v0.1.2-alpha.1 does).
-4. **The official adapter can tell DeepSeek which plugins loaded.** If your package name is embarrassing, misleading, or collides, it is now on the request.
-
-## What this hub will not do
-
-dsh.fish does not pick a model for you. Install plans never write API keys. The V4 post’s pricing and peak/off-peak hours belong on [DeepSeek’s API docs](https://api-docs.deepseek.com/quick_start/pricing), not in a catalog row.
-
-What the hub _does_ is keep install plans pointed at the runtime the V4 models actually run inside. When a plugin’s README still says to export `deepseek-chat`, that is a documentation defect we can score as maintenance, not a different product.
-
-Primary source: [DeepSeek-V4 Preview](https://www.deepseek.com/en/news/v4-preview/). Chinese original: [V4 预览版](https://www.deepseek.com/news/v4-preview/).
+Primary sources: [DeepSeek-V4 Preview (English)](https://www.deepseek.com/en/news/v4-preview/) · [V4 预览版 (Chinese)](https://www.deepseek.com/news/v4-preview/) · [DeepSeek API Pricing](https://api-docs.deepseek.com/quick_start/pricing).

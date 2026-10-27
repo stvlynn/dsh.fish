@@ -1,0 +1,109 @@
+---
+title: DeepSeek-V4.1-Flash 與原生搜尋：為什麼最快的智慧體模型不再需要獨立的視覺外掛？
+description: 拆解 552B 因果編解碼器如何將 KV 快取壓縮至四分之一、把原生多模態視覺合入 deepseek-flash，並在 10 月與內建 Search & Fetch 介面無縫合流。
+author: Steven Lynn
+date: 2026-10-19
+cover: /blog/covers/deepseek-v4-1-flash.webp
+series: deepseek
+---
+
+當你讓一個程式碼智慧體連續工作一個小時，真正吃掉你大部分 API 帳單與等待時間的究竟是什麼？
+
+很多剛接觸智慧體的使用者以為是「模型新寫出來的程式碼」。但真實的帳單恰恰相反：**智慧體絕大部分生命都花在「每一輪工具呼叫時，把前面已經累積的十五萬 Token 歷史記錄、檔案內容和工具定義重新讀一遍」。** 更糟糕的是，一旦你在對話中途啟用了一個新外掛工具，或者微調了系統提示詞，傳統模型就會立刻判定前綴快取（KV Cache）失效，把十幾萬字的歷史從頭重新計算一遍。
+
+看懂了這個痛點，你就看懂了 DeepSeek 在 8 月之後接連拋出的兩記重拳：**2026 年 9 月 10 日發佈的 [DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)**，以及 **10 月 17 日上線的 [DeepSeek-V4.1-Flash-1017 快照與官方 Search & Fetch API](https://api-docs.deepseek.com/news/news261017/)**。配合 DeepSeek Harness 從 `v0.1.5` 到 `v0.2.1-rc.3` 的同步演進，它們徹底改變了我們設定模型、處理圖片與聯網檢索的方式。
+
+![一個模型標識同時承載多模態對話、KV 快取命中與聯網檢索。](/blog/diagrams/v4-1-flash-pipeline.svg)
+
+## 為什麼「輸入激活 8B、輸出激活 16B」的非對稱架構專為智慧體而生？
+
+我們先掀開 `DeepSeek-V4.1-Flash`（API 標識為 `deepseek-flash`）的引擎蓋看看，因為它的參數結構完全是照著智慧體「海量輸入閱讀、精煉工具輸出」的特徵量身定做的。
+
+傳統的純解碼器（Decoder-only）模型在讀入上下文和產生回答時消耗相同規模的激活參數；而 `DeepSeek-V4.1-Flash` 採用了 **552B 總參數的混合專家（MoE）因果編解碼器（Causal Encoder-Decoder）** 架構：
+
+- **輸入端僅激活 8B 參數：** 以極高的吞吐速度消化長篇歷史記錄、程式碼 Diff 和圖片。
+- **輸出端激活 16B 參數：** 在真正動筆寫程式碼和規劃工具呼叫時，動用雙倍的激活容量保證推理品質。
+- **KV 快取佔用驟降至上一代的 1/4（HBM 顯示記憶體）和 1/8（SSD 快取）：** 官方公告特別指出，快取命中（Cache Hit）成本佔到了智慧體總開銷的極高比例。將 KV 快取體積砍掉四分之三以上，意味著你的長工作階段前綴能在伺服器端記憶體裡駐留更久，多輪工具迴圈既快又省。
+
+<BlogStructureMap
+  diagram="v4-1-flash-pipeline"
+  eyebrow="HTML 結構圖 · V4.1-FLASH 與原生檢索管線"
+  title="deepseek-flash 如何統一多模態輸入、熱快取動態更新與官方 Search/Fetch"
+  caption="單一模型標識（deepseek-flash）現在同時包攬文本與原生視覺，在動態修改提示詞與工具時保住 KV 快取，並直連官方 /v1/tools/search 與 /v1/tools/fetch。"
+  node1Title="1. 因果編解碼器 MoE"
+  node1Body="552B 總參數（輸入激活 8B / 輸出激活 16B）將 KV 快取壓至 1/4 HBM 與 1/8 SSD，並將原生視覺合入 deepseek-flash。"
+  node2Title="2. 不破快取的動態變更"
+  node2Body="Harness v0.1.5+ 支援在歷史中追加系統提示詞更新，v0.1.7-rc.2+ 支援中途動態掛載工具而不沖毀熱 KV 快取。"
+  node3Title="3. 官方 Search & Fetch"
+  node3Body="Harness v0.2.1-rc.2 透過 @deepseek-ai/dsh-web-deepseek-api 原生接入 POST /v1/tools/search 與 /v1/tools/fetch。"
+/>
+
+## 告別 `vision-exp`：文本與視覺正式合併為同一個 `deepseek-flash`
+
+如果你讀過我們 8 月份的 V4 文章，一定還記得當時為了讓智慧體看懂截圖，必須單獨設定一個實驗性的視覺模型名：`deepseek-v4-flash-vision-exp`。
+
+隨著 `DeepSeek-V4.1-Flash` 的發佈，**多模態視覺已成為原生標配**。現在無論是讀程式碼、聊架構還是看網頁截圖，你只需要記住一個名字——**`deepseek-flash`**：
+
+- 舊的 `deepseek-v4-flash` 與 `deepseek-v4-flash-vision-exp` 已正式退役，現有請求會自動無縫路由至 `deepseek-flash`（自 10 月 17 日起對應 **`DeepSeek-V4.1-Flash-1017`** 快照）並按 Flash 費率計費。
+- 在 DeepSeek Harness（`v0.1.5-rc.1` 及更高版本）中，新建工作階段開箱即預設使用 `deepseek-flash`。
+
+### 那 `deepseek-v4-pro` 還在嗎？
+
+細心的讀者可能會問：9 月 10 日的新聞稿裡不是曾提到「9 月 14 日起 `deepseek-v4-pro` 將臨時路由到 V4.1-Flash」嗎？**這項計畫後來被官方撤回了。**
+
+在隨後修訂的 [DeepSeek API 更新日誌](https://api-docs.deepseek.com/updates/)與即時[定價表](https://api-docs.deepseek.com/quick_start/pricing)中，官方明確宣佈：**`deepseek-v4-pro`（`DeepSeek-V4-Pro-0813`）在 9 月 14 日之後繼續獨立提供服務，計費標準不變**（1M 上下文、384K 最大輸出、預設開啟思考、純文本）。因此現在的選型邏輯非常清晰：
+
+- 日常高頻工具迴圈、多模態看圖與子智慧體任務，首選又快又省的 **`deepseek-flash`**。
+- 純文本的超複雜架構推演或高難度數學攻關，繼續選用 **`deepseek-v4-pro`**。
+
+## 對話中途改提示詞、加工具，再也不會沖毀 KV 快取
+
+模型端把 KV 快取體積減到了四分之一，客戶端執行期（DeepSeek Harness）也同步完成了兩項關鍵配合，徹底解決了「中途改設定導致全量重算」的頑疾：
+
+1. **歷史內系統提示詞更新（`dsh-v0.1.5-rc.1`）：** 當你在工作階段中途切換模式或由外掛注入新的系統指令時，Harness 會將系統提示詞更新追加在對話歷史流中，從而保住前面十幾萬 Token 的快取前綴。
+2. **保快取的動態工具掛載（`dsh-v0.1.7-rc.2` 與 `v0.2.1-alpha.2`）：** 在工作階段執行過程中動態啟用新工具或技能時，只要模型宣告支援，原有的 KV 快取依然保持全額命中。
+
+點擊下方互動式模擬介面，逐步體驗 `deepseek-flash`、熱快取動態更新與 10 月原生聯網檢索的協同效果：
+
+<BlogMockUi
+  scene="v4-1-flash-search"
+  eyebrow="互動式模擬 UI · DEEPSEEK-V4.1-FLASH-1017 與原生檢索"
+  title="追蹤 1/4 HBM 快取壓縮、熱快取工具注入與官方 Search/Fetch 呼叫"
+  caption="點擊左側步驟（1–4），查看 DeepSeek-V4.1-Flash-1017 與 Harness v0.2.1-rc.2+ 如何協同最佳化回應速度、快取命中率與聯網檢索。"
+  step1Title="1. 1/4 HBM 快取與原生多模態"
+  step1Body="552B 因果編解碼器（輸入 8B / 輸出 16B）讓 deepseek-flash 單一模型名同時搞定文本、程式碼與 Files API 圖片。"
+  step2Title="2. 改提示詞與加工具不掉快取"
+  step2Body="對話中途動態掛載外掛工具或更新系統提示詞時，採用歷史內追加機制，實現零冷啟動快取重算。"
+  step3Title="3. 原生 /v1/tools/search 與 /fetch"
+  step3Body="Harness v0.2.1-rc.2 的 Web Search 設定直接呼叫 DeepSeek 官方搜尋索引（搜尋 100 QPS / 抓取 25 QPS）並附帶 ori_question。"
+  step4Title="4. 1017 柏拉圖快照升級"
+  step4Body="DeepSeek-V4.1-Flash-1017 顯著減少了冗餘輸出廢話，在 Harness 0.2.1-rc.1+ 上端到端任務耗時更短。"
+/>
+
+## 10 月 17 日雙重更新：`1017` 快照與官方 Search & Fetch 介面
+
+2026 年 10 月 17 日上午，DeepSeek API 與 DeepSeek Harness [`dsh-v0.2.1-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.2) 同步推出了兩項直接提升智慧體實戰體驗的更新：
+
+### 1. 更乾脆俐落的 `DeepSeek-V4.1-Flash-1017`
+
+在保持 `deepseek-flash` 介面名稱與單價完全不變的前提下，底層模型升級到了 **`DeepSeek-V4.1-Flash-1017`**（開源權重已同步上線 [Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) 與 [ModelScope](https://modelscope.cn/models/deepseek-ai/DeepSeek-V4.1-Flash-1017)）。該版本專門針對 **DeepSeek Harness（建議升級至 `0.2.1-rc.1` 及以上）**、騰訊 CodeBuddy 與 WorkBuddy 進行了專項最佳化，輸出更加精煉，完成了「效能更強、廢話更少、耗時更短」的柏拉圖改進。
+
+### 2. 官方原生 Search & Fetch API
+
+過去想讓本機的 `dsh` 聯網查資料，往往得自己去申請第三方搜尋引擎 API。從 10 月 17 日起，DeepSeek 向所有 API 帳戶開放了基於自建索引的官方檢索與網頁抓取介面：
+
+- `POST https://api.deepseek.com/v1/tools/search`（帳戶並行上限 100 QPS）
+- `POST https://api.deepseek.com/v1/tools/fetch`（帳戶並行上限 25 QPS，含單網域限流保護）
+
+在 DeepSeek Harness `v0.2.1-rc.2` 及更高版本中，內建套件 **`@deepseek-ai/dsh-web-deepseek-api`** 已將這兩個介面直接整合進 **Settings → Web Search**：
+
+- 預設重用你的 `DEEPSEEK_API_KEY`，支援設定單次傳回筆數 `count`（1–50，預設 10），並預設開啟 `sendOriginalQuestion: true`（將使用者原始問題截取前 128 個字元作為 `ori_question` 傳給檢索端，大幅提升相關性）。
+- **透明的計費與限免策略：** 直接呼叫介面按 **每 1,000 次成功請求 $0.75** 計費（僅當傳回 HTTP 200 且 `results` 或網頁內文非空時才算成功；空結果、報錯和逾時一律不收費）。更划算的是，在 **北京時間 2026 年 11 月 1 日 00:00（UTC 時間 10 月 31 日 16:00）之前**，在 **DeepSeek Harness、Claude Code 與 Codex** 內部透過伺服器端發起的 Search/Fetch 呼叫享有免費優惠（僅正常消耗模型 Token）。
+
+## 給使用者與外掛作者的三條行動建議
+
+1. **將設定與 README 中的日常模型名統一更新為 `deepseek-flash`。** 不要再教新使用者設定 `deepseek-v4-flash` 或 `deepseek-v4-flash-vision-exp`——現在一個 `deepseek-flash` 就自帶原生視覺。
+2. **將 DeepSeek Harness 升級到 `v0.2.1-rc.3`（或至少 `0.2.1-rc.1`）。** 這樣既能匹配 `1017` 快照的提示詞分佈，又能在設定裡直接開啟官方 Search & Fetch，並且在 `rc.3` 中使用 API Key 也能獲得與帳號登入一致的模型清單自動重新整理。
+3. **保留 `deepseek-v4-pro` 用於純文本攻堅。** 當你的 Profile 需要處理無需看圖的超複雜推理時，`deepseek-v4-pro`（`DeepSeek-V4-Pro-0813`）依然在線待命。
+
+官方一手資料：[Introducing DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/) · [10 月 17 日 API 更新公告 (`news261017`)](https://api-docs.deepseek.com/news/news261017/) · [DeepSeek Search & Fetch 官方指南](https://api-docs.deepseek.com/guides/search/)。

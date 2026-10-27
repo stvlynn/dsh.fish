@@ -1,0 +1,113 @@
+---
+title: 'DeepSeek-V4.1-Flash and Native Search: Why the Fastest Agent Model Stopped Needing a Vision Sidecar'
+description: How a 552B Causal Encoder-Decoder cut KV cache memory to a quarter, folded native vision into deepseek-flash, and paired with built-in Search and Fetch endpoints in October 2026.
+author: Steven Lynn
+date: 2026-10-19
+cover: /blog/covers/deepseek-v4-1-flash.webp
+series: deepseek
+---
+
+When you run a coding agent for an hour, what actually dominates your API bill and waiting time?
+
+Most newcomers assume it is the new code the model writes. In practice, it is the exact opposite: **an agent spends most of its life re-reading the same 150,000 tokens of conversation history, file contents, and tool schemas on every single step.** And the moment you enable a new plugin tool or update a system instruction mid-session, a traditional model invalidates its prefix cache and re-computes the entire history from scratch.
+
+That bottleneck is the key to understanding the two post-August updates from DeepSeek: the **10 September 2026 launch of [DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)** and the **17 October 2026 rollout of [DeepSeek-V4.1-Flash-1017 plus official Search & Fetch APIs](https://api-docs.deepseek.com/news/news261017/)**. Together with DeepSeek Harness `v0.1.5` through `v0.2.1-rc.3`, these releases changed both the model string you configure and how the runtime handles vision, cache hits, and web grounding.
+
+![One model id for multimodal turns, KV cache hits, and web grounding.](/blog/diagrams/v4-1-flash-pipeline.svg)
+
+## Why asymmetric active parameters (8B in / 16B out) matter for agents
+
+Let us look under the hood of `DeepSeek-V4.1-Flash` (`model: "deepseek-flash"`), because its architecture was designed specifically for the "heavy input, short tool call" shape of agent workloads.
+
+Instead of a standard decoder-only transformer where every input token activates the same parameter budget as an output token, `DeepSeek-V4.1-Flash` uses a **552B-parameter Mixture-of-Experts (MoE) Causal Encoder-Decoder** design:
+
+- **8B active parameters on input** to digest long histories, file diffs, and images rapidly.
+- **16B active parameters on output** to preserve reasoning quality and code generation accuracy.
+- **1/4 the HBM and 1/8 the SSD footprint for KV cache** compared to the previous generation.
+
+Because KV cache storage is four to eight times smaller, your session prefixes stay warm in memory longer, and cache-hit turns run faster and cheaper.
+
+<BlogStructureMap
+  diagram="v4-1-flash-pipeline"
+  eyebrow="HTML STRUCTURE MAP · V4.1-FLASH & RETRIEVAL PIPELINE"
+  title="How deepseek-flash unifies multimodal input, warm KV cache updates, and native Search/Fetch"
+  caption="A single model string (deepseek-flash) now handles text and images, preserves KV cache across mid-session prompt and tool edits, and connects to official /v1/tools/search and /v1/tools/fetch endpoints."
+  node1Title="1. Causal Encoder-Decoder"
+  node1Body="552B MoE (8B active on input, 16B on output) cuts KV cache to 1/4 HBM and 1/8 SSD while folding native vision into deepseek-flash."
+  node2Title="2. Cache-Safe Mutations"
+  node2Body="Harness v0.1.5+ appends system prompt updates in-history and v0.1.7-rc.2+ adds tools dynamically without blowing the warm KV prefix."
+  node3Title="3. Official Search & Fetch"
+  node3Body="Harness v0.2.1-rc.2 wires @deepseek-ai/dsh-web-deepseek-api directly to POST /v1/tools/search and POST /v1/tools/fetch."
+/>
+
+## Goodbye `vision-exp`: one model string for text and images
+
+Back in August, if your agent needed to inspect a screenshot, you had to switch to an experimental sidecar model string: `deepseek-v4-flash-vision-exp`.
+
+With `DeepSeek-V4.1-Flash`, **multimodal vision is native**. You use one model identifier—**`deepseek-flash`**—for code, text, and images alike:
+
+- The older strings `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are retired and automatically routed to `deepseek-flash` (specifically the `DeepSeek-V4.1-Flash-1017` snapshot as of mid-October).
+- In DeepSeek Harness (`v0.1.5-rc.1` and later), new sessions default to `deepseek-flash` out of the box.
+
+### What happened to `deepseek-v4-pro`?
+
+If you read the original 10 September blog post closely, you might have noticed a line stating that `deepseek-v4-pro` would temporarily route to V4.1-Flash starting 14 September. **That plan was reversed.**
+
+In the revised [DeepSeek API Changelog](https://api-docs.deepseek.com/updates/) and live [Pricing Table](https://api-docs.deepseek.com/quick_start/pricing), **`deepseek-v4-pro` (`DeepSeek-V4-Pro-0813`) remains active as a separate, independently billed model** (1M context, 384K max output, thinking on by default, text-only). In short:
+
+- Use **`deepseek-flash`** as your fast, multimodal everyday driver (text + vision, low cache cost).
+- Use **`deepseek-v4-pro`** when you want maximum text-only reasoning depth and are willing to pay Pro token rates.
+
+## Changing prompts and tools mid-flight without losing your KV cache
+
+Having a smaller KV cache on the server is only half the battle. The client runtime also has to stop breaking the cache prefix.
+
+DeepSeek Harness paired the V4.1-Flash rollout with two major adapter upgrades:
+
+1. **In-history system prompt updates (`dsh-v0.1.5-rc.1`):** When a mode switch or plugin updates the system prompt during a session, Harness inserts the update in-history for models that support it rather than rewriting message zero and invalidating 100,000 cached tokens.
+2. **Cache-preserving dynamic tool additions (`dsh-v0.1.7-rc.2` & `v0.2.1-alpha.2`):** Enabling a plugin or loading a dynamic tool mid-conversation now preserves the warm KV cache whenever the underlying model declares support.
+
+Step through the interactive mock UI below to see how `deepseek-flash`, warm KV cache mutations, and the October Search/Fetch endpoints work together:
+
+<BlogMockUi
+  scene="v4-1-flash-search"
+  eyebrow="INTERACTIVE MOCK UI · DEEPSEEK-V4.1-FLASH-1017 & SEARCH"
+  title="Tracing KV cache compression, warm tool injection, and native Search/Fetch calls"
+  caption="Click steps 1–4 to inspect how DeepSeek-V4.1-Flash-1017 and Harness v0.2.1-rc.2+ optimize latency, cache hits, and web grounding."
+  step1Title="1. 1/4 HBM KV cache & native vision"
+  step1Body="The 552B Causal Encoder-Decoder (8B in / 16B out) handles text and Files API images under a single deepseek-flash model string."
+  step2Title="2. Warm cache across prompt & tool edits"
+  step2Body="Enabling a plugin tool or updating instructions mid-session appends to history cleanly without triggering a cold prefix recomputation."
+  step3Title="3. Built-in /v1/tools/search & /fetch"
+  step3Body="Web Search settings in Harness v0.2.1-rc.2 call DeepSeek's native search index (100 QPS search, 25 QPS fetch) with ori_question context."
+  step4Title="4. The 1017 Pareto snapshot"
+  step4Body="DeepSeek-V4.1-Flash-1017 trims redundant output verbosity and finishes agent tasks faster on Harness 0.2.1-rc.1 and newer."
+/>
+
+## The 17 October update: `DeepSeek-V4.1-Flash-1017` and official Search & Fetch
+
+On 17 October 2026, DeepSeek shipped two updates that landed in [`dsh-v0.2.1-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.2) the exact same morning:
+
+### 1. The `1017` checkpoint (`DeepSeek-V4.1-Flash-1017`)
+
+Without changing the `deepseek-flash` API name or price, the underlying weights upgraded to **`DeepSeek-V4.1-Flash-1017`** (open-sourced on [Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) and [ModelScope](https://modelscope.cn/models/deepseek-ai/DeepSeek-V4.1-Flash-1017)). Tuned specifically against agent trajectories in **DeepSeek Harness (`>= 0.2.1-rc.1`)**, Tencent CodeBuddy, and WorkBuddy, the `1017` snapshot produces noticeably tighter outputs and finishes multi-step tasks in less wall-clock time.
+
+### 2. Official Search and Fetch APIs
+
+Previously, giving `dsh` web search required configuring a third-party search provider key. Starting 17 October, DeepSeek opened its own search index to every API account via two endpoints:
+
+- `POST https://api.deepseek.com/v1/tools/search` (up to 100 QPS per account)
+- `POST https://api.deepseek.com/v1/tools/fetch` (up to 25 QPS per account, with per-domain rate limits)
+
+Inside DeepSeek Harness (`v0.2.1-rc.2`+), the package **`@deepseek-ai/dsh-web-deepseek-api`** wires these endpoints directly into **Settings → Web Search**:
+
+- It reads your `DEEPSEEK_API_KEY` by default, accepts `count` (1–50, default 10), and sends up to 128 characters of the user's original prompt as `ori_question` (`sendOriginalQuestion: true`) so the search ranker understands the broader task context.
+- **Billing rules worth knowing:** Direct API calls cost **$0.75 per 1,000 successful requests** (only HTTP 200 responses with non-empty `results` or page content are billed; empty results, timeouts, and errors are free). Even better, server-side Search and Fetch calls inside **DeepSeek Harness, Claude Code, and Codex** are on a promotional free period through **31 October 2026 at 16:00 UTC** (1 November 00:00 Beijing time).
+
+## What to update in your profiles and READMEs today
+
+1. **Standardize on `deepseek-flash` for multimodal and everyday agent work.** Stop telling users to configure `deepseek-v4-flash` or `deepseek-v4-flash-vision-exp`—both are legacy aliases now routed to `DeepSeek-V4.1-Flash-1017`.
+2. **Upgrade DeepSeek Harness to `v0.2.1-rc.3` (or `>= 0.2.1-rc.1`).** The `1017` model checkpoint and the `@deepseek-ai/dsh-web-deepseek-api` Search/Fetch integration are calibrated against the `0.2.1` runtime prompt and tool formats.
+3. **Keep `deepseek-v4-pro` in mind for text-only heavy lifting.** If a profile orchestrator needs deep mathematical or architectural reasoning without image inputs, `deepseek-v4-pro` (`DeepSeek-V4-Pro-0813`) remains a live, first-class option.
+
+Primary sources: [Introducing DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/) · [17 October API Update (`news261017`)](https://api-docs.deepseek.com/news/news261017/) · [DeepSeek Search & Fetch Guide](https://api-docs.deepseek.com/guides/search/).

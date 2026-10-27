@@ -1,0 +1,97 @@
+---
+title: 'v0.1.5에서 v0.2.1까지: DeepSeek Harness가 사이드바, 원격 손, 라이브 플러그인 마켓을 갖추기까지'
+description: 8주 동안 쏟아진 27개의 프리릴리스가 어떻게 로컬 코딩 채팅 도구를 Office 미리보기, SSH 원격 워크스페이스, Browser Use, 커스텀 플러그인 인덱스를 갖춘 워크스테이션으로 진화시켰는지 살펴봅니다.
+author: Steven Lynn
+date: 2026-10-24
+cover: /blog/covers/harness-v0-2-1-milestones.webp
+series: harness
+---
+
+마지막으로 DeepSeek Harness를 업데이트한 시점이 8월 말(`dsh-v0.1.2-alpha.1`)이었다면, 10월 하순 빌드([`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3))를 열었을 때 작업 공간이 두 배로 넓어진 듯한 인상을 받으실 겁니다.
+
+화면 오른쪽에는 다중 탭 사이드바가 열려 Excel 시트와 수식을 보여주고, 바로 옆 탭에는 실시간 터미널과 파일별 코드 Diff가 나란히 떠 있습니다. 로컬 UI에서 SSH 너머의 원격 Linux 서버 파일을 직접 수정하고, 오래 걸리는 백그라운드 명령이 끝나면 에이전트가 스스로 다시 깨어납니다. 심지어 macOS나 Windows에서는 Node.js나 `pnpm`을 따로 설치할 필요 없이 데스크톱 앱 메뉴 바에서 클릭 한 번으로 `dsh` CLI를 설치할 수 있습니다.
+
+불과 8주 동안 27개의 프리릴리스를 거치면서 코어를 비대하게 만들지 않고 어떻게 이 모든 기능을 담아냈을까요? 비결은 모든 새로운 표면을 **Cordis의 capability seam(기능 이음매)**으로 설계한 데 있습니다. `v0.1.5`부터 `v0.2.1-rc.3`까지 이어진 네 번의 주요 마일스톤을 차근차근 따라가 보겠습니다.
+
+![v0.1.5~v0.2.1이 코어를 비대하게 만들지 않고 세션을 확장한 구조.](/blog/diagrams/harness-v0-2-1-architecture.svg)
+
+## 마일스톤 1(`v0.1.5`): 단일 채팅 창만으로는 부족해진 이유
+
+초기 DeepSeek Harness에서는 모든 정보가 채팅 스트림이나 좁은 상세 서랍(Detail panel) 안에 들어 있었습니다. 에이전트가 짧은 코드 조각만 출력할 때는 괜찮았지만, PDF 보고서나 HTML 프로토타입, 서브에이전트 로그를 쏟아내기 시작하자 한계가 찾아왔습니다.
+
+2026년 9월 10일 배포된 [`dsh-v0.1.5-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1)(`0.1.3`과 `0.1.5` 알파 통합)은 세 가지 문제를 동시에 풀었습니다.
+
+1. **다중 탭 우측 사이드바(Right Sidebar)가 Detail 패널을 대체했습니다.** 탭, 분할 화면, 전체 화면을 지원하며 Markdown, 구문 강조 코드, HTML, PDF, 이미지를 바로 미리 볼 수 있습니다(비활성 세션이나 서브에이전트 세션이 만든 파일 포함). 플러그인 UI 슬롯은 `sidebar.panellist`와 `main`(기존 `conversation`은 `main` 하위 키)으로 정리되었습니다.
+2. **단일 프로세스 세션 잠금(`SessionHandle`)과 세션 포맷 V3.** 실수로 두 터미널에서 같은 세션을 동시에 열면 어떻게 될까요? `SessionHandle`이 도입되어 한 번에 하나의 프로세스만 세션을 잡을 수 있게 되었습니다. 또한 세션 포맷 V3는 시스템 프롬프트를 메시지 히스토리에 편입하고, 구형 로그를 원본 손상 없이 인접한 `.v3.jsonl` 파일로 마이그레이션합니다.
+3. **`deepseek-flash`가 새 세션의 기본 모델이 되었습니다.** DeepSeek가 `DeepSeek-V4.1-Flash`를 발표한 바로 그날, 공식 어댑터는 KV 캐시를 깨뜨리지 않는 동적 시스템 프롬프트 업데이트와 함께 `deepseek-flash`를 새 세션의 기본 모델로 설정했습니다.
+
+<BlogStructureMap
+  diagram="harness-v0-2-1-architecture"
+  eyebrow="HTML 구조도 · v0.1.5–v0.2.1 기능 이음매 아키텍처"
+  title="워크스페이스 UI, 원격 실행 손, 플러그인 마켓이 SessionHandle에 연결되는 방식"
+  caption="각 마일스톤은 거대한 루프에 기능을 구겨 넣는 대신 독립된 Cordis 서비스 이음매(sidebar.panellist, ctx.browserUse, ctx.workingDirectory, ctx.pluginMarket)를 등록했습니다."
+  node1Title="1. 워크스페이스 및 UI 이음매"
+  node1Body="우측 사이드바가 Office, PDF, 터미널 탭을 호스팅하며, 데스크톱 v0.2.0-rc.2는 메뉴 바에서 바로 dsh CLI를 설치합니다."
+  node2Title="2. 원격 실행 손과 프로토콜"
+  node2Body="SSH 원격 워크스페이스, Stagehand/Playwright 브라우저 제어, Cua 컴퓨터 제어, 그리고 Messages 전용 어댑터."
+  node3Title="3. 라이브 플러그인 플랫폼"
+  node3Body="설정과 Agent Preset이 Profile 번들로 통합되었고 engines.dsh 호환성 검사와 커스텀 플러그인 인덱스 URL을 지원합니다."
+/>
+
+## 마일스톤 2(`v0.1.6` & `v0.1.7`): 하네스에 '손'이 자라난 한 주
+
+내 노트북의 텍스트 파일만 읽고 쓸 수 있는 채팅 창은 코드가 원격 서버에 있거나 실제 브라우저를 조작해야 할 때, 혹은 `.xlsx` 시트를 읽고 주기적으로 작업을 돌려야 할 때 금방 벽에 부딪힙니다.
+
+9월 중순 [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1)부터 [`dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.2) 사이에 런타임은 외부 환경을 다루는 '손'을 얻었습니다.
+
+- **SSH 원격 워크스페이스:** DSH 본체는 로컬에서 실행하면서 파일 읽기·쓰기, 명령 실행, Node PTC 도구는 SSH 너머의 원격 디렉터리 트리에 대해 바로 실행합니다.
+- **실험적 Browser Use 및 Computer Use:** `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`(`stagehand_navigate`, `stagehand_act`, `stagehand_extract`, `stagehand_screenshot`)와 Playwright / Chrome DevTools MCP, 그리고 `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native`가 추가되었습니다.
+- **Office 미리보기와 백그라운드 작업 깨우기:** 우측 사이드바에서 Word, PowerPoint, Excel/CSV(시트, 셀, 수식) 읽기 전용 미리보기를 지원합니다(`@deepseek-ai/dsh-office-to-pdf` 및 내장 LibreOffice 기반). 오래 걸리는 명령은 백그라운드로 돌리고(`job_list`, `job_output`, `job_kill`) 완료 시 세션을 자동으로 깨웁니다.
+- **1분 단위 예약 작업(`v0.1.7-rc.2`):** 설정에서 활성화하면 `schedule_create` 등의 도구로 재시작 후에도 유지되는 알림과 반복 작업(최소 1분 간격)을 만들 수 있습니다.
+- **Messages 전용 프로토콜 고정 및 Preset의 번들화(`v0.1.7-rc.1`):** 공식 DeepSeek 어댑터는 **Messages 프로토콜**(`https://api.deepseek.com/anthropic`)만 사용하며 구형 `protocol` 옵션이 제거되었습니다. 설정은 `settings.yaml`에서 프로필의 플러그인 설정으로 옮겨졌고 **Agent Preset은 표준 Cordis 번들**로 통합되었습니다.
+
+아래 인터랙티브 Mock UI에서 `v0.1.5`부터 `v0.2.1`까지의 변화를 단계별로 살펴보세요.
+
+<BlogMockUi
+  scene="harness-sidebar-hands"
+  eyebrow="인터랙티브 MOCK UI · 마일스톤 워크스테이션 (v0.1.5 → v0.2.1)"
+  title="우측 사이드바, SSH·브라우저 제어, Messages API, 플러그인 마켓 살펴보기"
+  caption="단계 1~4를 클릭해 9월과 10월 마일스톤에서 도입된 Cordis 서비스 이음매와 핵심 명령어를 확인해 보세요."
+  step1Title="1. v0.1.5: 우측 사이드바 & Session V3"
+  step1Body="다중 탭 분할 사이드바가 기존 상세 서랍을 대체하고, SessionHandle 단일 프로세스 잠금과 deepseek-flash 기본화가 적용되었습니다."
+  step2Title="2. v0.1.6: SSH, Browser Use & 격리된 PTC"
+  step2Body="로컬 UI에서 원격 SSH 트리를 조작하고 Stagehand/Playwright로 브라우저를 제어하며 Node PTC를 빈 환경 변수의 별도 프로세스로 격리했습니다."
+  step3Title="3. v0.1.7: Messages API, Office & 예약 작업"
+  step3Body="공식 어댑터가 Messages + Files API로 단일화되고 Preset이 번들로 통합되었으며 XLSX/DOCX 미리보기와 1분 단위 스케줄이 추가되었습니다."
+  step4Title="4. v0.2.0–0.2.1: 메뉴 바 CLI & 플러그인 인덱스"
+  step4Body="데스크톱 메뉴 바에서 dsh CLI를 바로 설치하고 커스텀 플러그인 인덱스 URL, engines.dsh 검사, working_directory 도구를 지원합니다."
+/>
+
+## 마일스톤 3(`v0.2.0-rc.2`): Node나 `pnpm` 없이 메뉴 바에서 `dsh` 설치하기
+
+9월 29일 출시된 [`dsh-v0.2.0-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2)는 macOS와 Windows 데스크톱 앱 메뉴 바에 **Manage dsh command** 항목을 추가했습니다. 별도로 Node.js나 `pnpm`을 설치하지 않아도 데스크톱 앱에 내장된 서명된 `dsh` CLI를 터미널에 바로 등록해 쓸 수 있습니다.
+
+또한 서드파티 모델 카탈로그가 **pi-ai 0.87.1**로 올라갔고, macOS/Linux 데스크톱 실행 시 로그인 셸 환경 변수를 불러와 PATH와 프록시 설정이 그대로 적용됩니다.
+
+## 마일스톤 4(`v0.2.1-rc.1`~`rc.3`): 오픈 플러그인 플랫폼의 성숙
+
+10월의 `0.2.1` 시리즈(10월 17일 [`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1)부터 10월 23일 [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3))는 플러그인 발견, 버전 호환성, 배포 안정성을 완성하는 데 집중했습니다.
+
+- **커스텀 플러그인 인덱스 소스(`ctx.pluginMarket`):** **Plugins → Experimental → Custom plugin indexes**에 `http:` 또는 `https:` 인덱스 URL을 등록하면 앱 내 Discover 탭에서 커뮤니티 카탈로그를 바로 탐색하고 설치할 수 있습니다.
+- **`engines.dsh` 버전 호환성 검사:** `package.json`에 `engines.dsh` 범위를 선언하면 설치 및 시작 시 최우선으로 검사하고 불일치 이유를 명확히 안내합니다.
+- **`working_directory` 도구 및 `DSH_AGENTS_HOME`:** 에이전트가 현재 작업 디렉터리를 읽고 바꿀 수 있는 `working_directory` 도구, 공유 `AGENTS.md`를 읽는 `DSH_AGENTS_HOME`, 그리고 `/compact` 명령이 추가되었습니다.
+- **Node PTC 인메모리 영구 REPL 모드:** `@deepseek-ai/dsh-ptc-runtime-node`에 `executionMode: 'persistent-in-memory'`가 추가되어 파일 샌드박스 정책 안에서 여러 `run_code` 호출 간에 변수와 함수를 메모리에 유지할 수 있습니다(`mode: 'both'`는 제거되고 `'native'`와 `'ptc'`만 남았습니다).
+- **프로덕션 웹 배포 플래그:** 리버스 프록시 환경을 위한 `--public-url`, 명시적 IPv4/IPv6 바인드(`0.0.0.0` 및 `::`는 거부), `--tls-cert` / `--tls-key`를 지원합니다.
+
+## `0.1.2` → `0.2.1-rc.3` 업그레이드 체크리스트
+
+| 영역 | `0.1.2`~`0.2.1-rc.3` 주요 변경 사항 | 필요한 조치 |
+| --- | --- | --- |
+| **DeepSeek API 설정** | 공식 어댑터가 **Messages 전용**으로 변경되고 `protocol` 필드가 삭제됨(`0.1.7`). | 설정에서 `protocol`을 지우고 공식 URL 재정의 시 `https://api.deepseek.com/anthropic`을 사용하세요. |
+| **Agent Preset 및 설정** | 디렉터리 프리셋이 Cordis 번들로 전환됨; `settings.yaml`은 1회 자동 임포트(`0.1.7`). | 프리셋을 번들로 패키징하고 `package.json`에 `engines.dsh`를 명시하세요. |
+| **플러그인 컨텍스트 API** | `ctx.agent` 및 `./invariant` 내보내기 제거; `Inbox`는 타입 전용(`agent.inbox`). | `Agent`를 명시적으로 전달하고 `./invariant` 서브패스 임포트를 제거하세요. |
+| **도구 표현 모드** | `@deepseek-ai/dsh-tools`에서 `mode: 'both'` 제거(`0.2.1-alpha.2`). | `'native'` 또는 `'ptc'` 중 하나를 선택하세요. |
+| **Headless API 키** | Headless 모드는 환경 변수와 `.env`만 읽고 저장된 자격 증명은 무시함(`0.2.1-alpha.3`). | CI 및 헤드리스 스크립트에서 `DEEPSEEK_API_KEY` 등을 명시적으로 설정하세요. |
+| **Spill policy 단위** | `spill-policy.maxInlineBytes`가 `maxInlineTokens`로 변경됨(`0.1.7-alpha.2`). | 도구 출력 절단 예산을 바이트가 아닌 추정 토큰 수로 설정하세요. |
+
+릴리스 노트 모음: [dsh-v0.1.5-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1) · [dsh-v0.1.7-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.1) · [dsh-v0.2.0-rc.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) · [dsh-v0.2.1-rc.3](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3).

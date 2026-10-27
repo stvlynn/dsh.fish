@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>deepseek-bot-ecosystem</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+  <style>
+    html, body { margin: 0; background: #faf9fc; }
+    body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    svg { display: block; width: min(100%, 960px); height: auto; margin: 0 auto; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="bot-title bot-desc">
+  <title id="bot-title">How DS Bot, Tobs, and IM bridges layer onto DeepSeek Harness</title>
+  <desc id="bot-desc">DeepSeek Harness provides the Cordis runtime and dsh-base services, while community bundles add Chief-led bot teams (ds-bot), Git-backed PersonaBots (@botharness/tobs), and multi-channel IM bridges (@xmanrui/dsh-im) without forking the core.</desc>
+  <defs>
+    <marker id="bot-arrow" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#68636f"/>
+    </marker>
+    <marker id="bot-arrow-accent" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7867d9"/>
+    </marker>
+  </defs>
+  <rect width="960" height="540" fill="#faf9fc"/>
+  <text x="56" y="56" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="24" font-weight="700">One official runtime, three community ways to build a bot</text>
+  <text x="56" y="84" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Neither DS Bot nor Tobs forks DeepSeek Harness; both mount as Cordis bundles on top of dsh-base.</text>
+
+  <!-- Orthogonal connectors -->
+  <path d="M 316,184 H 388" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#bot-arrow-accent)"/>
+  <path d="M 316,276 H 388" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#bot-arrow-accent)"/>
+  <path d="M 316,384 H 388" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#bot-arrow)"/>
+
+  <path d="M 628,184 H 696" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#bot-arrow)"/>
+  <path d="M 628,276 H 696" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#bot-arrow-accent)"/>
+  <path d="M 628,384 H 696" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#bot-arrow)"/>
+
+  <!-- Left Foundation: Official DeepSeek Harness -->
+  <rect x="56" y="132" width="260" height="304" rx="6" fill="#17151d" stroke="#7867d9" stroke-width="1.2"/>
+  <rect x="76" y="152" width="112" height="16" rx="4" fill="transparent" stroke="#a99dea" stroke-width="0.8"/>
+  <text x="132" y="164" fill="#a99dea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" text-anchor="middle" letter-spacing="0.08em">OFFICIAL RUNTIME</text>
+  <text x="76" y="196" fill="#ffffff" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">DeepSeek Harness (dsh)</text>
+  <text x="76" y="228" fill="#d8d4df" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">Cordis composition engine</text>
+  <text x="76" y="256" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">ctx.agents · ctx.sessions</text>
+  <text x="76" y="284" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">ctx.tools · sandbox &amp; approvals</text>
+  <text x="76" y="312" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Profiles: web, desktop, acp, sdk</text>
+  <text x="76" y="352" fill="#a99dea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12" font-weight="600">dsh plugin --profile web add</text>
+  <text x="76" y="380" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Unit of work: 1 Session log</text>
+
+  <!-- Middle Column: 3 Community Bundle Layers -->
+  <!-- Row 1: DS Bot -->
+  <rect x="388" y="132" width="240" height="96" rx="6" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="408" y="164" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">DS Bot (ds-bot)</text>
+  <text x="408" y="188" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Chief bot + group chat admin</text>
+  <text x="408" y="212" fill="#7867d9" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">FTS5 steward · ~/.dsh/bot</text>
+
+  <!-- Row 2: Tobs / BotHarness -->
+  <rect x="388" y="240" width="240" height="96" rx="6" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="408" y="272" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Tobs (@botharness/tobs)</text>
+  <text x="408" y="296" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Orchestrator → Assignment</text>
+  <text x="408" y="320" fill="#7867d9" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">Git memory: SOUL.md · MEMORY.md</text>
+
+  <!-- Row 3: IM Bridges -->
+  <rect x="388" y="348" width="240" height="88" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="408" y="380" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">IM Bridges (@xmanrui/dsh-im)</text>
+  <text x="408" y="404" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Routes 9 chat apps to host sessions</text>
+
+  <!-- Right Column: User Experience Outcomes -->
+  <rect x="696" y="132" width="208" height="96" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="716" y="164" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">In-App Bot Team</text>
+  <text x="716" y="188" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">@Name handoffs &amp; [PASS]</text>
+  <text x="716" y="212" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">Per-bot Playwright browser</text>
+
+  <rect x="696" y="240" width="208" height="96" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="716" y="272" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Persistent Colleagues</text>
+  <text x="716" y="296" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Feishu, Slack, WeChat, Discord</text>
+  <text x="716" y="320" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">Tobs Connect phone pairing</text>
+
+  <rect x="696" y="348" width="208" height="88" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="716" y="380" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Remote Session Access</text>
+  <text x="716" y="404" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Chat from phone into local DSH</text>
+
+  <!-- Legend strip -->
+  <line x1="56" y1="484" x2="904" y2="484" stroke="rgba(23,21,29,0.12)" stroke-width="0.8"/>
+  <text x="56" y="508" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" letter-spacing="0.14em">LEGEND</text>
+  <rect x="128" y="500" width="12" height="8" rx="2" fill="#17151d" stroke="#7867d9" stroke-width="1"/>
+  <text x="148" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Official DeepSeek Harness</text>
+  <rect x="348" y="500" width="12" height="8" rx="2" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="368" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">DeepSeek Bot bundles (community)</text>
+  <rect x="608" y="500" width="12" height="8" rx="2" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="628" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">IM bridges &amp; user surfaces</text>
+</svg>
+</body>
+</html>

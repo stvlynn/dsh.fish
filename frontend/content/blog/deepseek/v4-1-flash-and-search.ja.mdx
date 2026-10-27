@@ -1,0 +1,109 @@
+---
+title: 'DeepSeek-V4.1-Flash とネイティブ検索：最速のエージェントモデルがビジョン専用モデルを卒業した理由'
+description: 552B Causal Encoder-Decoder が KV キャッシュを 1/4 に圧縮し、deepseek-flash にネイティブ視覚を統合し、10 月に公式 Search & Fetch API と結びつくまで。
+author: Steven Lynn
+date: 2026-10-19
+cover: /blog/covers/deepseek-v4-1-flash.webp
+series: deepseek
+---
+
+コーディングエージェントを 1 時間動かしたとき、API の請求額と待ち時間の大部分を占めているのは何でしょうか？
+
+「モデルが新しく書き出すコード」だと思われがちですが、実際はその逆です。**エージェントは毎ステップ、すでに蓄積された 15 万トークンもの会話履歴やファイル内容、ツール定義を繰り返し読み直しています。** さらに、セッションの途中でプラグインを有効化したりシステムプロンプトを更新したりすると、従来のモデルでは KV キャッシュが無効になり、最初から計算し直しになっていました。
+
+このボトルネックこそ、8 月以降に DeepSeek が発表した 2 つの大きなアップデート——**2026 年 9 月 10 日の [DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)** と **10 月 17 日の [DeepSeek-V4.1-Flash-1017 および公式 Search & Fetch API](https://api-docs.deepseek.com/news/news261017/)**——を理解する鍵です。
+
+![マルチモーダル対話、KV キャッシュヒット、Web 検索を 1 つのモデル ID で扱うパイプライン。](/blog/diagrams/v4-1-flash-pipeline.svg)
+
+## 「入力 8B / 出力 16B」の非対称アーキテクチャがエージェントに効く理由
+
+`DeepSeek-V4.1-Flash`（API モデル名 `deepseek-flash`）の内部構造は、「大量の履歴を読み込み、短いツール呼び出しを返す」というエージェントの特性に合わせて設計されています。
+
+従来の Decoder-only モデルとは異なり、`DeepSeek-V4.1-Flash` は **総パラメータ 552B の MoE Causal Encoder-Decoder** を採用しています。
+
+- **入力時は 8B のみ活性化：** 長い履歴や差分、画像を高速に処理します。
+- **出力時は 16B を活性化：** コード生成や推論の精度をしっかり維持します。
+- **KV キャッシュが HBM で約 1/4、SSD で約 1/8 に縮小：** キャッシュのメモリフットプリントが大幅に減ったことで、長いセッションのプレフィックスがキャッシュから追い出されにくくなりました。
+
+<BlogStructureMap
+  diagram="v4-1-flash-pipeline"
+  eyebrow="HTML 構造図 · V4.1-FLASH と検索パイプライン"
+  title="deepseek-flash がマルチモーダル入力、KV キャッシュ保持、公式 Search/Fetch を統合する仕組み"
+  caption="単一のモデル ID（deepseek-flash）でテキストと画像を扱い、プロンプトやツールの動的変更でも KV キャッシュを維持し、公式の /v1/tools/search・/fetch に接続します。"
+  node1Title="1. Causal Encoder-Decoder"
+  node1Body="552B MoE（入力 8B / 出力 16B 活性）により KV キャッシュを 1/4 HBM・1/8 SSD に圧縮し、ネイティブ視覚を deepseek-flash に統合。"
+  node2Title="2. キャッシュを壊さない動的変更"
+  node2Body="Harness v0.1.5+ は履歴内でプロンプトを更新し、v0.1.7-rc.2+ はツール追加時もウォームな KV キャッシュを維持します。"
+  node3Title="3. 公式 Search & Fetch"
+  node3Body="Harness v0.2.1-rc.2 の @deepseek-ai/dsh-web-deepseek-api が POST /v1/tools/search と /v1/tools/fetch に直結します。"
+/>
+
+## `vision-exp` の卒業：テキストも画像も `deepseek-flash` ひとつに
+
+8 月時点では、スクリーンショットを送るには `deepseek-v4-flash-vision-exp` という別モデルを指定する必要がありました。
+
+`DeepSeek-V4.1-Flash` からは**マルチモーダル視覚が標準搭載**され、モデル名は **`deepseek-flash`** ひとつに統一されました。
+
+- 旧名称の `deepseek-v4-flash` と `deepseek-v4-flash-vision-exp` は廃止され、自動的に `deepseek-flash`（10 月 17 日以降は `DeepSeek-V4.1-Flash-1017`）へルーティングされます。
+- DeepSeek Harness（`v0.1.5-rc.1` 以降）では、新規セッションのデフォルトモデルが `deepseek-flash` になっています。
+
+### `deepseek-v4-pro` はどうなったのか？
+
+9 月 10 日の発表当初は「9 月 14 日から `deepseek-v4-pro` も一時的に V4.1-Flash へルーティングする」と記されていましたが、**その方針は撤回されました**。
+
+改訂された [API Changelog](https://api-docs.deepseek.com/updates/) と現在の[料金表](https://api-docs.deepseek.com/quick_start/pricing)の通り、**`deepseek-v4-pro`（`DeepSeek-V4-Pro-0813`）は現在も独立したモデルとして稼働・課金されています**（1M コンテキスト、最大出力 384K、デフォルト思考オン、テキスト専用）。つまり使い分けは明快です。
+
+- 日常のツールループ、画像を含むタスク、サブエージェントには高速・低コストな **`deepseek-flash`**。
+- 画像を使わない高難度の設計や数学的推論には **`deepseek-v4-pro`**。
+
+## セッション途中でプロンプトやツールを変えても KV キャッシュが消えない
+
+DeepSeek Harness 側でも、V4.1-Flash に合わせて 2 つの重要な改善が入りました。
+
+1. **履歴内でのシステムプロンプト更新（`dsh-v0.1.5-rc.1`）：** 途中でモードや指示が変わった際、先頭メッセージを書き換えるのではなく履歴内に更新を追加することで、キャッシュ済みのプレフィックスを守ります。
+2. **動的なツール追加でのキャッシュ維持（`dsh-v0.1.7-rc.2` & `v0.2.1-alpha.2`）：** 会話の途中でプラグインやツールを有効化しても、KV キャッシュが破棄されなくなりました。
+
+下のインタラクティブ Mock UI で、`deepseek-flash` のキャッシュ効率と検索パイプラインを確認してみてください。
+
+<BlogMockUi
+  scene="v4-1-flash-search"
+  eyebrow="インタラクティブ MOCK UI · DEEPSEEK-V4.1-FLASH-1017 & 検索"
+  title="KV キャッシュ圧縮、ウォームなツール追加、公式 Search/Fetch 呼び出しの追跡"
+  caption="ステップ 1〜4 を切り替えて、DeepSeek-V4.1-Flash-1017 と Harness v0.2.1-rc.2+ の連携を確認できます。"
+  step1Title="1. 1/4 HBM キャッシュとネイティブ視覚"
+  step1Body="552B Causal Encoder-Decoder（入力 8B / 出力 16B）が deepseek-flash 単一 ID でテキストと画像を処理します。"
+  step2Title="2. プロンプト・ツール変更時もキャッシュ維持"
+  step2Body="セッション途中でプラグインを有効化したり指示を追加したりしても、プレフィックスの再計算が発生しません。"
+  step3Title="3. 組み込みの /v1/tools/search & /fetch"
+  step3Body="Harness v0.2.1-rc.2 の Web Search 設定から DeepSeek の検索インデックス（Search 100 QPS / Fetch 25 QPS）を直接呼び出せます。"
+  step4Title="4. 1017 パレート改善スナップショット"
+  step4Body="DeepSeek-V4.1-Flash-1017 は冗長な出力を抑え、Harness 0.2.1-rc.1 以降でのタスク完了時間を短縮します。"
+/>
+
+## 10 月 17 日のアップデート：`1017` スナップショットと公式 Search & Fetch
+
+2026 年 10 月 17 日、DeepSeek API と [`dsh-v0.2.1-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.2) で 2 つの新機能が同時に公開されました。
+
+### 1. `DeepSeek-V4.1-Flash-1017`
+
+API 名（`deepseek-flash`）も料金も据え置きのまま、重みが **`DeepSeek-V4.1-Flash-1017`** に更新されました（[Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) と [ModelScope](https://modelscope.cn/models/deepseek-ai/DeepSeek-V4.1-Flash-1017) で公開）。**DeepSeek Harness（`0.2.1-rc.1` 以降を推奨）** や CodeBuddy、WorkBuddy 向けに調整されており、出力が引き締まり、タスク完了までの時間が短縮されています。
+
+### 2. 公式の Search API と Fetch API
+
+独自インデックスによる 2 つのエンドポイントが全 API アカウントに開放されました。
+
+- `POST https://api.deepseek.com/v1/tools/search`（アカウントあたり最大 100 QPS）
+- `POST https://api.deepseek.com/v1/tools/fetch`（アカウントあたり最大 25 QPS、ドメイン単位の制限あり）
+
+DeepSeek Harness `v0.2.1-rc.2` 以降では、`@deepseek-ai/dsh-web-deepseek-api` パッケージにより **Settings → Web Search** からすぐ有効化できます。
+
+- デフォルトで `DEEPSEEK_API_KEY` を使用し、取得件数 `count`（1〜50、既定 10）と `sendOriginalQuestion: true`（元の質問の先頭 128 文字を `ori_question` として渡す）をサポートします。
+- **料金と無料期間：** 直接呼び出しは**成功 1,000 回あたり $0.75**（HTTP 200 かつ結果が空でない場合のみ課金。空結果やエラー・タイムアウトは無料）。さらに **DeepSeek Harness、Claude Code、Codex** 内のサーバーサイド Search/Fetch は、**2026 年 10 月 31 日 16:00 UTC（日本時間 11 月 1 日 01:00）まで無料**です。
+
+## まとめ：今すぐ確認しておきたい 3 つのポイント
+
+1. **README や設定のモデル名を `deepseek-flash` に統一する。** `deepseek-v4-flash` や `deepseek-v4-flash-vision-exp` はすでに旧名称です。
+2. **DeepSeek Harness を `v0.2.1-rc.3`（最低でも `0.2.1-rc.1`）に更新する。** `1017` スナップショットと公式 Search/Fetch の恩恵を最大限に受けられます。
+3. **テキスト専用の重厚な推論には `deepseek-v4-pro` を使い分ける。**
+
+一次資料：[Introducing DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/) · [10 月 17 日 API アップデート (`news261017`)](https://api-docs.deepseek.com/news/news261017/) · [Search & Fetch ガイド](https://api-docs.deepseek.com/guides/search/)。

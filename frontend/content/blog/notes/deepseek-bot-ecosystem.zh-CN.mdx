@@ -1,0 +1,111 @@
+---
+title: 把智能体运行时变成“数字同事”：DeepSeek Bot 生态全景与技术解析
+description: DeepSeek Bot 并不是某个单一的官方仓库，而是以 DS Bot 与 Tobs 为代表的两套社区多智能体架构及 IM 桥接生态——它们在不分叉一行核心代码的前提下，把单会话 Harness 变成了持久在线的机器人团队。
+author: Steven Lynn
+date: 2026-10-26
+cover: /blog/covers/deepseek-bot-ecosystem.webp
+series: notes
+---
+
+如果你最近常听身边的开发者提起在桌面上或者飞书、微信里跑 **DeepSeek Bot**，然后兴冲冲地打开 [`deepseek-ai`](https://github.com/deepseek-ai) 官方 GitHub 组织去搜这个名字，你一定会扑个空。
+
+等一下——既然 DeepSeek 官方根本没有发布过名叫 DeepSeek Bot 的仓库，那大家每天在跑、在讨论的到底是什么？
+
+顺着代码与包名深挖下去，你会发现一个比“官方又发了个新软件”有趣得多的工程故事：社区里有两个完全独立的开源项目——[**DS Bot**](https://github.com/Fei2411/DS-Bot)（npm 包名 `ds-bot`，其桌面端安装包就叫 *DeepSeek Bot*）和 [**Tobs**](https://github.com/BotHarness/DeepSeekBot)（npm 包名 `@botharness/tobs`，最初发布时名为 *DeepSeekBot*）。它们**没有分叉（Fork）哪怕一行 DeepSeek Harness 的核心代码**，仅仅作为标准的 Cordis 插件扩展包（Bundle）挂载在 `dsh` 之上，就把一个单窗口代码工具变成了一整支全天候待命的数字同事团队。
+
+搞清楚这两个项目为什么诞生、各自怎么设计，以及它们与 [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im) 等聊天桥接器或官方 `dsh --profile acp` 协议有什么区别，是理解 DeepSeek Harness **“一切皆插件”** 架构最生动的一堂实战课。
+
+![一个官方运行时底座，三种构建机器人的社区路径。](/blog/diagrams/deepseek-bot-ecosystem.svg)
+
+## 先问一个根本问题：为什么原生的 Harness 会话还不能算是一个“Bot”？
+
+当你在终端输入 `npx @deepseek-ai/dsh web` 时，你得到的是一个**会话（Session）**：一条仅追加的事件日志，绑定一个本地工作区文件夹，每次围绕一个具体任务跑循环。
+
+当你坐在电脑前重构代码时，这种设计干净利落。但如果你想拥有一个“长期在线的数字助理”或者“多角色协作的机器人小组”，原生会话立刻就会露出四块拼图的空缺：
+
+1. **跨任务的持久身份与长期记忆：** 普通会话随任务结束而归档；而一位“数字同事”需要在下周依然记得你的代码规范和项目背景。
+2. **多机器人群聊秩序：** 如果把 `@架构师`、`@程序员` 和 `@代码审查员` 放进同一个群聊，谁先开口？谁负责拍板？没事可说的机器人怎么保持安静而不是互相客套死循环？
+3. **收件箱与后台任务解耦：** 当你在外面用手机给机器人发了一条复杂任务，它如何在不卡死聊天窗口的前提下，在后台开辟独立工作区干活并主动汇报进度？
+4. **外部即时通讯（IM）接入：** 本地的 Harness 进程如何安全地接入飞书/Lark、微信、企微、钉钉、Slack 或 Discord？
+
+正因为 DeepSeek Harness 通过 Cordis 暴露了完备的 `ctx.agents`、`ctx.sessions` 与 `ctx.tools` 服务接缝，社区开发者意识到：**根本不需要重造一个智能体底座，只要把上面这四块拼图写成 Cordis 插件装进 Profile 就够了。**
+
+<BlogStructureMap
+  diagram="deepseek-bot-ecosystem"
+  eyebrow="HTML 结构图 · 生态分层与挂载关系"
+  title="DS Bot、Tobs (@botharness/tobs) 与 IM 桥接器如何挂载在 DeepSeek Harness 之上"
+  caption="三种社区方案全部通过 dsh plugin add 运行在官方 DeepSeek Harness 之上，但在身份建模、记忆存储与外部聊天通道上采取了截然不同的架构。"
+  node1Title="1. DS Bot (Fei2411/DS-Bot)"
+  node1Body="将 DSH 变成多机器人协作应用：由总管 Chief 创建专家机器人，群管理员统筹发言，并用 SQLite FTS5 管家替代默认压缩。"
+  node2Title="2. Tobs (@botharness/tobs)"
+  node2Body="将每个机器人建模为 PersonaBot，采用 Orchestrator -> Assignment 双层会话、Git 版本化的 SOUL.md/MEMORY.md 与独立 IM 身份。"
+  node3Title="3. IM 桥接与官方 ACP"
+  node3Body="@xmanrui/dsh-im 将 9 种聊天软件直接桥接至宿主现有会话；官方 dsh --profile acp 则提供标准 JSON-RPC stdio 自动化接口。"
+/>
+
+## 路线 A：DS Bot（`Fei2411/DS-Bot`）—— 总管 Chief 带领的本地多机器人团队
+
+创建于 2026 年 10 月的 **DS Bot**（[Apache-2.0 协议](https://github.com/Fei2411/DS-Bot)，截至 10 月 25 日最新版本为 [`v0.2.2`](https://github.com/Fei2411/DS-Bot/releases/tag/v0.2.2)）既提供了自带 `dsh` 运行时的独立桌面安装包（应用名即 **DeepSeek Bot**），也可以作为标准插件 `ds-bot` 一行命令装入你现有的 Harness `web` 或 `desktop` Profile：
+
+```bash
+npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add ds-bot
+npx @deepseek-ai/dsh@0.2.1-rc.2 web
+```
+
+### DS Bot 的核心技术设计
+
+DS Bot 没有让用户去手写复杂的配置文件来组建团队，而是设计了一套非常符合直觉的协作机制：
+
+- **和总管 Chief 聊天就能组建团队：** 系统内置的第一个主机器人叫 **Chief（总管）**。你只需要在对话里告诉 Chief 你需要什么样的帮手，它就会调用 `create_bot` 与 `update_bot` 帮你创建专职机器人。每个机器人本质上是一个持久化的 DSH 会话，拥有独立的角色指令、模型配置以及**只能由人类手动设定的权限档位**（只读 Read only、工作区 Workspace 或完全访问 Full access）。
+- **有秩序的群聊机制（管理员、`@Name` 与 `[PASS]`）：** 在多机器人群聊里，默认由**群管理员机器人**先行接话并按需通过 `@Name` 点名拉其他专家入场。每个成员在每个群里都有各自隔离的隐藏会话（绝不泄露机器人的私聊记忆）；没有补充意见的成员可以直接输出 `[PASS]` 保持沉默，避免多模型无效刷屏。
+- **用 SQLite FTS5 上下文管家替代默认压缩：** DS Bot 关闭了 DSH 默认的会话截断压缩，转而引入独立的**上下文管家（Context Steward）**——当对话变长时自动提炼检查点（Checkpoint）或交接摘要开启新篇章，同时将历史片段完整索引到本地 SQLite FTS5 全文检索库（`~/.dsh/bot/chat-index.sqlite`），供机器人随时通过 `read_own_chat` 精准回溯。
+- **专属 Playwright 浏览器与密钥隔离（`v0.2.2`）：** 在桌面端，每个机器人拥有自己独立的 Playwright 浏览器配置目录（`read_browser` 会将网页 DOM 转为精炼的 Markdown 而非昂贵的截图；遇到发帖、上传、下载或支付操作时强制交回人类审批）。当任务需要敏感凭证时，`request_secret` 会弹出安全卡片并将值保存在 `~/.dsh/bot/secrets.json`（权限 `600`），仅作为 `DSH_SECRET_<NAME>` 环境变量注入并自动脱敏，确保明文密钥永不进入大模型上下文。
+
+## 路线 B：Tobs（`BotHarness/DeepSeekBot`）—— 拥有 Git 记忆与独立 IM 身份的数字同事
+
+于 2026 年 9 月以 *DeepSeekBot* 之名启动、并在 10 月正式更名为 [**Tobs**](https://tobs.app/en/) 的项目（仓库为 [`BotHarness/DeepSeekBot`](https://github.com/BotHarness/DeepSeekBot)，MIT 协议，npm 包名 `@botharness/tobs@1.5.2`，已通过 `dsh-v0.2.1-rc.3` 适配验证）切入了另一个核心场景：**如何让机器人拥有可审计的长期记忆，并以独立同事的身份常驻在你的飞书、微信、QQ、Slack 或 Discord 里？**
+
+你可以在 DeepSeek Harness 桌面版的 **Plugins → Add plugin** 中输入 `@botharness/tobs@1.5.2` 安装并启用，随后即可一键切入 **Bot mode**。
+
+### Tobs / BotHarness 的核心技术设计
+
+与 DS Bot“一个机器人对应一条长会话”不同，BotHarness 围绕 **PersonaBot（人格化机器人）** 设计了双层会话调度与文件优先的 Git 记忆系统：
+
+1. **Orchestrator（调度会话）与 Assignment（委派任务会话）分离：** 每个 PersonaBot 只有一个常驻的 **Orchestrator Session**，专门负责监听它的 **Bot Inbox（收件箱）**。当你通过群聊或外部 IM `@PersonaBot` 派发一项开发任务时，Orchestrator 不会在收件箱里原地阻塞，而是创建或复用独立的 **Assignment Session**（独立的 DSH 根会话）在后台并发执行，完成后再向你汇报。
+2. **Git 版本化的文件级记忆（`SOUL.md` 与 `MEMORY.md`）：** 每个机器人的性格设定（`SOUL.md`）、长期记忆（`MEMORY.md`）与专题笔记全部以纯 Markdown 文件形式存放在 `$DSH_HOME/botharness/bots/<id>/` 下，并且**每一次记忆写入都会自动提交到本地 Git 仓库**。如果某个机器人记错了项目约定，你可以直接用 `git log` 查看它是哪天学歪的，用 `git revert` 一键回滚记忆，甚至用 `git push` 把这位培养好的“数字同事”克隆到另一台电脑上。
+3. **独立 IM 账号绑定与免组网手机配对（Tobs Connect）：** 借助专属的 IM Provider 层，每个 PersonaBot 都能以独立机器人账号接入飞书/Lark、微信（支持私聊收发文件）、QQ、Slack 与 Discord。`1.5.0+` 版本还加入了无需配置 Tailscale 的手机直连配对功能 **Tobs Connect**、内置管家机器人 **Tob**、桌面伴侣挂件（Window Companion）以及机器人市场（Bot Marketplace）。
+
+点击下方交互式模拟界面，直观对比 DS Bot、Tobs 与 IM 桥接器在 DeepSeek Harness 上的运作机制：
+
+<BlogMockUi
+  scene="deepseek-bot-arena"
+  eyebrow="交互式模拟 UI · DEEPSEEK BOT 生态架构对比台"
+  title="在 Cordis 之上对比 DS Bot、Tobs (@botharness/tobs) 与 IM 桥接方案"
+  caption="点击左侧步骤（1–4），查看不同社区项目如何在不修改 DeepSeek Harness 核心的前提下实现多机器人协作、Git 记忆与多端 IM 接入。"
+  step1Title="1. 零分叉底座：全部挂载于 dsh-base"
+  step1Body="无论是 DS Bot 还是 Tobs 均未分叉 DeepSeek Harness，而是通过 dsh plugin add 安装并复用 ctx.agents、ctx.sessions 与 ctx.tools。"
+  step2Title="2. DS Bot：总管 Chief、[PASS] 与 FTS5 管家"
+  step2Body="通过与 Chief 对话创建专家团队；群聊由管理员统筹 @Name 点名与 [PASS] 静默；SQLite FTS5 全文索引替代粗暴截断。"
+  step3Title="3. Tobs：调度/任务双层会话与 Git 记忆"
+  step3Body="Orchestrator 收件箱会话将重任务派发给独立的 Assignment 会话，并将 SOUL.md 与 MEMORY.md 的每次变更提交至 Git。"
+  step4Title="4. 轻量 IM 桥接 (@xmanrui/dsh-im) 与官方 ACP"
+  step4Body="若只需在手机聊天软件里远程操作本地现有会话，可选用连接 9 大平台的 @xmanrui/dsh-im；程序化集成则首选官方 dsh --profile acp。"
+/>
+
+## 路线 C：如果我只需要手机远程连入，或者用代码驱动呢？
+
+并不是所有人都需要一整套多机器人团队系统。如果你的需求更聚焦，生态里还有两类更轻量的标准方案：
+
+- **轻量级 IM 通道桥接（`@xmanrui/dsh-im`、`dsh-lark-bot`、`dsh-lark`）：** 如果你只是想在离开电脑时，用飞书、微信、钉钉、企微、QQ、Slack、Telegram、Discord 或 WhatsApp 直接跟本机已经打开的 DeepSeek Harness 会话聊天，安装社区高星插件 [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im)（`dsh plugin --profile web add -w @xmanrui/dsh-im`）即可。它不额外发明一套机器人人格层，而是直接把九大聊天软件桥接到你宿主机现有的会话与工作区上。
+- **官方原生程序化接口（`dsh --profile acp` 与官方 SDK）：** 如果你想在自己的业务系统或 IDE 里驱动 Harness，根本不需要装第三方机器人插件——直接使用官方内置的 `dsh --profile acp`（基于 stdio 的 Agent Client Protocol JSON-RPC 服务）或官方 TypeScript/Python SDK（`dsh --profile sdk`）即可。
+
+## 四种方案横向对比：哪一款最适合你？
+
+| 对比维度 | DS Bot (`ds-bot`) | Tobs (`@botharness/tobs`) | IM 桥接 (`@xmanrui/dsh-im`) | 官方 ACP (`dsh --profile acp`) |
+| --- | --- | --- | --- | --- |
+| **维护性质与开源协议** | 社区项目（`Fei2411/DS-Bot`），Apache-2.0 | 社区项目（`BotHarness/DeepSeekBot`），MIT | 社区项目（`xmanrui/dsh-im`），MIT | 官方内置（`deepseek-ai/deepseek-harness`），MIT |
+| **核心交互模型** | 单一桌面/网页窗口内的 **Chief 总管** + 管理员群聊团队 | 跨多端 IM 常驻、带收件箱与后台委派任务的 **PersonaBot** | 将 9 大聊天软件直接连入宿主机现有的本地会话 | 供外部程序调用的官方标准 JSON-RPC stdio 协议 |
+| **长期记忆机制** | Markdown + SQLite FTS5 全文检索（`~/.dsh/bot`） | Git 版本化管理的 `SOUL.md` 与 `MEMORY.md`（`~/.dsh/botharness`） | 直接复用宿主 DSH 原生会话日志 | 由调用方与原生 DSH 会话日志管理 |
+| **最适合什么场景？** | 想在一个窗口里指挥多角色团队 + 专属 Playwright 浏览器自动化 | 想在飞书/微信/Slack 里配置记忆可回滚、全天候待命的数字同事 | 想在手机上随时远程查看并操作电脑上的本地代码会话 | 在自研平台、CI 流水线或编辑器中集成 Harness |
+
+最后也请牢记一条重要的安全边界：**DS Bot、Tobs 与各类 IM 桥接插件均为社区独立开发的开源作品，并非 DeepSeek 官方出品。** 它们运行在你的本地 DeepSeek Harness 进程中，消耗你配置的模型额度，并在你授予的工作区与权限范围内读写文件、执行命令。初次尝试时，建议先为机器人分配只读（Read only）或受限工作区权限，养成随时检视工具审批与记忆变更的好习惯。

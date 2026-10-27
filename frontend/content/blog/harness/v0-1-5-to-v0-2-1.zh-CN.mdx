@@ -1,0 +1,102 @@
+---
+title: 从 v0.1.5 到 v0.2.1：DeepSeek Harness 如何长出侧边栏、远程双手与实时插件市场
+description: 八周内的 27 个预发布版本，如何把一个本地代码聊天工具演进为支持 Office 预览、SSH 远程工作区、浏览器操控与自定义插件源的全功能工作台。
+author: Steven Lynn
+date: 2026-10-24
+cover: /blog/covers/harness-v0-2-1-milestones.webp
+series: harness
+---
+
+如果你上一次更新 DeepSeek Harness 还是在 8 月底（`dsh-v0.1.2-alpha.1`），那么当你打开 10 月下旬的最新版本（[`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)）时，会感觉像是走进了一间面积扩大了一倍的工作室。
+
+窗口右侧的多标签侧边栏里，一边预览着 Excel 表格的公式与工作表，另一边并排开着实时终端和逐文件代码 Diff；你本地的界面正在通过 SSH 直接修改远端 Linux 开发机上的代码；一个耗时的后台命令跑完后主动唤醒了智能体继续下一步；而在 macOS 或 Windows 上，你甚至不需要安装 Node.js 或 `pnpm`——直接从桌面版菜单栏一键就能装好 `dsh` 命令行。
+
+在短短八周、连续 27 个预发布版本的高频迭代中，DeepSeek Harness 是如何在不把核心变成臃肿怪物的情况下塞进这么多重量级能力的？答案依然是**把每一项新能力都做成标准的 Cordis 服务接缝（Capability Seam）**。下面我们按四个里程碑，带你由浅入深梳理这段演进史。
+
+![v0.1.5 至 v0.2.1 如何在不膨胀核心的前提下扩展会话能力。](/blog/diagrams/harness-v0-2-1-architecture.svg)
+
+## 里程碑一（`v0.1.5`）：为什么单列聊天窗口不够用了？
+
+在早期版本里，所有交互都挤在聊天流或者狭窄的详情抽屉（Detail panel）里。当智能体只输出几十行代码片段时这毫无问题；但一旦智能体开始生成 PDF 报告、HTML 原型页面或派生子智能体任务，单列聊天就会让人顾此失彼。
+
+发布于 2026 年 9 月 10 日的 [`dsh-v0.1.5-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1)（汇总了 `0.1.3` 与 `0.1.5` 系列 Alpha）一次性解决了三个基础问题：
+
+1. **多标签右侧边栏（Right Sidebar）正式取代详情面板。** 支持多标签页、分屏与全屏预览，可直接渲染 Markdown、语法高亮源码、HTML、PDF 与图片，甚至能直接预览非活动会话或子智能体会话产出的文件。对插件作者而言，UI 挂载槽位统一迁移到了 `sidebar.panellist` 与 `main`（原 `conversation` 槽位变为 `main` 下的子键）。
+2. **单进程会话锁（`SessionHandle`）与 Session V3 格式。** 如果你在两个终端里不小心同时打开了同一个会话会怎样？从 `0.1.3-alpha.1` 引入并在 `0.1.5-rc.1` 定型的 `SessionHandle` 确保同一时刻只有一个进程持有会话写锁。同时会话日志升级到 **V3 格式**，将系统提示词纳入消息历史，并在迁移旧日志时生成相邻的 `.v3.jsonl` 文件，绝不破坏原文件。
+3. **`deepseek-flash` 成为新会话默认模型。** 在 DeepSeek 发布 `DeepSeek-V4.1-Flash` 的同一天，官方适配器将 `deepseek-flash` 设为新会话的默认模型，并支持在对话中途动态更新系统提示词而不丢失 KV 缓存。
+
+<BlogStructureMap
+  diagram="harness-v0-2-1-architecture"
+  eyebrow="HTML 结构图 · v0.1.5–v0.2.1 能力接缝架构"
+  title="工作区界面、远程执行双手与插件市场如何围绕 SessionHandle 组装"
+  caption="每个里程碑都沒有把功能硬编码进核心循环，而是注册为独立的 Cordis 上下文服务（sidebar.panellist、ctx.browserUse、ctx.workingDirectory、ctx.pluginMarket）。"
+  node1Title="1. 工作区与界面接缝"
+  node1Body="右侧边栏承载 Office、PDF 与多标签终端；桌面版 v0.2.0-rc.2 支持从菜单栏一键安装 dsh CLI。"
+  node2Title="2. 远程与环境执行双手"
+  node2Body="提供 SSH 远程工作区、Stagehand/Playwright 浏览器操控、Cua 桌面操控，以及纯 Messages 协议适配器。"
+  node3Title="3. 实时插件平台"
+  node3Body="设置项与 Agent Preset 统一融入 Profile 扩展包，支持 engines.dsh 版本校验与自定义插件源 URL。"
+/>
+
+## 里程碑二（`v0.1.6` 与 `v0.1.7`）：智能体长出“双手”的一周
+
+如果智能体只能读写你笔记本电脑本地的文本文件，那么一旦代码跑在远程服务器上，或者需要操作真实浏览器、查看 Excel 报表、按分钟定时巡检，它就会束手无策。
+
+在 9 月中下旬的 [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1) 到 [`dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.2) 之间，DeepSeek Harness 真正长出了操控外部环境的双手：
+
+- **SSH 远程工作区（Local DSH, Remote Workspace）：** DSH 界面依然跑在你的本地电脑上，但通过 SSH 连接远程主机后，文件读写、终端命令和 Node PTC 代码全部直接在远端目录树上执行。
+- **实验性 Browser Use 与 Computer Use：** 官方推出了 `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`（提供 `stagehand_navigate`、`stagehand_act`、`stagehand_extract`、`stagehand_screenshot` 等工具，同时支持 Playwright MCP 与 Chrome DevTools MCP）以及桌面操控包 `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native`。
+- **Office 全家桶预览与后台任务唤醒：** 右侧边栏新增对 Word、PowerPoint 以及 Excel/CSV/TSV 表格的只读预览（支持查看多工作表、单元格与公式，底层由 `@deepseek-ai/dsh-office-to-pdf` 与内置 LibreOffice 引擎驱动）。耗时命令或工作流在等待超时后可转入后台（`job_list`、`job_output`、`job_kill`），并在执行完毕时自动唤醒会话继续回答。
+- **一分钟粒度的定时任务（`v0.1.7-rc.2`）：** 开启定时任务开关后，智能体可通过 `schedule_create`、`schedule_list`、`schedule_update`、`schedule_delete` 创建跨重启持久化的提醒与周期任务（最短间隔 1 分钟）。
+- **锁定纯 Messages 协议与 Preset 扩展包化（`v0.1.7-rc.1`）：** 官方 DeepSeek 适配器全面转向 **Messages 协议**（`https://api.deepseek.com/anthropic`），移除了旧的 `protocol` 选项。同时，全局设置从 `settings.yaml` 迁入当前 Profile 的插件配置中，而 **Agent Preset（智能体预设）正式统一为标准的 Cordis Bundle**。
+
+点击下方交互式模拟界面，逐步体验从 `v0.1.5` 到 `v0.2.1` 的四大工作台能力：
+
+<BlogMockUi
+  scene="harness-sidebar-hands"
+  eyebrow="交互式模拟 UI · 里程碑工作台演进（v0.1.5 → v0.2.1）"
+  title="体验右侧边栏预览、SSH 与浏览器双手、Messages 协议及自定义插件市场"
+  caption="点击左侧阶段（1–4），查看 9 月至 10 月四大里程碑新增的 Cordis 服务接缝与核心配置。"
+  step1Title="1. v0.1.5：右侧边栏与 Session V3"
+  step1Body="多标签分屏侧边栏取代旧详情抽屉；SessionHandle 实施单进程锁，deepseek-flash 成为新会话默认模型。"
+  step2Title="2. v0.1.6：SSH 远程、浏览器操控与独立进程 PTC"
+  step2Body="本地界面直连远程 SSH 工作区，集成 Stagehand/Playwright 浏览器操控，并将 Node PTC 隔离至独立空环境变量进程。"
+  step3Title="3. v0.1.7：纯 Messages 协议、Office 预览与定时任务"
+  step3Body="官方适配器锁定 Messages + Files API；Agent Preset 统一为 Bundle；侧边栏支持 XLSX/DOCX 预览与 1 分钟级定时任务。"
+  step4Title="4. v0.2.0–0.2.1：菜单栏 CLI 与自定义插件源"
+  step4Body="桌面版菜单栏一键安装 dsh 命令；支持自定义插件索引 URL、engines.dsh 校验、working_directory 工具与持久内存 REPL。"
+/>
+
+## 里程碑三（`v0.2.0-rc.2`）：无需安装 Node，从桌面菜单栏一键启用 `dsh`
+
+对于普通用户来说，尝试命令行智能体工具的第一道门槛往往是配置 Node.js 和 `pnpm` 环境。
+
+9 月 29 日发布的 [`dsh-v0.2.0-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) 在 macOS 与 Windows 桌面版菜单栏中新增了 **Manage dsh command（管理 dsh 命令）**。只需点击一下，桌面应用就会把自带签名运行时的 `dsh` 命令注册到你的系统终端里——无需单独安装 Node 或 `pnpm`，就能直接在命令行启动会话或管理桌面端 Profile 的插件。
+
+同时，该版本将第三方模型目录升级至 **pi-ai 0.87.1**，在 macOS/Linux 桌面端启动时自动加载登录 Shell 的环境变量（让自定义 PATH 与代理配置直接生效），并新增了实验性的**异步提问模式（Asynchronous Question Mode）**——当智能体向你提问而等待超时后，它可以先行继续推进手头工作，等你稍后随时补答。
+
+## 里程碑四（`v0.2.1-rc.1` 至 `rc.3`）：走向成熟的开放插件平台
+
+10 月份密集发布的 `0.2.1` 系列（从 10 月 17 日的 [`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1) 到 10 月 23 日的 [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)）把重心放在了插件生态的发现、开发与生产级部署上：
+
+- **自定义插件索引源（`ctx.pluginMarket`）：** DeepSeek Harness 官方不内置中心化应用商店，但 `v0.2.1` 允许你在 **Plugins → Experimental → Custom plugin indexes** 中填入任意 `http:` 或 `https:` 插件索引 URL，直接在应用内的 Discover 标签页浏览和安装社区目录。
+- **`engines.dsh` 版本兼容校验：** 插件现在可以在 `package.json` 中声明 `engines.dsh` 版本范围。安装与启动时会优先校验该字段，并在版本不匹配时给出清晰的原因说明。
+- **全新工作目录工具与全局指令目录（`working_directory` 与 `DSH_AGENTS_HOME`）：** 智能体可通过 `working_directory` 工具（`ctx.workingDirectory`）读取或切换当前目录；全局指令支持从 `DSH_AGENTS_HOME` 共享目录加载 `AGENTS.md`；Web 与桌面端正式支持 `/compact` 手动压缩命令。
+- **Node PTC 持久内存 REPL 模式：** `@deepseek-ai/dsh-ptc-runtime-node` 新增 `executionMode: 'persistent-in-memory'`，让变量、函数和导入模块在多次 `run_code` 调用之间持续保留在内存中，同时严格遵守会话的文件沙箱策略。旧的 `both` 工具呈现模式被移除，仅保留 `'native'` 与 `'ptc'`。
+- **反向代理与 TLS 部署参数：** 针对远程部署场景，`dsh web` 新增了 `--public-url`（支持带路径前缀的反向代理地址）、指定 IPv4/IPv6 接口绑定（出于安全设计拒绝 `0.0.0.0` 和 `::` 通配绑定）以及 `--tls-cert` / `--tls-key` 证书配置。
+- **丰富的官方实验性扩展包：** 包括自动创建并切入 Git 工作树的 `@deepseek-ai/dsh-experimental-worktree`、支持将思考过程实时翻译为界面语言的 `@deepseek-ai/dsh-experimental-client-ui-cot-translation`，以及用于验证插件模型完备性的 Claude Code Mods 兼容层 `@deepseek-ai/dsh-experimental-claude-code-mods`。
+
+## 从 `0.1.2` 升级到 `0.2.1-rc.3` 的六项必查清单
+
+如果你准备把手头的 Profile 或自己开发的插件升级到最新的 `0.2.1-rc.3`，请按下面这张清单逐项核对：
+
+| 涉及模块 | `0.1.2` 到 `0.2.1-rc.3` 之间的破坏性变更 | 升级操作建议 |
+| --- | --- | --- |
+| **DeepSeek API 协议** | 官方适配器**仅支持 Messages 协议**，移除了 `protocol` 配置项（`0.1.7`）。 | 删除配置中的 `protocol` 字段；若自定义了官方地址，请改为 `https://api.deepseek.com/anthropic`。 |
+| **Agent Preset 与设置** | 旧目录式 Preset 改为 Cordis Bundle；`settings.yaml` 一次性导入 Profile 配置（`0.1.7`）。 | 将自定义预设打包为 Bundle，并在 `package.json` 中声明 `engines.dsh`。 |
+| **插件上下文接口** | 移除 `ctx.agent` 与 `./invariant` 导出；`Inbox` 变为纯类型（使用 `agent.inbox`）。 | 显式传递 `Agent` 实例，移除对各包 `./invariant` 子路径的引用。 |
+| **工具呈现模式** | `@deepseek-ai/dsh-tools` 移除了 `mode: 'both'`（`0.2.1-alpha.2`）。 | 明确选择 `'native'`（原生工具 Schema）或 `'ptc'`（`run_code` 代码模式）。 |
+| **Headless 密钥读取** | Headless 模式仅读取环境变量与 `.env`，不再读取桌面/网页端保存的密钥（`0.2.1-alpha.3`）。 | 在 CI 或自动化脚本中显式导出 `DEEPSEEK_API_KEY` 等环境变量。 |
+| **工具输出截断预算** | `spill-policy.maxInlineBytes` 更名为 `maxInlineTokens`（`0.1.7-alpha.2`）。 | 将自定义截断策略的预算单位从字节（Bytes）改为估算 Token 数。 |
+
+官方版本说明索引：[dsh-v0.1.5-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1) · [dsh-v0.1.7-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.1) · [dsh-v0.2.0-rc.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) · [dsh-v0.2.1-rc.3](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)。

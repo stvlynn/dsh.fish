@@ -1,59 +1,99 @@
 ---
-title: 2026 年 8 月的 dsh.fish
-description: 產品文件做成 Fumadocs 分區、hub 外掛上了 npm、兩個 kind 退役，以及給 agent 用的 llms.txt。
+title: dsh.fish 2026 年 8 月更新日誌
+description: 我們如何解決人類文件、CLI 安裝計畫、工作階段內外掛與面向智慧體的 Markdown 介面之間的「資料割裂」問題。
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/dsh-fish-2026-08.webp
 series: changelog
 ---
 
-這是本站第一篇 changelog。它只寫到 2026 年 8 月 29 日已經上線的內容，不是路線圖。未提交的工作不列。
+你是否遇過這樣的糟心體驗：照著網頁文件的步驟去裝一個套件，結果發現命令列工具的參數完全對不上；或者讓 AI 智慧體去讀網站的 `/llms.txt`，讀出來的卻是三週前早就過期的舊說明？
+
+一旦一個開發者中心同時服務於「瀏覽器裡的人類讀者」與「終端機裡的智慧體」，**多端資訊不一致（Split-Brain）**就會成為最常見的故障源：文件表格裡寫死的評分權重和後端介面不一致，已經廢棄的外掛分類還掛在側邊欄裡，或者工作階段內外掛的安裝行為和網頁端存在細微偏差。
+
+截至 2026 年 8 月 29 日，我們在 `dsh.fish` 上交付的所有功能都圍繞著一條工程鐵律展開：**無論是人類網頁、CLI 客戶端、工作階段內外掛還是 AI 智慧體，所有入口都必須讀取同一份唯一真實資料源（Single Source of Truth）。** 下面帶你一步步看清這次架構升級如何改變你的日常使用體驗。
 
 ![目錄從共享來源向人類介面、安裝客戶端、Web 與 agent 介面提供內容。](/blog/diagrams/hub-surfaces.svg)
 
-## 產品文件離開了單頁
+## 產品文件告別單頁分頁卡，升級為六語言指南樹
 
-`/docs` 不再是帶 kind 標籤頁的一個 React 頁面。它是 Fumadocs 分區：建置期編譯 MDX、六種語言、欄內邊欄、評分表走 `GET /api/v1/scoring` 而不是把權重黏在文裡。指南覆蓋 quickstart、概念、每種發布格式、CLI、hub 外掛、提交、評分和 REST API。
+在最初的版本裡，`/docs` 只是一個帶分類分頁的單頁 React 元件。當目錄只需要兩百字簡介時這樣就夠了；但一旦使用者需要一步步學習如何發佈擴充包、如何使用 CLI、或者想搞清楚品質評分到底是怎麼算出來的，單頁結構就徹底捉襟見肘了。
 
-這棵樹的搜尋在 `/docs/search`，不在 `/api/search`——`/api/*` 是 Hono。Agent 可以把任意指南當 markdown 拉（`/docs/cli.md`，或 `Accept: text/markdown`）。`/docs/llms.txt` 從同一棵頁面樹生成。
+因此，我們將產品文件重構為基於 Fumadocs 的獨立文件區，在建置期編譯並完整覆蓋全部六種語言（`en`、`zh-CN`、`zh-TW`、`ja`、`ko`、`ru`）：
 
-## hub 外掛是 npm 套件
+- **按任務組織的完整指南：** 涵蓋快速上手（Quickstart）、核心概念、四種發佈格式的專門教學、命令列工具（`@dsh-fish/cli`）、工作階段內外掛（`@dsh-fish/hub`）、提交流程、評分機制與 REST API。
+- **即時拉取的評分權重表：** 文件中的評分表不再貼上容易過期的靜態數字，而是直接呼叫 `GET /api/v1/scoring` 即時渲染。
+- **獨立的文件搜尋路由：** 文件搜尋執行在 `/docs/search`，將 `/api/*` 命名空間完全留給 Hono 後端介面。
 
-`@dsh-fish/hub` 發布到 npm，作為 Cordis 外掛在工作階段裡載入。它搜尋目錄、從瀏覽卡片安裝、打開 README，用的安裝計畫和網站上看到的是同一份。裝置登入已修好：瀏覽器裡點授權後，外掛輪詢的 token 真的會被兌換。
+<BlogStructureMap
+  diagram="hub-surfaces"
+  eyebrow="HTML 結構圖 · 唯一真實資料源"
+  title="同一套目錄資料庫與 MDX 原始碼樹如何驅動四大交付表面"
+  caption="人類瀏覽器、終端機 CLI、Harness 工作階段內外掛與自主智慧體全部讀取同一套安裝計畫與建置期編譯的文件樹。"
+  node1Title="1. 唯一真實資料源"
+  node1Body="僅收錄四類真實可載入元件的目錄庫，配合六語言建置期編譯的 /docs 與 /blog MDX 原始碼樹。"
+  node2Title="2. 人類與安裝客戶端"
+  node2Body="網站、npx @dsh-fish/cli 與 @dsh-fish/hub 解析完全一致的安裝計畫，並同步寫入 $DSH_HOME/.dsh-fish-lock.json。"
+  node3Title="3. 面向智慧體的原生協定"
+  node3Body="所有指南與部落格均支援 .md 後綴與 Accept: text/markdown 協商，並由 /llms.txt 與 /blog/llms.txt 自動索引。"
+/>
 
-設定透過 harness 的外掛設定用戶端註冊。發布釘在 npm 11 的 trusted publishing 上。
+## 不離開對話視窗直接安裝外掛：`@dsh-fish/hub` 上架 npm
 
-## 目錄分類有意變小
+在瀏覽器裡逛目錄適合發現新工具，但當你已經沉浸在一個 DeepSeek Harness 工作階段中時，切出去複製安裝指令往往會打斷思路。
 
-`mcp-server` 和 `hook-bridge` 不再是 kind。那些 URL 301 到 `/browse`。舊的發布指南 301 到 `/docs/plugins`。剩下四種是 harness 真正載入的：bundle、skill、agent preset、profile。
+8 月份，我們將 **`@dsh-fish/hub`** 正式發佈到了 npm。它是一個原生的 Cordis 外掛，可以直接載入到正在執行的 Harness 工作階段裡：
 
-分類與 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 對齊。主題落地頁（`/for/...`）只覆蓋一小份意圖列表，少於三列時保持 `noindex`。
+1. **工作階段內搜尋與一鍵安裝：** 提供 `hub_search`、`hub_show`、`hub_install`、`hub_remove`、`hub_update` 等工具與瀏覽卡片，在工作階段內直接查看 README 並執行與網站端完全一致的安裝計畫。
+2. **修復裝置授權登入（Device Grant）閉環：** 修復了瀏覽器端點擊 `Authorize` 後的權杖兌換競態問題，讓外掛與 CLI 輪詢的 `$DSH_HOME/.dsh-fish-token.json` 能夠穩定落盤。
+3. **接入原生外掛設定中心：** 透過 Harness 的外掛設定客戶端註冊設定，並採用 npm 11 可信發佈（Trusted Publishing）保障供應鏈安全。
 
-## 面向 agent 的表面
+## 砍掉「目錄幻覺」：為什麼要讓兩個元件類型退役？
 
-源站 `/llms.txt`，指南 `/docs/llms.txt`，拼接版 `/docs/llms-full.txt`。`Accept: text/markdown` 的 404 回傳短恢復地圖，而不是應用殼。OpenAPI 和 `.well-known/api-catalog` 仍是進 JSON API 的機器入口。
+當我們把目錄分類與 DeepSeek Harness 實際能載入的入口逐一核對時，發現早期的兩個分類名——`mcp-server` 與 `hook-bridge`——其實屬於「目錄自己發明的概念」。
 
-搜尋結果裡的外掛標題帶上 summary。README 翻譯在替換完成前保留上一份已完成正文，避免任務跑著時某個語言閃成空白。
+Harness 執行期並沒有這兩個名字的獨立載入槽位；無論是 MCP 服務還是鉤子，本質上都是封裝在 **Bundle（擴充包）** 或 **Profile（設定堆疊）** 裡的。保留執行期根本無法直接安裝的分類，只會誤導使用者。
 
-## 為什麼共享來源重要
+因此我們精簡了分類體系，並設定了 `301` 永久重新導向：
 
-看得見的成果是文件樹、部落格與可安裝外掛，底下那條工程約束更有價值：任何表面都不私存一份目錄事實。網站、CLI 與 hub 外掛解析同一份安裝計畫；文件搜尋、Markdown 內容協商、`llms.txt`、Atom 與 sitemap 則從各自的 MDX 樹產生。
+- 原有的 `/kind/mcp-server` 和 `/kind/hook-bridge` 自動 `301` 跳轉至 `/browse`。
+- 舊發佈指南自動跳轉至 `/docs/plugins`。
+- 目錄只保留 Harness 真正載入的**四種類型**：`bundle`、`skill`、`agent-preset`、`profile`，並將功能分類與 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 對齊。
 
-這消除了一個常見故障：頁面說一套，agent 端點說另一套。代價是寫作必須更嚴格。來源樹裡缺少路由或 locale 檔案時，不能在元件裡塞一段文字帶過；一致性檢查與連結檢查會直接失敗。
+## 把 AI 智慧體當作一等公民使用者（`llms.txt` 與 Markdown 內容協商）
 
-## 可以怎麼試
+當一個 AI 智慧體造訪技術網站時，如果伺服器傳回一堆夾雜著導覽列腳本的 HTML 外殼，不僅浪費 Token，還會干擾模型的提取準確度。
 
-依工作選擇對應表面：
+現在，`dsh.fish` 上的每一個頁面都原生支援 Markdown 交付。點擊下方互動式模擬介面中的步驟 1–4，查看四個交付表面是如何保持零偏差同步的：
 
-- 想了解發布契約，瀏覽 `/docs`。
-- agent 需要同一份材料，取得 `/docs/llms.txt` 或 `.md` 路由。
-- 不開網站也想拿到安裝計畫，執行 `npx @dsh-fish/cli`。
-- 希望計畫留在 Harness 工作階段裡，載入 `@dsh-fish/hub`。
+<BlogMockUi
+  scene="hub-omni-delivery"
+  eyebrow="互動式模擬 UI · 全表面同源交付"
+  title="從同一個資料源讀取與安裝外掛的四種方式"
+  caption="點擊左側步驟（1–4），對比網頁目錄、終端機 CLI、工作階段內 @dsh-fish/hub 外掛以及智慧體 Markdown 介面的協同工作流。"
+  step1Title="1. 四類標準元件與即時文件"
+  step1Body="瀏覽器渲染六語言產品文件，並從 GET /api/v1/scoring 即時拉取評分權重，徹底消除過期文案。"
+  step2Title="2. 終端機 CLI 與裝置授權認證"
+  step2Body="透過 npx @dsh-fish/cli find、show、add 先檢視安裝計畫，再將變更精確記錄到 $DSH_HOME/.dsh-fish-lock.json。"
+  step3Title="3. 工作階段內 @dsh-fish/hub 外掛"
+  step3Body="在 DeepSeek Harness 對話中直接呼叫 hub_search 與 hub_install，無需切出工作區即可完成擴充安裝與評分。"
+  step4Title="4. 原生 Markdown 與 llms.txt"
+  step4Body="智慧體可直接抓取 /llms.txt、/docs/llms-full.txt、/blog/llms.txt，或在任意路徑附帶 Accept: text/markdown。"
+/>
 
-限制是刻意的：本次發布沒有部落格搜尋，`/api/search` 仍然是目錄搜尋，不是第二套內容索引。
+智慧體或自動化腳本現在可以直接使用以下介面：
 
-## 這篇不是什麼
+- **全景索引地圖：** 根目錄 `/llms.txt`、文件區 `/docs/llms.txt`（以及單檔案全文拼接版 `/docs/llms-full.txt`）、部落格區 `/blog/llms.txt` 與 `/blog/feed.xml`（Atom 訂閱源）。
+- **原生 Markdown 內容協商：** 在任意文件或部落格路徑後加上 `.md`（如 `/docs/cli.md`、`/blog/index.md`），或在請求標頭中帶上 `Accept: text/markdown`。即便造訪了不存在的 404 路徑，只要帶有 `Accept: text/markdown`，系統也會傳回一份精簡的 Markdown 恢復導覽圖，而不是龐大的前端應用外殼。
+- **無閃爍的多語言 README 更新：** 當外掛更新 README 觸發背景重譯時，系統會一直保留上一版已完成的翻譯，直到新譯文產生完畢，徹底消除了切換語言時的空白閃爍。
 
-它不是 DeepSeek Harness 的發版。Harness 版本在 [Harness 版本](/blog/harness)。它也不是每一筆 commit。裝置授權競態、sitemap 查詢上限、ads.txt 都在 git 裡；不是有人來這裡要看的東西。
+## 我該選擇哪個入口？
 
-下一篇 changelog 會寫一組有邊界的、使用者能看見的變化，而不是把 log 倒出來。
+根據你手頭正在做的事，選擇最順手的入口即可：
+
+- **想了解發佈規範或評分細則：** 直接瀏覽 [`/docs`](/docs) 產品文件。
+- **想把文件餵給自己的 AI 智慧體：** 讓它讀取 `/docs/llms.txt` 或 `/blog/llms.txt`。
+- **習慣在終端機裡乾淨俐落地管理設定：** 執行 `npx @dsh-fish/cli show <id>` 與 `npx @dsh-fish/cli add <id> --profile web`。
+- **正在 DeepSeek Harness 工作階段裡寫程式碼：** 安裝並啟用 `@dsh-fish/hub`。
+
+*（如果你關心的是 DeepSeek Harness 執行期本身的版本演進，請前往 [Harness 版本](/blog/harness) 專欄，包括我們最新整理的 [v0.1.5 至 v0.2.1 里程碑深度解析](/blog/harness/v0-1-5-to-v0-2-1)。）*

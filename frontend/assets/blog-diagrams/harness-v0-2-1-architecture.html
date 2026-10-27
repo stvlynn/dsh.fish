@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>harness-v0-2-1-architecture</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+  <style>
+    html, body { margin: 0; background: #faf9fc; }
+    body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    svg { display: block; width: min(100%, 960px); height: auto; margin: 0 auto; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="v021-title v021-desc">
+  <title id="v021-title">DeepSeek Harness v0.1.5 to v0.2.1 capability seams</title>
+  <desc id="v021-desc">A single-process SessionHandle in v0.2.1 coordinates the Messages-only adapter, the multi-tab Right Sidebar, remote SSH and Browser Use hands, and custom plugin index sources.</desc>
+  <defs>
+    <marker id="v021-arrow" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#68636f"/>
+    </marker>
+    <marker id="v021-arrow-accent" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7867d9"/>
+    </marker>
+  </defs>
+  <rect width="960" height="540" fill="#faf9fc"/>
+  <text x="56" y="56" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="24" font-weight="700">How v0.1.5–v0.2.1 expanded the session without bloating the core</text>
+  <text x="56" y="84" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Every new surface plugs into the SessionHandle and Cordis context as a swappable capability seam.</text>
+
+  <!-- Orthogonal connectors (drawn before boxes) -->
+  <path d="M 236,248 H 340" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#v021-arrow-accent)"/>
+  <path d="M 580,200 H 632 Q 640,200 640,192 V 164 Q 640,156 648,156 H 688" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#v021-arrow-accent)"/>
+  <path d="M 580,248 H 688" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#v021-arrow-accent)"/>
+  <path d="M 580,296 H 632 Q 640,296 640,304 V 340 Q 640,348 648,348 H 688" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#v021-arrow)"/>
+  <path d="M 460,336 V 388" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#v021-arrow)"/>
+
+  <!-- Connector labels with paper masks -->
+  <rect x="260" y="228" width="60" height="12" rx="2" fill="#faf9fc"/>
+  <text x="290" y="236" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" text-anchor="middle" letter-spacing="0.06em">BOOT</text>
+
+  <rect x="596" y="228" width="76" height="12" rx="2" fill="#faf9fc"/>
+  <text x="634" y="236" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" text-anchor="middle" letter-spacing="0.06em">CAPABILITIES</text>
+
+  <!-- Node 1: Profile & Plugin Market -->
+  <rect x="56" y="160" width="180" height="176" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <rect x="68" y="172" width="64" height="16" rx="4" fill="transparent" stroke="#68636f" stroke-width="0.8"/>
+  <text x="100" y="184" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" text-anchor="middle" letter-spacing="0.08em">PROFILE</text>
+  <text x="72" y="212" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Profile Config</text>
+  <text x="72" y="236" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">ctx.pluginMarket</text>
+  <text x="72" y="260" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">engines.dsh check</text>
+  <text x="72" y="284" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Presets as bundles</text>
+  <text x="72" y="312" fill="#7867d9" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12" font-weight="600">Menu-bar dsh CLI</text>
+
+  <!-- Node 2: Focal SessionHandle + Cordis Core -->
+  <rect x="340" y="152" width="240" height="184" rx="6" fill="#17151d" stroke="#7867d9" stroke-width="1.2"/>
+  <rect x="356" y="168" width="76" height="16" rx="4" fill="transparent" stroke="#a99dea" stroke-width="0.8"/>
+  <text x="394" y="180" fill="#a99dea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" text-anchor="middle" letter-spacing="0.08em">CORE SEAM</text>
+  <text x="356" y="208" fill="#ffffff" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">SessionHandle (V3 → V4)</text>
+  <text x="356" y="236" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Single-process lock &amp; async init</text>
+  <text x="356" y="260" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">ctx.workingDirectory seam</text>
+  <text x="356" y="284" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Dynamic prompt &amp; tool KV cache</text>
+  <text x="356" y="312" fill="#a99dea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12" font-weight="600">agent/created lifecycle</text>
+
+  <!-- Node 3: Right Sidebar -->
+  <rect x="688" y="116" width="216" height="80" rx="6" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="708" y="148" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Right Sidebar</text>
+  <text x="708" y="172" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">Office · PDF · Terminals · Diffs</text>
+
+  <!-- Node 4: Remote & Execution Hands -->
+  <rect x="688" y="208" width="216" height="80" rx="6" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="708" y="240" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Execution Hands</text>
+  <text x="708" y="264" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">SSH · Browser Use · PTC REPL</text>
+
+  <!-- Node 5: Schedules & Background Jobs -->
+  <rect x="688" y="304" width="216" height="80" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="708" y="336" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Schedules &amp; Jobs</text>
+  <text x="708" y="360" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">1-min cron · job_list wakeup</text>
+
+  <!-- Node 6: Messages API Adapter -->
+  <rect x="340" y="388" width="240" height="72" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="360" y="420" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Messages-Only Adapter</text>
+  <text x="360" y="444" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">deepseek-flash · Search &amp; Fetch</text>
+
+  <!-- Legend strip -->
+  <line x1="56" y1="484" x2="904" y2="484" stroke="rgba(23,21,29,0.12)" stroke-width="0.8"/>
+  <text x="56" y="508" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" letter-spacing="0.14em">LEGEND</text>
+  <rect x="128" y="500" width="12" height="8" rx="2" fill="#17151d" stroke="#7867d9" stroke-width="1"/>
+  <text x="148" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Core session runtime</text>
+  <rect x="308" y="500" width="12" height="8" rx="2" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="328" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">New v0.1.5–v0.2.1 seams</text>
+  <rect x="508" y="500" width="12" height="8" rx="2" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="528" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Adapter &amp; profile services</text>
+</svg>
+</body>
+</html>

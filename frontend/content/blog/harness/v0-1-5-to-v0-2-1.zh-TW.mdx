@@ -1,0 +1,102 @@
+---
+title: 從 v0.1.5 到 v0.2.1：DeepSeek Harness 如何長出側邊欄、遠端雙手與即時外掛市場
+description: 八週內的 27 個預發佈版本，如何把一個本機程式碼聊天工具演進為支援 Office 預覽、SSH 遠端工作區、瀏覽器操控與自訂外掛源的全功能工作台。
+author: Steven Lynn
+date: 2026-10-24
+cover: /blog/covers/harness-v0-2-1-milestones.webp
+series: harness
+---
+
+如果你上一次更新 DeepSeek Harness 還是在 8 月底（`dsh-v0.1.2-alpha.1`），那麼當你打開 10 月下旬的最新版本（[`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)）時，會感覺像是走進了一間面積擴大了一倍的工作室。
+
+視窗右側的多分頁側邊欄裡，一邊預覽著 Excel 試算表的公式與工作表，另一邊並排開著即時終端機和逐檔案程式碼 Diff；你本機的介面正在透過 SSH 直接修改遠端 Linux 開發機上的程式碼；一個耗時的背景指令跑完後主動喚醒了智慧體繼續下一步；而在 macOS 或 Windows 上，你甚至不需要安裝 Node.js 或 `pnpm`——直接從桌面版選單列一鍵就能裝好 `dsh` 命令列。
+
+在短短八週、連續 27 個預發佈版本的高頻迭代中，DeepSeek Harness 是如何在不把核心變成臃腫怪物的情况下塞進這麼多重量級能力的？答案依然是**把每一項新能力都做成標準的 Cordis 服務接縫（Capability Seam）**。下面我們按四個里程碑，帶你由淺入深梳理這段演進史。
+
+![v0.1.5 至 v0.2.1 如何在不膨脹核心的前提下擴展工作階段能力。](/blog/diagrams/harness-v0-2-1-architecture.svg)
+
+## 里程碑一（`v0.1.5`）：為什麼單欄聊天視窗不夠用了？
+
+在早期版本裡，所有互動都擠在聊天流或者狹窄的詳情抽屜（Detail panel）裡。當智慧體只輸出幾十行程式碼片段時這毫無問題；但一旦智慧體開始產生 PDF 報告、HTML 原型頁面或派生子智慧體任務，單欄聊天就會讓人顧此失彼。
+
+發佈於 2026 年 9 月 10 日的 [`dsh-v0.1.5-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1)（彙整了 `0.1.3` 與 `0.1.5` 系列 Alpha）一次性解決了三個基礎問題：
+
+1. **多分頁右側邊欄（Right Sidebar）正式取代詳情面板。** 支援多分頁、分割畫面與全螢幕預覽，可直接渲染 Markdown、語法高亮原始碼、HTML、PDF 與圖片，甚至能直接預覽非活動工作階段或子智慧體工作階段產出的檔案。對外掛作者而言，UI 掛載槽位統一遷移到了 `sidebar.panellist` 與 `main`（原 `conversation` 槽位變為 `main` 下的子鍵）。
+2. **單行程工作階段鎖（`SessionHandle`）與 Session V3 格式。** 如果你在兩個終端機裡不小心同時打開了同一個工作階段會怎樣？從 `0.1.3-alpha.1` 引入並在 `0.1.5-rc.1` 定型的 `SessionHandle` 確保同一時刻只有一個行程持有工作階段寫入鎖。同時工作階段日誌升級到 **V3 格式**，將系統提示詞納入訊息歷史，並在遷移舊日誌時產生相鄰的 `.v3.jsonl` 檔案，絕不破壞原檔案。
+3. **`deepseek-flash` 成為新工作階段預設模型。** 在 DeepSeek 發佈 `DeepSeek-V4.1-Flash` 的同一天，官方介面卡將 `deepseek-flash` 設為新工作階段的預設模型，並支援在對話中途動態更新系統提示詞而不遺失 KV 快取。
+
+<BlogStructureMap
+  diagram="harness-v0-2-1-architecture"
+  eyebrow="HTML 結構圖 · v0.1.5–v0.2.1 能力接縫架構"
+  title="工作區介面、遠端執行雙手與外掛市場如何圍繞 SessionHandle 組裝"
+  caption="每個里程碑都沒有把功能寫死進核心迴圈，而是註冊為獨立的 Cordis 上下文服務（sidebar.panellist、ctx.browserUse、ctx.workingDirectory、ctx.pluginMarket）。"
+  node1Title="1. 工作區與介面接縫"
+  node1Body="右側邊欄承載 Office、PDF 與多分頁終端機；桌面版 v0.2.0-rc.2 支援從選單列一鍵安裝 dsh CLI。"
+  node2Title="2. 遠端與環境執行雙手"
+  node2Body="提供 SSH 遠端工作區、Stagehand/Playwright 瀏覽器操控、Cua 桌面操控，以及純 Messages 協定介面卡。"
+  node3Title="3. 即時外掛平台"
+  node3Body="設定項與 Agent Preset 統一融入 Profile 擴充包，支援 engines.dsh 版本校驗與自訂外掛源 URL。"
+/>
+
+## 里程碑二（`v0.1.6` 與 `v0.1.7`）：智慧體長出「雙手」的一週
+
+如果智慧體只能讀寫你筆記型電腦本機的文字檔，那麼一旦程式碼跑在遠端伺服器上，或者需要操作真實瀏覽器、查看 Excel 報表、按分鐘定時巡檢，它就會束手無策。
+
+在 9 月中下旬的 [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1) 到 [`dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.2) 之間，DeepSeek Harness 真正長出了操控外部環境的雙手：
+
+- **SSH 遠端工作區（Local DSH, Remote Workspace）：** DSH 介面依然跑在你的本機電腦上，但透過 SSH 連線遠端主機後，檔案讀寫、終端機指令和 Node PTC 程式碼全部直接在遠端目錄樹上執行。
+- **實驗性 Browser Use 與 Computer Use：** 官方推出了 `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`（提供 `stagehand_navigate`、`stagehand_act`、`stagehand_extract`、`stagehand_screenshot` 等工具，同時支援 Playwright MCP 與 Chrome DevTools MCP）以及桌面操控套件 `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native`。
+- **Office 全家桶預覽與背景任務喚醒：** 右側邊欄新增對 Word、PowerPoint 以及 Excel/CSV/TSV 試算表的唯讀預覽（支援查看多工作表、儲存格與公式，底層由 `@deepseek-ai/dsh-office-to-pdf` 與內建 LibreOffice 引擎驅動）。耗時指令或工作流在等待逾時後可轉入背景（`job_list`、`job_output`、`job_kill`），並在執行完畢時自動喚醒工作階段繼續回答。
+- **一分鐘粒度的排程任務（`v0.1.7-rc.2`）：** 開啟排程任務開關後，智慧體可透過 `schedule_create`、`schedule_list`、`schedule_update`、`schedule_delete` 建立跨重啟持久化的提醒與週期任務（最短間隔 1 分鐘）。
+- **鎖定純 Messages 協定與 Preset 擴充包化（`v0.1.7-rc.1`）：** 官方 DeepSeek 介面卡全面轉向 **Messages 協定**（`https://api.deepseek.com/anthropic`），移除了舊的 `protocol` 選項。同時，全域設定從 `settings.yaml` 遷入目前 Profile 的外掛設定中，而 **Agent Preset（智慧體預設）正式統一為標準的 Cordis Bundle**。
+
+點擊下方互動式模擬介面，逐步體驗從 `v0.1.5` 到 `v0.2.1` 的四大工作台能力：
+
+<BlogMockUi
+  scene="harness-sidebar-hands"
+  eyebrow="互動式模擬 UI · 里程碑工作台演進（v0.1.5 → v0.2.1）"
+  title="體驗右側邊欄預覽、SSH 與瀏覽器雙手、Messages 協定及自訂外掛市場"
+  caption="點擊左側階段（1–4），查看 9 月至 10 月四大里程碑新增的 Cordis 服務接縫與核心設定。"
+  step1Title="1. v0.1.5：右側邊欄與 Session V3"
+  step1Body="多分頁分割側邊欄取代舊詳情抽屜；SessionHandle 實施單行程鎖，deepseek-flash 成為新工作階段預設模型。"
+  step2Title="2. v0.1.6：SSH 遠端、瀏覽器操控與獨立行程 PTC"
+  step2Body="本機介面直連遠端 SSH 工作區，整合 Stagehand/Playwright 瀏覽器操控，並將 Node PTC 隔離至獨立空環境變數行程。"
+  step3Title="3. v0.1.7：純 Messages 協定、Office 預覽與排程任務"
+  step3Body="官方介面卡鎖定 Messages + Files API；Agent Preset 統一為 Bundle；側邊欄支援 XLSX/DOCX 預覽與 1 分鐘級排程任務。"
+  step4Title="4. v0.2.0–0.2.1：選單列 CLI 與自訂外掛源"
+  step4Body="桌面版選單列一鍵安裝 dsh 指令；支援自訂外掛索引 URL、engines.dsh 校驗、working_directory 工具與持久記憶體 REPL。"
+/>
+
+## 里程碑三（`v0.2.0-rc.2`）：無需安裝 Node，從桌面選單列一鍵啟用 `dsh`
+
+對於一般使用者來說，嘗試命令列智慧體工具的第一道門檻往往是設定 Node.js 和 `pnpm` 環境。
+
+9 月 29 日發佈的 [`dsh-v0.2.0-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) 在 macOS 與 Windows 桌面版選單列中新增了 **Manage dsh command（管理 dsh 指令）**。只需點擊一下，桌面應用就會把自帶簽章執行期的 `dsh` 指令註冊到你的系統終端機裡——無需單獨安裝 Node 或 `pnpm`，就能直接在命令列啟動工作階段或管理桌面端 Profile 的外掛。
+
+同時，該版本將第三方模型目錄升級至 **pi-ai 0.87.1**，在 macOS/Linux 桌面端啟動時自動載入登入 Shell 的環境變數（讓自訂 PATH 與代理設定直接生效），並新增了實驗性的**非同步提問模式（Asynchronous Question Mode）**——當智慧體向你提問而等待逾時後，它可以先行繼續推進手頭工作，等你稍後隨時補答。
+
+## 里程碑四（`v0.2.1-rc.1` 至 `rc.3`）：走向成熟的開放外掛平台
+
+10 月份密集發佈的 `0.2.1` 系列（從 10 月 17 日的 [`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1) 到 10 月 23 日的 [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)）把重心放在了外掛生態的發現、開發與生產級部署上：
+
+- **自訂外掛索引源（`ctx.pluginMarket`）：** DeepSeek Harness 官方不內建中心化應用商店，但 `v0.2.1` 允許你在 **Plugins → Experimental → Custom plugin indexes** 中填入任意 `http:` 或 `https:` 外掛索引 URL，直接在應用內的 Discover 分頁瀏覽與安裝社群目錄。
+- **`engines.dsh` 版本相容校驗：** 外掛現在可以在 `package.json` 中宣告 `engines.dsh` 版本範圍。安裝與啟動時會優先校驗該欄位，並在版本不相符時給出清晰的原因說明。
+- **全新工作目錄工具與全域指令目錄（`working_directory` 與 `DSH_AGENTS_HOME`）：** 智慧體可透過 `working_directory` 工具（`ctx.workingDirectory`）讀取或切換目前目錄；全域指令支援從 `DSH_AGENTS_HOME` 共享目錄載入 `AGENTS.md`；Web 與桌面端正式支援 `/compact` 手動壓縮指令。
+- **Node PTC 持久記憶體 REPL 模式：** `@deepseek-ai/dsh-ptc-runtime-node` 新增 `executionMode: 'persistent-in-memory'`，讓變數、函式與匯入模組在多次 `run_code` 呼叫之間持續保留在記憶體中，同時嚴格遵守工作階段的檔案沙箱策略。舊的 `both` 工具呈現模式被移除，僅保留 `'native'` 與 `'ptc'`。
+- **反向代理與 TLS 部署參數：** 針對遠端部署場景，`dsh web` 新增了 `--public-url`（支援帶路徑前綴的反向代理位址）、指定 IPv4/IPv6 介面綁定（出於安全設計拒絕 `0.0.0.0` 和 `::` 萬用綁定）以及 `--tls-cert` / `--tls-key` 憑證設定。
+- **豐富的官方實驗性擴充包：** 包括自動建立並切入 Git 工作樹的 `@deepseek-ai/dsh-experimental-worktree`、支援將思考過程即時翻譯為介面語言的 `@deepseek-ai/dsh-experimental-client-ui-cot-translation`，以及用於驗證外掛模型完備性的 Claude Code Mods 相容層 `@deepseek-ai/dsh-experimental-claude-code-mods`。
+
+## 從 `0.1.2` 升級到 `0.2.1-rc.3` 的六項必查清單
+
+如果你準備把手頭的 Profile 或自己開發的外掛升級到最新的 `0.2.1-rc.3`，請按下面這張清單逐項核對：
+
+| 涉及模組 | `0.1.2` 到 `0.2.1-rc.3` 之間的破壞性變更 | 升級操作建議 |
+| --- | --- | --- |
+| **DeepSeek API 協定** | 官方介面卡**僅支援 Messages 協定**，移除了 `protocol` 設定項（`0.1.7`）。 | 刪除設定中的 `protocol` 欄位；若自訂了官方位址，請改為 `https://api.deepseek.com/anthropic`。 |
+| **Agent Preset 與設定** | 舊目錄式 Preset 改為 Cordis Bundle；`settings.yaml` 一次性匯入 Profile 設定（`0.1.7`）。 | 將自訂預設打包為 Bundle，並在 `package.json` 中宣告 `engines.dsh`。 |
+| **外掛上下文介面** | 移除 `ctx.agent` 與 `./invariant` 匯出；`Inbox` 變為純型別（使用 `agent.inbox`）。 | 明確傳遞 `Agent` 實例，移除對各套件 `./invariant` 子路徑的引用。 |
+| **工具呈現模式** | `@deepseek-ai/dsh-tools` 移除了 `mode: 'both'`（`0.2.1-alpha.2`）。 | 明確選擇 `'native'`（原生工具 Schema）或 `'ptc'`（`run_code` 程式碼模式）。 |
+| **Headless 金鑰讀取** | Headless 模式僅讀取環境變數與 `.env`，不再讀取桌面/網頁端保存的金鑰（`0.2.1-alpha.3`）。 | 在 CI 或自動化腳本中明確匯出 `DEEPSEEK_API_KEY` 等環境變數。 |
+| **工具輸出截斷預算** | `spill-policy.maxInlineBytes` 更名為 `maxInlineTokens`（`0.1.7-alpha.2`）。 | 將自訂截斷策略的預算單位從位元組（Bytes）改為估算 Token 數。 |
+
+官方版本說明索引：[dsh-v0.1.5-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1) · [dsh-v0.1.7-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.1) · [dsh-v0.2.0-rc.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) · [dsh-v0.2.1-rc.3](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)。

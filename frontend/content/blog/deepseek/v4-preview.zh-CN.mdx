@@ -1,74 +1,102 @@
 ---
 title: DeepSeek-V4 预览版，以及它给 Harness 带来的变化
-description: 2026 年 4 月的 V4 公告把 1M 上下文做成默认。Harness 随后跟上了 Flash-Vision、Files API 上传，以及旧模型名的下线日期。
+description: 当上下文窗口一夜之间扩大到 1,000,000 Token，为什么粗放的智能体还是会撞墙？看 DeepSeek-V4 如何推动 Harness 适配器、Files API 图片复用与模型命名的演进。
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/deepseek-v4-preview.webp
 series: deepseek
 ---
 
-DeepSeek 于 2026 年 4 月 24 日发布 [DeepSeek-V4 预览版](https://www.deepseek.com/news/v4-preview/)。那篇文章是第一手来源。本文不是转载，而是截至 Harness v0.1.2-alpha.1，这条公告对目录所索引的 agent 运行时做了什么。
+当大模型的上下文窗口从 128K 一夜之间跳升到 **1,000,000 Token（1M）** 时，几乎所有人都会产生同一个冲动：以后再也不用费心筛选文件了，直接把整个代码仓库塞进提示词，把所有截图一股脑丢给模型，让它自己去找答案！
+
+然而当你真正在代码会话里这么干时，到了第十五轮工具调用，响应延迟开始明显拉长，重复上传的截图让请求体急速膨胀，而真正引发 Bug 的那三行代码早已被淹没在几万行无关日志里。
+
+2026 年 4 月 24 日，DeepSeek 发布了 [DeepSeek-V4 Preview（V4 预览版）](https://www.deepseek.com/news/v4-preview/)。公告最吸睛的数字无疑是“默认 1M 上下文窗口”；但对于普通用户和插件开发者来说，真正关键的是**随后几个月里 DeepSeek Harness 在底层适配器上做出的连续改造**——正是这些改造，才让智能体真正用好了 1M 窗口、通过 Files API 高效复用图片，并平稳完成了旧模型名称的退役交接。
 
 ![V4 公告之后，DeepSeek Harness adapter 分阶段发生变化。](/blog/diagrams/v4-adapter-timeline.svg)
 
-## 公告实际写了什么
+## 两款开源权重模型，同一个默认 1M 窗口
 
-两个开源权重模型，官方服务上的默认上下文都是 **1M token**：
+我们先用最通俗的语言梳理一下 4 月份的 V4 公告到底发布了什么。
 
-| 模型              | 总参数 / 激活参数 | 公告中的定位                                 |
-| ----------------- | ----------------- | -------------------------------------------- |
-| DeepSeek-V4-Pro   | 1.6T / 49B        | 编程、世界知识、数学——对标闭源               |
-| DeepSeek-V4-Flash | 284B / 13B        | 更快更便宜；「简单 Agent 任务上与 Pro 相当」 |
+DeepSeek 没有把长上下文做成一个额外收费的“长文本高价版”，而是依靠**逐 Token 压缩（token-wise compression）与 DSA（DeepSeek 稀疏注意力，DeepSeek Sparse Attention）**，直接把 **1M Token 设为两款 MoE 模型的默认标准窗口**：
 
-架构主张是 **token 维压缩加上 DSA**（DeepSeek Sparse Attention）。1M 不是可选的长上下文 SKU，而是标准窗口。
+| 模型名称 | 总参数 / 激活参数 | API `model` 标识 | 适用场景定位 |
+| --- | --- | --- | --- |
+| **DeepSeek-V4-Pro** | 1.6T 总参数 / 49B 激活 | `deepseek-v4-pro` | 复杂架构设计、跨多文件疑难排错、数学与深度推理（推荐开启 `thinking: max`） |
+| **DeepSeek-V4-Flash** | 284B 总参数 / 13B 激活 | `deepseek-v4-flash` | 高频工具调用、子智能体并发任务与日常快速迭代，成本与延迟大幅降低 |
 
-API 的 `base_url` 不变。`model` 改为 `deepseek-v4-pro` 或 `deepseek-v4-flash`。两个名字都支持思考 / 非思考。公告建议 Agent 场景用思考模式，强度 `max`。
+两款模型均沿用原有的 API `base_url`，并同时支持思考（thinking）与非思考模式（在网页端与 App 中对应**专家模式 Expert Mode** 与**极速模式 Instant Mode**）。对于智能体（Agent）负载，官方明确建议将思考强度设为 `max`。
 
-**下线：** `deepseek-chat` 与 `deepseek-reasoner` 于 **2026 年 7 月 24 日 15:59 UTC** 停止。此前分别路由到 V4-Flash 的非思考与思考。过期之后这两个字符串是死名，不是别名。
+同样需要划重点的是旧名称的退役时间表：老一代的 **`deepseek-chat` 与 `deepseek-reasoner` 已于 UTC 时间 2026 年 7 月 24 日 15:59 正式停止服务**。在此日期前它们曾临时路由至 V4-Flash，而在那之后，这两个字符串已经彻底失效，不再作为别名保留。
 
-网页与 App 以专家模式 / 极速模式暴露这一对。权重与技术报告从公告页链出（Hugging Face / ModelScope、arXiv）。
+<BlogStructureMap
+  diagram="v4-adapter-timeline"
+  eyebrow="HTML 结构图 · 适配器四阶段演进"
+  title="从 V4 模型发布到 DeepSeek Harness 适配器的四步落地"
+  caption="纸面上的 1M 上下文窗口，需要运行时配套原生图片请求、Files API 缓存复用与压缩统计才能真正发挥威力。"
+  node1Title="1. V4 模型底座"
+  node1Body="借助 DSA 稀疏注意力将 1M 上下文设为默认标配，由 V4-Pro（49B 激活）与 V4-Flash（13B 激活）分工协作。"
+  node2Title="2. Harness 适配器改造"
+  node2Body="从 v0.1.0-rc.8 到 v0.1.2-alpha.1，官方适配器陆续补齐了原生图片输入、Files API 上传复用以及含图片的上下文压缩。"
+  node3Title="3. 迈向 V4.1 统一多模态"
+  node3Body="在 2026 年 9 月至 10 月的后续更新中，deepseek-flash 直接内置原生视觉，而 deepseek-v4-pro 继续承担重度推理。"
+/>
 
-## Harness 拿它做了什么
+## DeepSeek Harness 是如何把模型能力变成运行时底座的？
 
-V4 公告在四月。八月人们实际跑的 harness 预览已经把 V4 当活的家族：
+模型公告告诉你权重能做什么，而智能体运行时（Harness）必须把这些能力变成稳定可靠的工具调用。
 
-- **v0.1.1-rc.1** 在官方适配器上增加 `DeepSeek-V4-Flash-Vision-Exp`——图像输入，实验性，名字就写着 Exp。
-- **v0.1.1-rc.2** 让适配器优先走 **Files API** 上传图像并复用已传文件，按模型要求缩放和转格式。
-- **v0.1.0-rc.8** 已经为 DeepSeek 适配器打开原生图片请求（`/goal`、`/plan`、`@` 引用文件和会话）。
-- **v0.1.2-alpha.1** 把**已启用插件的包名和版本**附在官方 DeepSeek 请求上，并提供可选的 Session 日志上传。
+顺着 8 月份 `v0.1.2-alpha.1` 之前的版本脉络往回看，你会看到官方适配器分四个阶段完成了对 V4 的深度适配：
 
-所以公告里「与 Claude Code、OpenClaw、OpenCode 以及 DeepSeek 自研 coding agent 集成」不是贴在未改运行时旁边的营销句。随后几个月，vision、Files API 和插件身份都成了这条 API 上的一等公民。
+1. **打通原生图片请求（`v0.1.0-rc.8`）：** 在 `/goal`、`/plan` 以及 `@` 文件与会话引用中正式启用了原生图片请求。
+2. **引入实验性视觉模型（`v0.1.1-rc.1`）：** 官方适配器新增 `DeepSeek-V4-Flash-Vision-Exp`（`deepseek-v4-flash-vision-exp`），让智能体可以直接看懂截图与架构图。
+3. **优先走 Files API 复用图片并自动缩放（`v0.1.1-rc.2`）：** 不再每轮对话都重复上传几兆的 Base64 图片数据，而是优先通过 **Files API** 上传并在后续轮次复用文件 ID，同时自动按模型要求缩放与转换图片格式。
+4. **插件标识与图片压缩计费（`v0.1.2-alpha.1`）：** 在会话自动压缩（Compaction）时将图片纳入预算统计，并在官方请求中附带已启用插件的包名与版本。
 
-实验性视觉模型是单独的 `model` 字符串：`deepseek-v4-flash-vision-exp`。API 文档目前写明 `deepseek-v4-flash` 对应 DeepSeek-V4-Flash-0731，`deepseek-v4-pro` 对应 DeepSeek-V4-Pro-0813——名字不变，快照更新。调用方式不变。
+*（给使用最新版本的读者的提示：正如我们在后续文章《[DeepSeek-V4.1-Flash 与原生搜索](/blog/deepseek/v4-1-flash-and-search)》中所介绍的，2026 年 9 月发布的 `v0.1.5` 已将原生多模态视觉直接合入了 `deepseek-flash`，原先独立的 `deepseek-v4-flash-vision-exp` 已完成历史使命并自动路由过去；而 `deepseek-v4-pro`（`DeepSeek-V4-Pro-0813`）则继续作为独立的重度推理模型提供服务。）*
 
-## 1M 窗口改变的是预算，不是检索的必要性
+## 为什么拥有 1M 窗口后，依然不能放弃精准检索？
 
-更大的上下文窗口会减轻截断压力，但不会让整仓库无差别倾倒变成免费。输入仍有延迟和成本，重复文件仍会与工具结果争夺空间，长会话仍需要 compaction。插件作者应把 1M 看成一笔更大的预算，而不是无需记账的容量：筛选证据，保留关键决策，并给回答留出空间。
+很多初次接触 1M 上下文的开发者容易掉进一个误区：**窗口变大了，不等于塞进提示词里的冗余内容是免费的。**
 
-Vision 还有第二笔预算。Files API 避免重复上传同一素材，adapter 的 resize 和转换路径则让图片满足所选模型的输入要求。两者都不会判断图片是否相关。一个一次返回十张近似截图的工具，应该在返回结果前先去重。
+即便模型能够装下 100 万 Token 而不报错截断，你依然要面对三个现实物理规律：
 
-## 最小迁移检查
+- **每一轮重读历史都要付出延迟和费用。** 智能体一个任务往往要连续调用十几次工具，历史越臃肿，每一步的首字延迟（TTFT）和开销就越高。
+- **无关噪音会稀释注意力。** 如果一个搜索插件不分青红皂白把 8 万 Token 的原始日志倒进上下文，模型在后续每一轮都得在这堆草垛里找针。
+- **视觉输入同样需要预算管理。** Files API 解决了“同一张图不重复上传”的带宽问题，自动缩放解决了分辨率超标问题，但它们无法替你判断“连续十张几乎一模一样的网页截图”到底有没有留存价值。优秀的插件应当在返回结果前先对图片去重。
 
-检查配置和示例里的退役 model 字符串，然后实际跑一遍插件会产生的 modality：
+点击下方交互式模拟界面，直观查看多轮智能体会话中 1M 上下文预算与 Files API 缓存是如何协同工作的：
+
+<BlogMockUi
+  scene="v4-context-budget"
+  eyebrow="交互式模拟 UI · 1M 上下文预算与 FILES API"
+  title="在多轮会话中管理 1M 上下文窗口与 Files API 图片缓存复用"
+  caption="点击左侧步骤（1–4），观察模型名称迁移、Files API 文件句柄复用、上下文压缩预算以及 V4.1 演进的完整配合。"
+  step1Title="1. 替换已退役的旧模型名称"
+  step1Body="告别已失效的 deepseek-chat 与 deepseek-reasoner，显式指定 V4/V4.1 模型名称并按任务复杂度配置思考强度。"
+  step2Title="2. 通过 Files API 缓存复用图片"
+  step2Body="适配器在首轮自动缩放图片并上传至 Files API 获取 file_id，后续轮次直接引用句柄，实现零重复字节上传。"
+  step3Title="3. 精细化管理 1M 上下文预算"
+  step3Body="提取精准代码切片并对截图去重，让会话压缩（Compaction）保留关键决策，为输出留出充足空间。"
+  step4Title="4. 衔接 9 月 V4.1-Flash 统一视觉"
+  step4Body="在 Harness v0.1.5+ 中，deepseek-flash 统一承载文本与原生视觉，deepseek-v4-pro 则继续负责高难度深度推理。"
+/>
+
+## 普通用户与插件作者的四步迁移清单
+
+如果你正在配置自己的 Profile，或者在 `dsh.fish` 上维护插件与技能（Skill），请对照以下表格完成检查：
 
 ```text
-deepseek-chat       → deepseek-v4-flash
-deepseek-reasoner   → deepseek-v4-pro（明确选择 thinking）
+已退役旧名称（7月24日停用）   8月 V4 阶段模型名         当前推荐模型名（2026年9月–10月）
+--------------------------   ------------------       ------------------------------------
+deepseek-chat             -> deepseek-v4-flash     -> deepseek-flash（文本 + 原生多模态视觉）
+deepseek-reasoner         -> deepseek-v4-pro       -> deepseek-v4-pro（DeepSeek-V4-Pro-0813）
 ```
 
-不要把这组映射机械套到 workload 上。Flash 和 Pro 的成本与能力目标不同，thinking intensity 也是独立选择。在 Profile 中固定预期 model，运行一项代表性任务，并在更新 README 前通过官方 adapter 验证图片和 file 行为。
+1. **立即清理 README 与配置示例中的 `deepseek-chat` 和 `deepseek-reasoner`。** 这两个名字在 2026 年 7 月 24 日之后就已彻底停用。在 `dsh.fish` 的评分体系中，仍然教用户配置失效模型名的文档会被判定为维护缺陷。
+2. **用“精选证据”代替“全库倾倒”。** 把 1M 窗口用来保存跨文件的核心架构上下文和关键 Diff，而不是放弃检索策略。
+3. **把图片当作一等公民工具结果。** 如果你的插件会产出图表、截图或视觉对比，请确保返回干净、去重后的文件，以便官方适配器通过 Files API 缓存并在压缩时准确计入预算。
+4. **把模型选择权留给用户的 Profile。** `dsh.fish` 的安装计划从不写入 API 密钥，也不会替用户硬编码计费模型。让用户根据任务需要自行在 `deepseek-v4-pro` 与 `deepseek-flash` 之间切换。
 
-## 插件作者不该忽略的
-
-1. **不要再把 `deepseek-chat` / `deepseek-reasoner` 写成调用方式。** 它们有下线日。四月还对的 README，在 2026 年 7 月 24 日就会错。
-2. **1M 是官方适配器围绕的窗口。** 假定 128k 裁剪、或把整仓塞进一次 prompt 却没有检索策略的 skill，现在要么浪费窗口，要么以另一种方式溢出。
-3. **图像是一等的工具结果**，不是边栏。插件若产出截图、图表或 diff 图，官方适配器会走 Files API 和 vision-exp。压缩时要把它们算进去（v0.1.2-alpha.1 已经算了）。
-4. **官方适配器能告诉 DeepSeek 加载了哪些插件。** 包名丢人、误导或冲突，现在会跟请求一起走。
-
-## 本目录不会做什么
-
-dsh.fish 不替你选模型。安装计划从不写 API key。V4 公告里的定价和高峰时段属于 [DeepSeek API 文档](https://api-docs.deepseek.com/quick_start/pricing)，不属于目录行。
-
-目录要做的是让安装计划对准 V4 实际跑在里面的运行时。插件 README 还在写 `export deepseek-chat`，那是可以打进维护分的文档缺陷，不是另一个产品。
-
-第一手来源：[DeepSeek-V4 预览版](https://www.deepseek.com/news/v4-preview/)。英文：[V4 Preview](https://www.deepseek.com/en/news/v4-preview/)。
+官方一手资料：[V4 预览版中文公告](https://www.deepseek.com/news/v4-preview/) · [DeepSeek-V4 Preview (English)](https://www.deepseek.com/en/news/v4-preview/) · [DeepSeek API 定价文档](https://api-docs.deepseek.com/quick_start/pricing)。

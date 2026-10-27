@@ -1,0 +1,109 @@
+---
+title: 'DeepSeek-V4.1-Flash와 네이티브 검색: 가장 빠른 에이전트 모델이 별도의 비전 모델을 졸업한 이유'
+description: 552B Causal Encoder-Decoder 구조가 KV 캐시 메모리를 1/4로 줄이고 네이티브 비전을 deepseek-flash 하나로 통합한 과정, 그리고 10월 공식 Search & Fetch API와의 결합을 살펴봅니다.
+author: Steven Lynn
+date: 2026-10-19
+cover: /blog/covers/deepseek-v4-1-flash.webp
+series: deepseek
+---
+
+코딩 에이전트를 한 시간 동안 돌려 보면 API 요금과 대기 시간의 대부분을 차지하는 주범은 무엇일까요?
+
+흔히 '모델이 새로 작성하는 코드'라고 생각하기 쉽지만 실제로는 정반대입니다. **에이전트는 매 단계마다 이미 쌓여 있는 15만 토큰짜리 대화 내역, 파일 내용, 도구 스키마를 처음부터 반복해서 다시 읽는 데 대부분의 시간을 씁니다.** 게다가 세션 도중에 새 플러그인 도구를 켜거나 시스템 프롬프트를 조금이라도 수정하면, 기존 모델은 프리픽스 캐시(KV Cache)를 무효화하고 전체 히스토리를 처음부터 다시 계산해야 했습니다.
+
+이 병목을 이해하면 8월 이후 DeepSeek가 내놓은 두 가지 굵직한 업데이트—**2026년 9월 10일 발표된 [DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/)**와 **10월 17일 공개된 [DeepSeek-V4.1-Flash-1017 스냅샷 및 공식 Search & Fetch API](https://api-docs.deepseek.com/news/news261017/)**—의 의도가 명확하게 보입니다.
+
+![단일 모델 ID로 멀티모달 턴, KV 캐시 히트, 웹 검색을 처리하는 파이프라인.](/blog/diagrams/v4-1-flash-pipeline.svg)
+
+## '입력 8B / 출력 16B' 비대칭 활성 파라미터가 에이전트에 꼭 맞는 이유
+
+`DeepSeek-V4.1-Flash`(API 모델명 `deepseek-flash`)의 아키텍처는 '방대한 입력 읽기 + 간결한 도구 호출 출력'이라는 에이전트 워크로드에 맞춰 설계되었습니다.
+
+입력과 출력에 똑같은 활성 파라미터를 쓰는 기존 Decoder-only 구조 대신, `DeepSeek-V4.1-Flash`는 **총 552B 파라미터의 MoE Causal Encoder-Decoder** 구조를 채택했습니다.
+
+- **입력 시 8B 활성 파라미터:** 긴 히스토리와 코드 Diff, 이미지를 빠르게 읽어 들입니다.
+- **출력 시 16B 활성 파라미터:** 실제 코드를 작성하고 도구 호출을 계획할 때는 두 배의 활성 용량으로 추론 품질을 지킵니다.
+- **KV 캐시 메모리 1/4 HBM 및 1/8 SSD로 축소:** 이전 세대 대비 캐시 점유 공간이 대폭 줄어들어 긴 세션의 프리픽스가 훨씬 오래 따뜻하게 유지됩니다.
+
+<BlogStructureMap
+  diagram="v4-1-flash-pipeline"
+  eyebrow="HTML 구조도 · V4.1-FLASH 및 검색 파이프라인"
+  title="deepseek-flash가 멀티모달 입력, KV 캐시 보존, 공식 Search/Fetch를 하나로 묶는 구조"
+  caption="단일 모델 문자열(deepseek-flash)로 텍스트와 이미지를 모두 처리하며, 세션 중 프롬프트·도구 변경 시에도 KV 캐시를 유지하고 공식 /v1/tools/search 및 /fetch에 연결됩니다."
+  node1Title="1. Causal Encoder-Decoder"
+  node1Body="552B MoE(입력 8B / 출력 16B 활성)가 KV 캐시를 1/4 HBM·1/8 SSD로 줄이고 네이티브 비전을 deepseek-flash에 통합합니다."
+  node2Title="2. 캐시를 지키는 동적 업데이트"
+  node2Body="Harness v0.1.5+는 히스토리 내부에 프롬프트 변경을 추가하고 v0.1.7-rc.2+는 도구 동적 추가 시에도 따뜻한 KV 캐시를 보존합니다."
+  node3Title="3. 공식 Search & Fetch"
+  node3Body="Harness v0.2.1-rc.2의 @deepseek-ai/dsh-web-deepseek-api가 POST /v1/tools/search 및 /v1/tools/fetch를 직접 호출합니다."
+/>
+
+## `vision-exp`와의 작별: 텍스트와 이미지를 `deepseek-flash` 하나로
+
+8월까지만 해도 에이전트에게 스크린샷을 보여주려면 `deepseek-v4-flash-vision-exp`라는 별도 모델을 지정해야 했습니다.
+
+`DeepSeek-V4.1-Flash`부터는 **멀티모달 비전이 기본 내장**되었습니다. 이제 텍스트, 코드, 이미지를 가리지 않고 **`deepseek-flash`** 하나만 쓰면 됩니다.
+
+- 구형 이름인 `deepseek-v4-flash`와 `deepseek-v4-flash-vision-exp`는 퇴역했으며 자동으로 `deepseek-flash`(10월 17일부터는 `DeepSeek-V4.1-Flash-1017` 스냅샷)로 라우팅됩니다.
+- DeepSeek Harness(`v0.1.5-rc.1` 이상)에서는 새 세션의 기본 모델이 `deepseek-flash`로 설정되어 있습니다.
+
+### `deepseek-v4-pro`는 어떻게 되었나요?
+
+9월 10일 초기 공지에는 "9월 14일부터 `deepseek-v4-pro`를 임시로 V4.1-Flash로 라우팅한다"는 문구가 있었지만, **그 계획은 공식 철회되었습니다.**
+
+수정된 [DeepSeek API 변경 로그](https://api-docs.deepseek.com/updates/)와 현재 [요금표](https://api-docs.deepseek.com/quick_start/pricing)에 명시된 것처럼, **`deepseek-v4-pro`(`DeepSeek-V4-Pro-0813`)는 9월 14일 이후에도 별도 모델로 정상 운영 및 과금되고 있습니다**(1M 컨텍스트, 384K 최대 출력, 기본 추론 켜짐, 텍스트 전용). 따라서 선택 기준은 간단합니다.
+
+- 빠른 일상 도구 루프, 이미지 입력, 서브에이전트 작업에는 **`deepseek-flash`**를 씁니다.
+- 이미지가 필요 없는 고난도 아키텍처 설계나 수학적 추론에는 **`deepseek-v4-pro`**를 씁니다.
+
+## 대화 도중 프롬프트와 도구를 바꿔도 깨지지 않는 KV 캐시
+
+서버 측 캐시 크기가 1/4로 줄어든 것에 맞춰 DeepSeek Harness 런타임도 두 가지 핵심 업그레이드를 적용했습니다.
+
+1. **히스토리 내 시스템 프롬프트 업데이트(`dsh-v0.1.5-rc.1`):** 세션 도중 모드가 바뀌거나 시스템 지침이 갱신될 때, 첫 메시지를 덮어써서 캐시를 날리는 대신 히스토리 안에 업데이트를 추가해 기존 캐시 프리픽스를 지킵니다.
+2. **캐시를 보존하는 동적 도구 추가(`dsh-v0.1.7-rc.2` & `v0.2.1-alpha.2`):** 대화 도중 플러그인이나 도구를 켜도 모델이 지원하는 한 따뜻한 KV 캐시가 그대로 유지됩니다.
+
+아래 인터랙티브 Mock UI에서 `deepseek-flash`, 동적 캐시 보존, 그리고 10월 Search/Fetch API가 어떻게 맞물려 돌아가는지 확인해 보세요.
+
+<BlogMockUi
+  scene="v4-1-flash-search"
+  eyebrow="인터랙티브 MOCK UI · DEEPSEEK-V4.1-FLASH-1017 & SEARCH"
+  title="1/4 HBM KV 캐시 압축, 동적 도구 주입, 네이티브 Search/Fetch 호출 살펴보기"
+  caption="단계 1~4를 클릭해 DeepSeek-V4.1-Flash-1017과 Harness v0.2.1-rc.2+가 지연 시간, 캐시 히트, 웹 검색을 최적화하는 방식을 확인하세요."
+  step1Title="1. 1/4 HBM KV 캐시 및 네이티브 비전"
+  step1Body="552B Causal Encoder-Decoder(입력 8B / 출력 16B)가 단일 deepseek-flash 모델 ID로 텍스트와 이미지를 모두 처리합니다."
+  step2Title="2. 프롬프트·도구 변경 시에도 따뜻한 캐시 유지"
+  step2Body="세션 도중 플러그인 도구를 켜거나 지침을 갱신해도 히스토리 내 추가로 처리되어 프리픽스 재계산이 발생하지 않습니다."
+  step3Title="3. 내장 /v1/tools/search & /fetch"
+  step3Body="Harness v0.2.1-rc.2의 Web Search 설정이 DeepSeek 자체 검색 인덱스(Search 100 QPS, Fetch 25 QPS)를 ori_question과 함께 호출합니다."
+  step4Title="4. 1017 파레토 스냅샷 업그레이드"
+  step4Body="DeepSeek-V4.1-Flash-1017은 불필요한 출력 길이를 줄이고 Harness 0.2.1-rc.1+에서 작업 완료 시간을 앞당깁니다."
+/>
+
+## 10월 17일 업데이트: `DeepSeek-V4.1-Flash-1017`과 공식 Search & Fetch API
+
+2026년 10월 17일 오전, DeepSeek API와 [`dsh-v0.2.1-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.2)는 두 가지 업데이트를 동시에 선보였습니다.
+
+### 1. 더 간결하고 빨라진 `DeepSeek-V4.1-Flash-1017`
+
+`deepseek-flash`라는 모델 이름과 요금은 그대로 둔 채 가중치가 **`DeepSeek-V4.1-Flash-1017`**로 업그레이드되었습니다([Hugging Face](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) 및 [ModelScope](https://modelscope.cn/models/deepseek-ai/DeepSeek-V4.1-Flash-1017) 공개). **DeepSeek Harness(`0.2.1-rc.1` 이상 권장)**, CodeBuddy, WorkBuddy 환경에 맞춰 최적화되어 출력 토큰 수는 줄고 전체 작업 시간은 단축되었습니다.
+
+### 2. 공식 Search 및 Fetch API 개방
+
+이제 별도의 서드파티 검색 API 키 없이도 DeepSeek 자체 검색 인덱스를 두 엔드포인트로 바로 쓸 수 있습니다.
+
+- `POST https://api.deepseek.com/v1/tools/search`(계정당 최대 100 QPS)
+- `POST https://api.deepseek.com/v1/tools/fetch`(계정당 최대 25 QPS, 도메인별 제한 포함)
+
+DeepSeek Harness `v0.2.1-rc.2` 이상에서는 **`@deepseek-ai/dsh-web-deepseek-api`** 패키지를 통해 **Settings → Web Search**에서 바로 켤 수 있습니다.
+
+- 기본으로 `DEEPSEEK_API_KEY`를 읽으며 `count`(1~50, 기본 10)와 `sendOriginalQuestion: true`(사용자 원래 질문의 앞 128자를 `ori_question`으로 전달)를 지원합니다.
+- **과금 및 무료 프로모션:** 직접 API 호출은 **성공한 요청 1,000건당 $0.75**입니다(비어 있지 않은 `results`나 본문을 담은 HTTP 200 응답만 과금되며 빈 결과·오류·타임아웃은 무료). 특히 **DeepSeek Harness, Claude Code, Codex** 내부의 서버 사이드 Search/Fetch 호출은 **2026년 10월 31일 16:00 UTC(한국 시간 11월 1일 01:00)까지 무료**로 제공됩니다.
+
+## 지금 바로 적용할 3가지 요약
+
+1. **일상 및 멀티모달 작업의 모델 이름을 `deepseek-flash`로 통일하세요.** `deepseek-v4-flash`와 `deepseek-v4-flash-vision-exp`는 구형 별칭입니다.
+2. **DeepSeek Harness를 `v0.2.1-rc.3`(최소 `0.2.1-rc.1`)으로 업데이트하세요.** `1017` 체크포인트와 공식 Search/Fetch 통합을 온전히 활용할 수 있습니다.
+3. **고난도 텍스트 추론에는 `deepseek-v4-pro`(`DeepSeek-V4-Pro-0813`)를 함께 활용하세요.**
+
+원문 출처: [Introducing DeepSeek-V4.1-Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/) · [10월 17일 API 공지(`news261017`)](https://api-docs.deepseek.com/news/news261017/) · [DeepSeek Search & Fetch 가이드](https://api-docs.deepseek.com/guides/search/).

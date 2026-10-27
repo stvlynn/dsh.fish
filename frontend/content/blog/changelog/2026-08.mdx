@@ -1,59 +1,99 @@
 ---
 title: dsh.fish in August 2026
-description: Product docs as a Fumadocs section, the hub plugin on npm, two kinds retired, and llms.txt for agents.
+description: How we solved the split-brain problem between human docs, CLI install plans, in-session plugins, and agent-facing Markdown endpoints.
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/dsh-fish-2026-08.webp
 series: changelog
 ---
 
-This is the first changelog post on this site. It covers what actually shipped to dsh.fish through 29 August 2026, not a roadmap. Uncommitted work is not listed.
+Have you ever followed a documentation page to install a package, only to discover that the CLI tool uses different flags and the AI agent reading the site's `/llms.txt` is looking at a stale copy from three weeks ago?
+
+As soon as a developer hub serves both human readers in a browser and autonomous agents in a terminal, "split-brain" drift becomes the default failure mode. A hardcoded scoring weight in a docs table disagrees with the backend API; a retired plugin category stays alive in a sidebar; an in-session plugin installs slightly differently than the web UI.
+
+Everything we shipped on `dsh.fish` through 29 August 2026 was designed around a single engineering rule: **every surface—whether for a human, a CLI client, or an LLM—must read from the same canonical source of truth.** Here is what changed and how you can use each surface today.
 
 ![The catalog now feeds human, install-client, web, and agent-facing surfaces from shared sources.](/blog/diagrams/hub-surfaces.svg)
 
-## Product docs left the single page
+## Product docs graduated from a single tab to a six-locale guide tree
 
-`/docs` is no longer one React page with kind tabs. It is a Fumadocs section: MDX compiled at build time, six locales, in-column sidebar, live scoring tables that call `GET /api/v1/scoring` instead of pasting weights. Guides cover quickstart, concepts, each publish format, the CLI, the hub plugin, submit, scoring, and the REST API.
+Originally, `/docs` was a single React page with tabs for each artifact kind. That worked when the catalog only needed a 200-word summary, but it broke down the moment someone needed a step-by-step walkthrough for publishing a bundle, using the CLI, or understanding how quality scores are computed.
 
-Search for that tree is `/docs/search`, not `/api/search` — `/api/*` is Hono. Agents can fetch any guide as markdown (`/docs/cli.md`, or `Accept: text/markdown`). `/docs/llms.txt` is generated from the same page tree.
+We rebuilt `/docs` as a dedicated Fumadocs section compiled at build time across all six locales (`en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `ru`):
 
-## The hub plugin is an npm package
+- **Task-focused guides:** Separate guides now cover the quickstart, core concepts, each of the four publish formats, the CLI (`@dsh-fish/cli`), the in-session hub plugin (`@dsh-fish/hub`), submission, scoring, and the REST API.
+- **Live scoring weights, never copy-pasted numbers:** Instead of hardcoding weights in prose where they can go stale, the scoring documentation tables query `GET /api/v1/scoring` directly.
+- **Dedicated docs search:** Documentation search runs at `/docs/search`, keeping `/api/*` reserved for our Hono backend routes.
 
-`@dsh-fish/hub` publishes to npm and loads as a Cordis plugin inside a live session. It searches the catalog, installs from a browse card, opens a README, and talks to the same install plans the website shows. Device login was fixed so a browser Authorize actually redeems the token the plugin is polling for.
+<BlogStructureMap
+  diagram="hub-surfaces"
+  eyebrow="HTML STRUCTURE MAP · SINGLE SOURCE OF TRUTH"
+  title="How one catalog database and one MDX tree power four delivery surfaces"
+  caption="Human browsers, terminal CLI users, in-session Harness plugins, and autonomous agents all resolve the exact same install plans and MDX guides."
+  node1Title="1. Canonical Sources"
+  node1Body="One database of verified four-kind artifacts plus build-time MDX trees for /docs and /blog across six languages."
+  node2Title="2. Human & Install Clients"
+  node2Body="The website, npx @dsh-fish/cli, and @dsh-fish/hub all resolve the same install plan and write to $DSH_HOME/.dsh-fish-lock.json."
+  node3Title="3. Agent-Native Protocols"
+  node3Body="Every guide and blog post serves raw Markdown via .md or Accept: text/markdown, indexed by /llms.txt and /blog/llms.txt."
+/>
 
-Settings register through the harness’s plugin settings client. The plugin is pinned to npm 11 for trusted publishing.
+## Installing without leaving your Harness session: `@dsh-fish/hub`
 
-## Catalog taxonomy got smaller, on purpose
+Browsing a catalog in a web tab is great for discovery, but when you are already deep inside a DeepSeek Harness session, switching windows to copy commands interrupts your flow.
 
-`mcp-server` and `hook-bridge` are no longer kinds. Those URLs 301 onto `/browse`. Their old publish guides 301 onto `/docs/plugins`. The remaining four kinds are the ones the harness actually loads: bundle, skill, agent preset, profile.
+In August, we published **`@dsh-fish/hub`** to npm as a native Cordis plugin you can load directly inside a running DeepSeek Harness profile:
 
-Categories were aligned with [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com). Topic landings (`/for/...`) exist for a short list of intents and stay `noindex` when they have fewer than three rows.
+1. **In-session tools and UI:** It searches the catalog (`hub_search`), inspects artifact details (`hub_show`), opens READMEs, and executes the exact same install plans (`hub_install`, `hub_remove`, `hub_update`) that the website displays.
+2. **Reliable device-grant sign-in:** We fixed the browser `Authorize` handoff so approving a device login in your browser cleanly redeems the token (`$DSH_HOME/.dsh-fish-token.json`) that the CLI or plugin is polling for.
+3. **Native settings integration:** The plugin registers its configuration through the Harness plugin settings client and ships with npm 11 trusted publishing.
 
-## Agent-facing surface
+## Pruning catalog fiction: why two kinds were retired
 
-`/llms.txt` at the origin, `/docs/llms.txt` for the guides, `/docs/llms-full.txt` as a concatenation. 404s for `Accept: text/markdown` return a short recovery map instead of the app shell. OpenAPI and `.well-known/api-catalog` stay the machine doors into the JSON API.
+When we audited our initial catalog taxonomy against what DeepSeek Harness actually loads at boot, two categories stood out as mistakes: `mcp-server` and `hook-bridge`.
 
-Plugin titles in search results now carry the summary. README translations keep the previous completed body until a replacement finishes, so a locale does not flicker empty while a job runs.
+Neither one is a standalone unit that `dsh` loads on its own. An MCP server or a hook is packaged *inside* a Bundle or a Profile. Keeping them as top-level catalog kinds meant showing users an "Install" button for a format the runtime did not recognize.
 
-## Why the shared sources matter
+We removed both kinds and configured `301` permanent redirects:
 
-The visible work is a docs tree, a blog, and an installable plugin. The engineering constraint underneath is more useful: none of those surfaces gets a private copy of catalog facts. The website, CLI, and hub plugin resolve the same install plans. Docs search, Markdown negotiation, `llms.txt`, Atom, and sitemap output are generated from their respective MDX trees.
+- Old `/kind/mcp-server` and `/kind/hook-bridge` URLs now redirect cleanly to `/browse`.
+- Their old publishing tabs redirect to `/docs/plugins`.
+- The catalog now indexes only the **four real Harness kinds**: `bundle`, `skill`, `agent-preset`, and `profile`, with browse categories aligned to [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com).
 
-That removes a common failure mode where the page says one thing and the agent endpoint says another. It also makes authoring stricter. A route or locale file missing from the source tree cannot be patched over with prose embedded in a component; parity and link checks fail instead.
+## First-class delivery for AI agents (`llms.txt` and Markdown negotiation)
 
-## What to try
+When an AI agent visits a documentation site, feeding it a 200KB HTML app shell full of navigation chrome wastes tokens and obscures the text.
 
-Use the surface that matches the job:
+Every page on `dsh.fish` now speaks Markdown natively alongside HTML. Step through the interactive mock UI below to see how all four surfaces stay synchronized:
 
-- Browse `/docs` when you are learning the publishing contract.
-- Fetch `/docs/llms.txt` or a `.md` route when an agent needs the same material.
-- Run `npx @dsh-fish/cli` when you want an install plan without opening the site.
-- Load `@dsh-fish/hub` when the plan should stay inside a Harness session.
+<BlogMockUi
+  scene="hub-omni-delivery"
+  eyebrow="INTERACTIVE MOCK UI · OMNI-SURFACE DELIVERY"
+  title="Four ways to read and install from the same dsh.fish source of truth"
+  caption="Click steps 1–4 to compare how the web catalog, terminal CLI, in-session @dsh-fish/hub plugin, and agent Markdown endpoints operate."
+  step1Title="1. Canonical 4-kind catalog & live docs"
+  step1Body="The browser UI renders 6-locale guides and live scoring tables pulled directly from GET /api/v1/scoring."
+  step2Title="2. Terminal CLI with device-grant auth"
+  step2Body="Run npx @dsh-fish/cli find, show, and add to inspect plans and record installs in $DSH_HOME/.dsh-fish-lock.json."
+  step3Title="3. In-session @dsh-fish/hub Cordis plugin"
+  step3Body="Search, inspect, install, and rate plugins from inside a live DeepSeek Harness session without leaving your workspace."
+  step4Title="4. Native Markdown & llms.txt for agents"
+  step4Body="Agents fetch /llms.txt, /docs/llms-full.txt, /blog/llms.txt, or pass Accept: text/markdown on any route."
+/>
 
-The limitation is deliberate: blog search did not ship in this release, and `/api/search` remains catalog search rather than a second content index.
+Here is what an agent or script can fetch right now:
 
-## What this post is not
+- **Discovery maps:** `/llms.txt` at the site root, `/docs/llms.txt` (and `/docs/llms-full.txt` as a single-file concatenation) for product guides, and `/blog/llms.txt` plus `/blog/feed.xml` (Atom) for editorial posts.
+- **Direct Markdown negotiation:** Append `.md` to any guide or blog URL (such as `/docs/cli.md` or `/blog/index.md`), or send `Accept: text/markdown` on the canonical URL. Even a `404` with `Accept: text/markdown` returns a concise Markdown recovery map instead of an HTML error page.
+- **Zero-flicker localized READMEs:** When a plugin updates its README, our background translation pipeline keeps the previous completed translation visible until the new one finishes, so localized pages never flash blank mid-update.
 
-It is not a release of DeepSeek Harness. Harness versions are tracked in [Harness releases](/blog/harness). It is not a list of every commit. Device-grant races, sitemap query limits, and ads.txt are in git; they are not why anyone comes here.
+## Which surface should you reach for?
 
-The next changelog post will cover a bounded set of user-visible changes, not a dump of the log.
+Pick the tool that matches where you are working:
+
+- **Learning how to package or score a plugin:** Start at [`/docs`](/docs).
+- **Pointing an LLM or coding agent at our guides:** Hand it `/docs/llms.txt` or `/blog/llms.txt`.
+- **Inspecting and installing from a terminal:** Run `npx @dsh-fish/cli show <id>` and `npx @dsh-fish/cli add <id> --profile web`.
+- **Adding capabilities mid-conversation inside DeepSeek Harness:** Install `@dsh-fish/hub`.
+
+*(Looking for updates to the DeepSeek Harness runtime itself rather than this website? Head over to our [Harness releases](/blog/harness) series, including our deep dive into [v0.1.5 through v0.2.1](/blog/harness/v0-1-5-to-v0-2-1).)*

@@ -1,0 +1,97 @@
+---
+title: 'v0.1.5 から v0.2.1 へ：DeepSeek Harness がサイドバー、リモートの「手」、プラグインマーケットを備えるまで'
+description: 8 週間で 27 回を重ねたプレリリースが、ローカルのチャットツールを Office プレビュー、SSH ワークスペース、Browser Use、カスタムプラグインインデックスを備えたワークステーションへと進化させました。
+author: Steven Lynn
+date: 2026-10-24
+cover: /blog/covers/harness-v0-2-1-milestones.webp
+series: harness
+---
+
+もしあなたが 8 月末の `dsh-v0.1.2-alpha.1` 以来久しぶりに DeepSeek Harness を更新し、10 月下旬のビルド（[`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)）を開いたとしたら、作業場の広さが倍になったように感じるはずです。
+
+画面の右側にはマルチタブのサイドバーが開き、Excel スプレッドシートのプレビューとターミナル、ファイル単位の Diff が並んでいます。ローカルの UI から SSH 越しにリモート Linux サーバーのファイルを直接編集し、長時間かかるバックグラウンド処理が終わるとエージェントが自動で目を覚まします。しかも macOS や Windows なら、Node.js や `pnpm` を入れなくても、デスクトップアプリのメニューバーからワンクリックで `dsh` コマンドを導入できます。
+
+わずか 8 週間・27 回のプレリリースで、コアを肥大化させずにどうやってこれだけの機能を組み込んだのでしょうか？答えは、すべての新機能を **Cordis の capability seam（機能シーム）** として追加したことにあります。`v0.1.5` から `v0.2.1-rc.3` までの 4 つのマイルストーンを順番に見ていきましょう。
+
+![v0.1.5〜v0.2.1 がコアを肥大化させずにセッションを拡張した仕組み。](/blog/diagrams/harness-v0-2-1-architecture.svg)
+
+## マイルストーン 1（`v0.1.5`）：チャット欄だけでは足りなくなった理由
+
+初期の DeepSeek Harness では、すべての情報がチャット欄か小さな詳細ドロワー（Detail panel）に押し込められていました。短いコード断片をやり取りするだけならそれで十分でしたが、エージェントが PDF レポートや HTML プロトタイプ、サブエージェントのログを生成し始めると限界が来ました。
+
+2026 年 9 月 10 日に公開された [`dsh-v0.1.5-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1)（`0.1.3` と `0.1.5` の alpha を統合）は、3 つの土台を一気に刷新しました。
+
+1. **マルチタブの右サイドバー（Right Sidebar）が Detail パネルを置き換え。** タブ、分割ペイン、フルスクリーン表示に対応し、Markdown、コード、HTML、PDF、画像をその場でプレビューできるようになりました（サブエージェントや非アクティブなセッションが生成したファイルも含みます）。プラグインの UI スロットは `sidebar.panellist` と `main`（旧 `conversation` は `main` 配下）へ整理されました。
+2. **単一プロセスロック（`SessionHandle`）とセッション形式 V3。** 同じセッションを誤って 2 つのターミナルで開いたらどうなるでしょうか？`SessionHandle` によって 1 つのセッションを同時に掴めるのは 1 プロセスだけになりました。またセッション形式 V3 でシステムプロンプトが履歴に組み込まれ、旧ログは元のファイルを残したまま隣接する `.v3.jsonl` に移行されます。
+3. **`deepseek-flash` が新規セッションのデフォルトに。** `DeepSeek-V4.1-Flash` が発表されたその日に公式アダプターが対応し、KV キャッシュを壊さない動的システムプロンプト更新とともに新規セッションの既定モデルになりました。
+
+<BlogStructureMap
+  diagram="harness-v0-2-1-architecture"
+  eyebrow="HTML 構造図 · v0.1.5–v0.2.1 の機能シーム"
+  title="UI、リモート実行の「手」、プラグインマーケットが SessionHandle に接続される構造"
+  caption="各マイルストーンは巨大なループに機能を詰め込むのではなく、独立した Cordis サービス（sidebar.panellist、ctx.browserUse、ctx.workingDirectory、ctx.pluginMarket）として実装されています。"
+  node1Title="1. ワークスペースと UI シーム"
+  node1Body="右サイドバーが Office、PDF、ターミナルタブを表示し、Desktop v0.2.0-rc.2 はメニューバーから dsh CLI を導入します。"
+  node2Title="2. 実行の「手」とプロトコル"
+  node2Body="SSH リモートワークスペース、Stagehand/Playwright による Browser Use、Cua Computer Use、Messages 専用アダプター。"
+  node3Title="3. ライブプラグイン基盤"
+  node3Body="設定や Agent Preset は Profile の Bundle として統合され、engines.dsh による検証とカスタムプラグインインデックスに対応します。"
+/>
+
+## マイルストーン 2（`v0.1.6` & `v0.1.7`）：ハーネスに「手」が生えた 1 週間
+
+手元のノート PC のテキストファイルしか触れないチャット画面は、コードがリモートサーバーにあるときや、ブラウザ操作・Excel の確認・定期実行が必要な場面ですぐに行き詰まります。
+
+9 月中旬の [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1) から [`dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.2) にかけて、ランタイムは外部環境を動かす「手」を獲得しました。
+
+- **SSH リモートワークスペース：** DSH 本体はローカルで動かしたまま、ファイル操作・コマンド実行・PTC ツールを SSH 先のリモートツリーに対して直接実行できます。
+- **実験的な Browser Use と Computer Use：** `@deepseek-ai/dsh-experimental-browser-use-stagehand-native`（`stagehand_navigate`、`stagehand_act`、`stagehand_extract` など）や Playwright / Chrome DevTools MCP、さらに `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` が登場しました。
+- **Office プレビューとバックグラウンドジョブ：** 右サイドバーで Word、PowerPoint、Excel/CSV（シート、セル、数式）の読み取り専用プレビューが可能になりました。また長いコマンドをバックグラウンドへ送り（`job_list`、`job_output`、`job_kill`）、完了時に自動でセッションを再開できます。
+- **1 分単位のスケジュールタスク（`v0.1.7-rc.2`）：** 設定で有効化すると、`schedule_create` などのツールで再起動後も残るリマインダーや定期タスク（最短 1 分間隔）を登録できます。
+- **Messages プロトコルへの一本化と Agent Preset の Bundle 化（`v0.1.7-rc.1`）：** 公式 DeepSeek アダプターは **Messages プロトコル**（`https://api.deepseek.com/anthropic`）専用となり、古い `protocol` オプションは廃止されました。設定は `settings.yaml` から Profile のプラグイン設定へ移り、**Agent Preset は標準の Cordis Bundle** として扱う形に統一されました。
+
+下のインタラクティブ Mock UI で、`v0.1.5` から `v0.2.1` までの進化をステップごとに体験してみてください。
+
+<BlogMockUi
+  scene="harness-sidebar-hands"
+  eyebrow="インタラクティブ MOCK UI · マイルストーン・ワークステーション (v0.1.5 → v0.2.1)"
+  title="右サイドバー、SSH・ブラウザ操作、Messages API、プラグインマーケットの追跡"
+  caption="ステップ 1〜4 を切り替えて、9〜10 月のマイルストーンで追加された Cordis シームとコマンドを確認できます。"
+  step1Title="1. v0.1.5：右サイドバーと Session V3"
+  step1Body="複数タブ・分割対応の右サイドバーが登場し、SessionHandle による単一プロセスロックと deepseek-flash の既定化が行われました。"
+  step2Title="2. v0.1.6：SSH、Browser Use、独立プロセス PTC"
+  step2Body="ローカル UI から SSH 先を操作し、Stagehand/Playwright でブラウザを動かし、Node PTC を空の環境変数を持つ別プロセスへ分離しました。"
+  step3Title="3. v0.1.7：Messages API、Office、スケジュール"
+  step3Body="公式アダプターが Messages + Files API に一本化され、Preset は Bundle 化、XLSX/DOCX プレビューと 1 分単位の定期実行が加わりました。"
+  step4Title="4. v0.2.0–0.2.1：メニューバー CLI とプラグインインデックス"
+  step4Body="デスクトップのメニューバーから dsh コマンドを導入でき、カスタムプラグインインデックス、engines.dsh、working_directory に対応しました。"
+/>
+
+## マイルストーン 3（`v0.2.0-rc.2`）：Node や `pnpm` なしでメニューバーから `dsh` を導入
+
+9 月 29 日の [`dsh-v0.2.0-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) では、macOS と Windows のデスクトップアプリのメニューバーに **Manage dsh command** が追加されました。Node.js や `pnpm` を別途インストールしなくても、デスクトップアプリに同梱された署名済み `dsh` CLI をそのままシェルから使えるようになります。
+
+あわせてサードパーティモデルカタログが **pi-ai 0.87.1** に更新され、macOS/Linux の GUI 起動時にログインシェルの環境変数（PATH やプロキシ）が引き継がれるようになりました。
+
+## マイルストーン 4（`v0.2.1-rc.1`〜`rc.3`）：オープンなプラグイン基盤の成熟
+
+10 月の `0.2.1` ライン（10 月 17 日の [`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1) から 10 月 23 日の [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)）は、プラグインの発見・互換性・本番運用を仕上げたリリースです。
+
+- **カスタムプラグインインデックス（`ctx.pluginMarket`）：** **Plugins → Experimental → Custom plugin indexes** に `http:` または `https:` のインデックス URL を登録すると、Discover タブからコミュニティのカタログを検索・導入できます。
+- **`engines.dsh` によるバージョン互換チェック：** `package.json` の `engines.dsh` が最優先で評価され、非互換なランタイムでは理由が明示されます。
+- **`working_directory` ツールと `DSH_AGENTS_HOME`：** エージェントが自身の作業ディレクトリを確認・変更できる `working_directory` ツール、共有の `AGENTS.md` を読み込む `DSH_AGENTS_HOME`、Web/Desktop の `/compact` コマンドが追加されました。
+- **Node PTC のインメモリ永続 REPL モード：** `@deepseek-ai/dsh-ptc-runtime-node` に `executionMode: 'persistent-in-memory'` が追加され、同じファイルサンドボックスのもとで複数回の `run_code` にまたがって変数や関数を保持できるようになりました（ツールの `mode: 'both'` は廃止され、`'native'` と `'ptc'` の 2 択になりました）。
+- **Web デプロイ用フラグ：** リバースプロキシ配下で使うための `--public-url`、明示的な IPv4/IPv6 バインド（`0.0.0.0` と `::` は拒否）、`--tls-cert` / `--tls-key` が揃いました。
+
+## `0.1.2` から `0.2.1-rc.3` への移行チェックリスト
+
+| 対象領域 | `0.1.2`〜`0.2.1-rc.3` での主な変更点 | 必要な対応 |
+| --- | --- | --- |
+| **DeepSeek API 設定** | 公式アダプターが **Messages 専用**になり `protocol` 設定が廃止（`0.1.7`）。 | 設定から `protocol` を削除し、公式 URL を上書きする場合は `https://api.deepseek.com/anthropic` を指定する。 |
+| **Agent Preset と設定** | ディレクトリ形式の Preset が Bundle 化。`settings.yaml` は初回のみインポート（`0.1.7`）。 | Preset を Bundle としてパッケージ化し、`package.json` に `engines.dsh` を記述する。 |
+| **プラグイン API** | `ctx.agent` と `./invariant` エクスポートが削除。`Inbox` は型のみ（`agent.inbox`）。 | `Agent` を明示的に渡し、`./invariant` のインポートを削除する。 |
+| **ツール表示モード** | `@deepseek-ai/dsh-tools` から `mode: 'both'` が削除（`0.2.1-alpha.2`）。 | `'native'` または `'ptc'` のいずれかを指定する。 |
+| **Headless の API キー** | Headless は環境変数と `.env` のみを読むように変更（`0.2.1-alpha.3`）。 | CI やスクリプトでは `DEEPSEEK_API_KEY` 等を環境変数で渡す。 |
+| **Spill policy の単位** | `spill-policy.maxInlineBytes` が `maxInlineTokens` に変更（`0.1.7-alpha.2`）。 | 切り詰め上限をバイト数ではなく推定トークン数で指定する。 |
+
+リリースノート一覧：[dsh-v0.1.5-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1) · [dsh-v0.1.7-rc.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.7-rc.1) · [dsh-v0.2.0-rc.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2) · [dsh-v0.2.1-rc.3](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)。

@@ -1,59 +1,93 @@
 ---
 title: 2026년 8월의 dsh.fish
-description: 제품 문서를 Fumadocs 구역으로 만들고, hub 플러그인을 npm에 올렸으며, 두 kind를 폐기하고, 에이전트용 llms.txt를 두었습니다.
+description: 사람용 문서, CLI 설치 계획, 세션 내부 플러그인, 그리고 에이전트용 Markdown 엔드포인트 사이의 '정보 불일치' 문제를 해결한 방법.
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/dsh-fish-2026-08.webp
 series: changelog
 ---
 
-이 사이트의 첫 changelog입니다. 2026년 8월 29일까지 실제로 올라간 것만 씁니다. 로드맵이 아닙니다. 커밋하지 않은 작업은 적지 않습니다.
+문서 페이지를 보고 패키지 설치 명령어를 따라 쳤는데 CLI 옵션이 다르거나, AI 에이전트에게 사이트의 `/llms.txt`를 읽혔더니 3주 전의 낡은 설명을 기준으로 코드를 작성한 적이 있으신가요?
+
+개발자 허브가 브라우저의 사람 독자와 터미널의 자율 에이전트를 동시에 지원하기 시작하면, **표면마다 정보가 따로 노는 현상(Split-Brain)**이 가장 흔한 장애 원인이 됩니다. 문서 표에 적어 둔 점수 가중치가 실제 백엔드 API와 달라지거나, 이미 사라진 플러그인 분류가 사이드바에 남거나, 세션 내부 플러그인의 설치 동작이 웹 화면과 미묘하게 달라지는 식입니다.
+
+2026년 8월 29일까지 `dsh.fish`에 배포된 모든 기능은 단 하나의 엔지니어링 원칙을 중심으로 설계되었습니다. **웹 브라우저, CLI 클라이언트, 세션 내 플러그인, 그리고 AI 에이전트까지 모든 진입점이 단 하나의 단일 진실 공급원(Single Source of Truth)을 읽어야 한다**는 원칙입니다.
 
 ![공유 소스에서 사람, 설치 클라이언트, 웹, agent용 표면으로 카탈로그가 전달되는 흐름.](/blog/diagrams/hub-surfaces.svg)
 
-## 제품 문서는 한 페이지를 떠났습니다
+## 단일 탭 페이지에서 6개 국어 가이드 트리로 진화한 제품 문서
 
-`/docs`는 kind 탭이 있는 하나의 React 페이지가 아닙니다. Fumadocs 구역입니다. 빌드 때 MDX를 컴파일하고, 여섯 언어, 칸 안 사이드바, 채점 표는 가중치를 본문에 붙이지 않고 `GET /api/v1/scoring`을 호출합니다. 가이드는 quickstart, 개념, 각 게시 형식, CLI, hub 플러그인, 제출, 채점, REST API를 덮습니다.
+초기의 `/docs`는 아티팩트 종류별 탭만 있는 단일 React 페이지였습니다. 간단한 요약만 보여줄 때는 충분했지만, 번들 배포 방법이나 CLI 사용법, 품질 점수 계산 방식을 차근차근 설명하기에는 턱없이 부족했습니다.
 
-이 나무의 검색은 `/docs/search`이지 `/api/search`가 아닙니다. `/api/*`는 Hono입니다. 에이전트는 아무 가이드나 markdown으로 가져갈 수 있습니다(`/docs/cli.md`, 또는 `Accept: text/markdown`). `/docs/llms.txt`는 같은 페이지 나무에서 생성됩니다.
+그래서 `/docs`를 빌드 시점에 컴파일되는 Fumadocs 섹션으로 전면 재구축하고 6개 언어(`en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `ru`)를 모두 지원하도록 만들었습니다.
 
-## hub 플러그인은 npm 패키지입니다
+- **작업 중심의 가이드 구성:** 빠른 시작(Quickstart), 핵심 개념, 네 가지 배포 형식별 가이드, CLI(`@dsh-fish/cli`), 세션 내 허브 플러그인(`@dsh-fish/hub`), 제출 절차, 점수 체계, REST API를 각각의 독립된 문서로 제공합니다.
+- **실시간으로 불러오는 점수 가중치 표:** 문서 안에 숫자를 하드코딩하는 대신 `GET /api/v1/scoring`을 직접 호출해 항상 실제 백엔드 가중치와 일치하도록 만들었습니다.
+- **전용 문서 검색 경로:** 문서 검색은 `/docs/search`에서 작동하며, `/api/*` 경로는 Hono 백엔드 전용으로 깔끔하게 분리했습니다.
 
-`@dsh-fish/hub`는 npm에 게시되고 Cordis 플러그인으로 세션 안에서 로드됩니다. 카탈로그를 검색하고, 둘러보기 카드에서 설치하고, README를 열며, 사이트와 같은 설치 계획을 씁니다. 기기 로그인은 고쳤습니다. 브라우저에서 승인하면 플러그인이 폴링하는 토큰이 실제로 교환됩니다.
+<BlogStructureMap
+  diagram="hub-surfaces"
+  eyebrow="HTML 구조도 · 단일 진실 공급원"
+  title="하나의 카탈로그 DB와 하나의 MDX 트리가 네 가지 표면을 동시에 구동하는 구조"
+  caption="브라우저 사용자, 터미널 CLI, Harness 세션 내 플러그인, 자율 에이전트가 모두 동일한 설치 계획과 MDX 소스를 참조합니다."
+  node1Title="1. 단일 정규 소스"
+  node1Body="검증된 4종 아티팩트 DB와 6개 국어로 빌드 시점에 컴파일되는 /docs 및 /blog MDX 트리."
+  node2Title="2. 사용자 및 설치 클라이언트"
+  node2Body="웹사이트, npx @dsh-fish/cli, @dsh-fish/hub가 완전히 같은 설치 계획을 풀고 $DSH_HOME/.dsh-fish-lock.json에 기록합니다."
+  node3Title="3. 에이전트 네이티브 프로토콜"
+  node3Body="모든 가이드와 블로그 글이 .md 및 Accept: text/markdown 협상을 지원하며 /llms.txt와 /blog/llms.txt에서 자동 색인됩니다."
+/>
 
-설정은 harness의 플러그인 설정 클라이언트를 통해 등록합니다. 게시는 npm 11 trusted publishing에 고정합니다.
+## 세션을 떠나지 않고 바로 설치하는 `@dsh-fish/hub`
 
-## 카탈로그 분류는 의도적으로 작아졌습니다
+새 플러그인을 둘러볼 때는 웹 브라우저가 편하지만, 이미 DeepSeek Harness 세션을 띄워 놓고 작업 중일 때는 창을 바꿔 명령어를 복사하는 과정이 흐름을 끊습니다.
 
-`mcp-server`와 `hook-bridge`는 더 이상 kind가 아닙니다. 그 URL은 `/browse`로 301합니다. 옛 게시 가이드는 `/docs/plugins`로 301합니다. 남은 넷은 harness가 실제로 로드하는 것입니다. bundle, skill, agent preset, profile.
+8월에 npm으로 정식 배포된 **`@dsh-fish/hub`**는 실행 중인 Harness 세션 안에 바로 로드할 수 있는 Cordis 플러그인입니다.
 
-분류는 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com)에 맞췄습니다. 주제 랜딩(`/for/...`)은 짧은 의도 목록만 덮고, 행이 셋 미만이면 `noindex`를 유지합니다.
+1. **세션 내부 검색·조회·설치:** `hub_search`, `hub_show`, `hub_install`, `hub_remove`, `hub_update` 도구를 통해 README를 읽고 웹사이트와 완전히 동일한 설치 계획을 세션 안에서 즉시 적용합니다.
+2. **기기 인가(Device Grant) 로그인 완결:** 브라우저에서 `Authorize`를 눌렀을 때 플러그인이나 CLI가 폴링 중인 토큰(`$DSH_HOME/.dsh-fish-token.json`)이 정확히 교환되도록 경합 조건을 수정했습니다.
+3. **네이티브 설정 연동 및 npm 11 신뢰 배포:** Harness의 플러그인 설정 클라이언트를 통해 설정을 등록하며, npm 11 Trusted Publishing을 적용했습니다.
 
-## 에이전트를 향한 면
+## '카탈로그의 허구' 덜어내기: 두 가지 종류를 퇴역시켰던 이유
 
-오리진 `/llms.txt`, 가이드 `/docs/llms.txt`, 이어붙인 `/docs/llms-full.txt`. `Accept: text/markdown`인 404는 짧은 복구 지도를 주고 앱 껍질이 아닙니다. OpenAPI와 `.well-known/api-catalog`는 JSON API로 들어가는 기계 문 그대로입니다.
+초기 분류 체계를 DeepSeek Harness의 실제 부팅 구조와 대조해 본 결과, `mcp-server`와 `hook-bridge`라는 두 종류를 걷어냈습니다.
 
-검색 결과의 플러그인 제목은 summary를 싣습니다. README 번역은 대체가 끝날 때까지 이전 완료 본문을 유지해, 작업이 도는 동안 로케일이 빈칸으로 깜빡이지 않게 합니다.
+Harness 런타임에는 그런 이름의 독립된 로드 슬롯이 없으며, MCP 서버나 훅은 모두 **Bundle**이나 **Profile** 안에 담겨 로드되기 때문입니다. 런타임이 직접 설치할 수 없는 분류를 남겨 두지 않기 위해 구형 URL(`/kind/mcp-server` 등)은 `/browse`로, 구형 배포 가이드는 `/docs/plugins`로 `301` 리다이렉트했습니다.
 
-## 공유 소스가 중요한 이유
+이제 카탈로그는 Harness가 실제로 로드하는 **네 가지 종류(`bundle`, `skill`, `agent-preset`, `profile`)**만 다루며, 카테고리 역시 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com)과 맞췄습니다.
 
-겉으로 보이는 결과는 문서 트리, 블로그, 설치 가능한 플러그인입니다. 그 아래의 엔지니어링 제약이 더 유용합니다. 어느 표면도 카탈로그 사실을 따로 복사하지 않습니다. 웹사이트, CLI, hub 플러그인은 같은 설치 계획을 해석하고, 문서 검색, Markdown 협상, `llms.txt`, Atom, sitemap 출력은 각 MDX 트리에서 생성됩니다.
+## AI 에이전트를 일급 사용자로 대우하기(`llms.txt`와 Markdown 협상)
 
-이 구조는 페이지와 agent 엔드포인트가 서로 다른 설명을 하는 흔한 실패를 없앱니다. 대신 작성 규칙은 더 엄격해집니다. 소스 트리에 라우트나 로케일 파일이 빠지면 컴포넌트에 문장을 박아 넣어 덮을 수 없고, 동등성 검사와 링크 검사가 실패합니다.
+AI 에이전트가 문서를 읽을 때 내비게이션 UI가 가득한 HTML 껍데기를 내려주는 것은 토큰 낭비입니다.
 
-## 직접 확인할 것
+아래 인터랙티브 Mock UI의 1~4단계를 클릭해 네 가지 표면이 어떻게 한 치의 오차도 없이 동기화되는지 확인해 보세요.
 
-작업에 맞는 표면을 쓰면 됩니다.
+<BlogMockUi
+  scene="hub-omni-delivery"
+  eyebrow="인터랙티브 MOCK UI · 옴니 서피스 전달"
+  title="동일한 dsh.fish 진실 공급원을 읽고 설치하는 네 가지 방법"
+  caption="단계 1~4를 클릭해 웹 카탈로그, 터미널 CLI, 세션 내 @dsh-fish/hub 플러그인, 에이전트용 Markdown 엔드포인트의 흐름을 비교해 보세요."
+  step1Title="1. 4종 정규 카탈로그 및 실시간 문서"
+  step1Body="브라우저에서 6개 국어 가이드와 GET /api/v1/scoring에서 실시간으로 가져온 점수 표를 렌더링합니다."
+  step2Title="2. 기기 인가 인증을 갖춘 터미널 CLI"
+  step2Body="npx @dsh-fish/cli의 find, show, add 명령으로 계획을 먼저 검토하고 $DSH_HOME/.dsh-fish-lock.json에 기록합니다."
+  step3Title="3. 세션 안에서 동작하는 @dsh-fish/hub"
+  step3Body="DeepSeek Harness 대화를 벗어나지 않고 hub_search와 hub_install로 플러그인을 설치하고 평가할 수 있습니다."
+  step4Title="4. 에이전트용 네이티브 Markdown 및 llms.txt"
+  step4Body="에이전트는 /llms.txt, /docs/llms-full.txt, /blog/llms.txt를 읽거나 모든 경로에 Accept: text/markdown을 보낼 수 있습니다."
+/>
 
-- 게시 계약을 배울 때는 `/docs`를 탐색합니다.
-- agent가 같은 자료를 필요로 하면 `/docs/llms.txt` 또는 `.md` 라우트를 가져옵니다.
-- 사이트를 열지 않고 설치 계획을 원하면 `npx @dsh-fish/cli`를 실행합니다.
-- 계획을 Harness 세션 안에 두려면 `@dsh-fish/hub`를 로드합니다.
+에이전트나 스크립트가 바로 활용할 수 있는 엔드포인트는 다음과 같습니다.
 
-제한은 의도적입니다. 이번 릴리스에는 블로그 검색이 없고, `/api/search`는 두 번째 콘텐츠 색인이 아니라 계속 카탈로그 검색입니다.
+- **발견 맵:** 루트의 `/llms.txt`, 가이드용 `/docs/llms.txt`(및 전체 합본인 `/docs/llms-full.txt`), 블로그용 `/blog/llms.txt`와 `/blog/feed.xml`(Atom 피드).
+- **직접 Markdown 협상:** `/docs/cli.md`처럼 `.md` 확장자를 붙이거나 `Accept: text/markdown` 헤더를 보내면 순수 Markdown을 반환합니다. `Accept: text/markdown` 요청에서 404가 발생하더라도 앱 셸 대신 간결한 복구 안내 맵을 돌려줍니다.
+- **깜빡임 없는 다국어 README 갱신:** 새 README 번역이 돌아가는 동안 이전 완료 본문을 유지해 어느 언어에서도 빈 화면이 깜빡이지 않습니다.
 
-## 이 글이 아닌 것
+## 상황에 맞는 진입점 고르기
 
-DeepSeek Harness 릴리스가 아닙니다. Harness 버전은 [Harness 릴리스](/blog/harness)에 있습니다. 모든 커밋 목록도 아닙니다. 기기 인가 경합, sitemap 쿼리 한도, ads.txt는 git에 있습니다. 여기 오는 이유가 아닙니다.
+- **패키징 규격이나 점수 산정 기준을 배우고 싶을 때:** [`/docs`](/docs)를 열어 보세요.
+- **코딩 에이전트에게 문서를 주고 싶을 때:** `/docs/llms.txt`나 `/blog/llms.txt`를 건네주세요.
+- **터미널에서 바로 계획을 확인하고 설치하고 싶을 때:** `npx @dsh-fish/cli show <id>`와 `npx @dsh-fish/cli add <id> --profile web`을 실행하세요.
+- **DeepSeek Harness 세션 안에서 작업 중일 때:** `@dsh-fish/hub`를 로드하세요.
 
-다음 changelog는 경계가 있는, 사용자가 볼 수 있는 변화의 묶음을 쓰고, 로그를 쏟지 않습니다.
+*(웹사이트가 아니라 DeepSeek Harness 런타임 자체의 업데이트 내역이 궁금하시다면 [Harness 릴리스](/blog/harness) 시리즈와 새로 추가된 [v0.1.5~v0.2.1 마일스톤 총정리](/blog/harness/v0-1-5-to-v0-2-1) 글을 확인해 보세요.)*

@@ -34,6 +34,9 @@ Each post gets a distinct recipe rather than changing only the accent color:
 | `v0-1-2-alpha-1`         | One request splitting into metadata and clean output paths | Cobalt  |
 | `v4-preview`             | A long context tape passing four adapter stages            | Orange  |
 | `2026-08`                | Four delivery surfaces connected to one shared source      | Magenta |
+| `v0-1-5-to-v0-2-1`       | Session core branching into Sidebar, SSH, and plugin index | Teal    |
+| `v4-1-flash-and-search`  | Four history strips compressing into a 1/4 HBM KV + Search | Crimson |
+| `deepseek-bot-ecosystem` | An orchestrator block arcing to persistent bot identities  | Indigo  |
 
 ## Prompt template
 
@@ -78,3 +81,9 @@ Diagrams follow the project-local `diagram-design` profile:
 
 Run the diagram skill's `scripts/self_check.py` against every source HTML and
 `xmllint --noout` against every exported SVG before publishing.
+
+In addition to static SVG diagrams, blog MDX pages embed structured HTML
+architecture maps (`<BlogStructureMap>`) and interactive, reduced-motion-safe
+Mock UI step explorers (`<BlogMockUi>`) exposed by `widgets/blog-shell` through
+`pages/blog/mdx.tsx`. Localized titles, captions, and step explanations are
+passed as MDX props in each locale while technical identifiers remain English.

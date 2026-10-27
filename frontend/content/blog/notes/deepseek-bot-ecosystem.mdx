@@ -1,0 +1,111 @@
+---
+title: 'Turning an Agent Runtime into Digital Colleagues: Inside the DeepSeek Bot Ecosystem'
+description: DeepSeek Bot is not a single official repo—it is two community architectures (DS Bot and Tobs) plus IM bridges that turn single-session DeepSeek Harness into persistent bot teams without forking the core.
+author: Steven Lynn
+date: 2026-10-26
+cover: /blog/covers/deepseek-bot-ecosystem.webp
+series: notes
+---
+
+If you hear someone talk about running **DeepSeek Bot** on their desktop or inside Feishu and Slack, and you go looking for it inside the official [`deepseek-ai`](https://github.com/deepseek-ai) GitHub organization, you will come up empty-handed.
+
+Wait a second. If DeepSeek did not ship a product called DeepSeek Bot, what are thousands of developers actually running?
+
+When you trace the repositories, you discover something much more interesting than a single app. Two independent open-source projects—[**DS Bot**](https://github.com/Fei2411/DS-Bot) (`ds-bot`, whose desktop binary is named *DeepSeek Bot*) and [**Tobs**](https://github.com/BotHarness/DeepSeekBot) (`@botharness/tobs`, originally launched as *DeepSeekBot*)—built complete multi-bot platforms **as standard Cordis plugin bundles on top of DeepSeek Harness (`dsh`) without forking a single line of the official runtime**.
+
+Understanding why those projects exist—and how they differ from lightweight IM bridges like [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im) or official `dsh --profile acp` automation—is the best real-world lesson in what "everything is a plugin" actually enables.
+
+![One official runtime, three community ways to build a bot.](/blog/diagrams/deepseek-bot-ecosystem.svg)
+
+## First, why isn't a plain DeepSeek Harness session already a "bot"?
+
+When you launch `npx @deepseek-ai/dsh web`, you get a **session**: one conversation log, bound to one workspace directory, executing one task loop at a time.
+
+That is ideal when you sit at your keyboard to refactor a module. But what if you want an always-on "digital colleague" or a team of specialized assistants? Suddenly, a bare session is missing four things:
+
+1. **Persistent identity and memory across tasks:** A session ends when the task ends; a colleague remembers your conventions next week.
+2. **Multi-bot coordination:** In a group chat with three bots (say, `@Architect`, `@Coder`, and `@Reviewer`), who speaks first, who stays quiet, and how do they avoid talking over each other in an infinite loop?
+3. **Background delegation:** If you message a bot from your phone while away from your desk, how does it spin up a clean workspace task and report back when finished?
+4. **External chat channels:** How does a local Harness process talk to Feishu/Lark, WeChat, Slack, Discord, or Telegram?
+
+Because DeepSeek Harness exposes `ctx.agents`, `ctx.sessions`, and `ctx.tools` through Cordis, community authors realized they did not need to build a new agent runtime. They could mount those four missing layers directly onto `dsh-base`.
+
+<BlogStructureMap
+  diagram="deepseek-bot-ecosystem"
+  eyebrow="HTML STRUCTURE MAP · ECOSYSTEM LAYER STACK"
+  title="How DS Bot, Tobs (@botharness/tobs), and IM bridges mount onto DeepSeek Harness"
+  caption="All three community approaches run on your local DeepSeek Harness installation via dsh plugin add, differing in how they model identity, memory, and chat channels."
+  node1Title="1. DS Bot (Fei2411/DS-Bot)"
+  node1Body="Turns DSH into a local multi-bot chat app: a Chief bot creates specialists, group admins coordinate turns, and an FTS5 steward manages long memory."
+  node2Title="2. Tobs (@botharness/tobs)"
+  node2Body="Models each bot as a persistent PersonaBot with Git-versioned SOUL.md/MEMORY.md, Orchestrator -> Assignment sessions, and native IM identities."
+  node3Title="3. IM Bridges & Official ACP"
+  node3Body="@xmanrui/dsh-im routes 9 chat platforms into existing host sessions, while dsh --profile acp provides official JSON-RPC stdio automation."
+/>
+
+## Approach A: DS Bot (`Fei2411/DS-Bot`) — A Chief bot and group chats in one window
+
+Created in October 2026 ([Apache-2.0](https://github.com/Fei2411/DS-Bot), latest [`v0.2.2`](https://github.com/Fei2411/DS-Bot/releases/tag/v0.2.2) on 25 October), **DS Bot** ships both as a standalone macOS/Windows desktop app (*DeepSeek Bot*, which bundles `dsh`) and as a standard Cordis bundle (`ds-bot`) you can add to an existing Harness `web` or `desktop` profile:
+
+```bash
+npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add ds-bot
+npx @deepseek-ai/dsh@0.2.1-rc.2 web
+```
+
+### How DS Bot works under the hood
+
+Instead of asking you to edit YAML files to configure a multi-agent team, DS Bot gives you a first main bot named **Chief**:
+
+- **Conversational team building:** You tell Chief in plain language what roles you need (using `create_bot` and `update_bot`). Each bot is a long-lived DSH session with its own role instructions, model choice, and human-controlled permission tier (`Read only`, `Workspace`, or `Full access`).
+- **Disciplined group chats (`@Name` and `[PASS]`):** When you put multiple bots into a group chat, one bot acts as the **group admin** who answers by default and pulls specialists in via `@Name`. Every member has an isolated hidden session per group (so a group chat never leaks a bot's private DM history), and any bot with nothing to add outputs `[PASS]` instead of burning tokens on polite filler.
+- **Replacing default compaction with an FTS5 Context Steward:** DS Bot disables standard DSH compaction for its bot sessions. Instead, a **context steward** writes structured checkpoints or handoffs into a new conversation part while indexing older parts in a local SQLite FTS5 database (`~/.dsh/bot/chat-index.sqlite`), searchable on demand via `read_own_chat`.
+- **Per-bot Playwright browsers and isolated secrets (`v0.2.2`):** On Desktop, each bot gets its own Playwright browser profile (`read_browser` converts DOM state into clean Markdown rather than heavy screenshots, and pauses for human approval before posting, uploading, or paying). Sensitive tokens requested via `request_secret` are stored in `$DSH_HOME/bot/secrets.json` (`mode 600`) and injected as `DSH_SECRET_<NAME>` environment variables so raw secrets never enter the LLM context.
+
+## Approach B: Tobs (`BotHarness/DeepSeekBot`) — Persistent colleagues with Git memory and IM identities
+
+Started in September 2026 as *DeepSeekBot* and rebranded in October to [**Tobs**](https://tobs.app/en/) ([MIT](https://github.com/BotHarness/DeepSeekBot), npm `@botharness/tobs@1.5.2`, qualified against `dsh-v0.2.1-rc.3`), the BotHarness project tackles a different problem: *how do you make a bot feel like a long-term teammate who lives inside your team's Slack, Feishu/Lark, Discord, QQ, or WeChat?*
+
+You install it into DeepSeek Harness Desktop via **Plugins → Add plugin → `@botharness/tobs@1.5.2`**, enable it, and switch to **Bot mode**.
+
+### How Tobs / BotHarness works under the hood
+
+Where DS Bot keeps each bot inside one long-lived session, Tobs splits a bot's brain into two distinct session tiers around a **PersonaBot** (`$DSH_HOME/botharness/bots/<id>/`):
+
+1. **Orchestrator Session vs. Assignment Sessions:** Each PersonaBot has exactly one long-lived **Orchestrator Session** that watches its **Bot Inbox** (messages arriving from in-app channels or external IM apps). When real work arrives, the Orchestrator does not block its inbox—it spawns or reuses dedicated **Assignment Sessions** (independent DSH root sessions) to execute the task in the background and report back.
+2. **Git-versioned file memory (`SOUL.md` and `MEMORY.md`):** A PersonaBot's personality (`SOUL.md`), long-term facts (`MEMORY.md`), and topic notes are plain Markdown files committed to a local **Git repository** on every memory write. If a bot learns a bad habit or wrong assumption, you can literally run `git log` and `git revert` on its memory, or `git push` that colleague to another machine.
+3. **First-class IM identities and Tobs Connect:** Through its IM provider layer, each PersonaBot binds its own bot account on Feishu/Lark, Slack, Discord, QQ, or WeChat (including file transfers in WeChat DMs). Version `1.5.0+` also added **Tobs Connect** for pairing your phone without setting up Tailscale, plus a steward bot named **Tob**, scheduled tasks, and a desktop Window Companion.
+
+Step through the interactive mock UI below to compare how DS Bot, Tobs, and IM bridges operate on top of DeepSeek Harness:
+
+<BlogMockUi
+  scene="deepseek-bot-arena"
+  eyebrow="INTERACTIVE MOCK UI · DEEPSEEK BOT ECOSYSTEM ARENA"
+  title="Comparing DS Bot, Tobs (@botharness/tobs), and IM Bridges on Cordis"
+  caption="Click steps 1–4 to inspect how each project layers identity, memory, group coordination, and messaging onto DeepSeek Harness."
+  step1Title="1. Zero forks: everything mounts on dsh-base"
+  step1Body="Neither DS Bot nor Tobs forks DeepSeek Harness; both install via dsh plugin add and consume ctx.agents, ctx.sessions, and ctx.tools."
+  step2Title="2. DS Bot: Chief, [PASS], and FTS5 Steward"
+  step2Body="Chief spins up specialist bots; group admins coordinate @Name handoffs while members [PASS]; SQLite FTS5 indexes full chat history."
+  step3Title="3. Tobs: Orchestrator -> Assignment & Git memory"
+  step3Body="An Orchestrator Session dispatches background Assignment Sessions while committing SOUL.md and MEMORY.md changes to Git."
+  step4Title="4. IM Bridges (@xmanrui/dsh-im) & Official ACP"
+  step4Body="Use @xmanrui/dsh-im when you just want 9 IM apps routed to host sessions, or dsh --profile acp for official stdio automation."
+/>
+
+## Approach C: What if you just want IM access or programmatic automation?
+
+You do not always need a full multi-bot team manager. Depending on what you are building, two lighter layers in the ecosystem may be a better fit:
+
+- **Lightweight IM bridges (`@xmanrui/dsh-im`, `dsh-lark-bot`, `dsh-lark`):** If you simply want to message your existing local DeepSeek Harness sessions from your phone while away from your desk, [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im) (`dsh plugin --profile web add -w @xmanrui/dsh-im`) connects nine messaging platforms (Feishu, WeChat, DingTalk, WeCom, QQ, Slack, Telegram, Discord, WhatsApp) directly into your host's existing sessions and workspaces without introducing a separate PersonaBot layer.
+- **Official programmatic control (`dsh --profile acp` and SDKs):** If you are writing your own orchestrator or IDE integration, use the official in-tree Agent Client Protocol server (`dsh --profile acp`) or the TypeScript/Python SDKs (`dsh --profile sdk`). They speak newline-delimited JSON-RPC over stdio and are maintained directly inside `deepseek-ai/deepseek-harness`.
+
+## Side-by-side comparison: Which one should you choose?
+
+| Question | DS Bot (`ds-bot`) | Tobs (`@botharness/tobs`) | IM Bridge (`@xmanrui/dsh-im`) | Official ACP (`dsh --profile acp`) |
+| --- | --- | --- | --- | --- |
+| **Maintainer & License** | Community (`Fei2411/DS-Bot`), Apache-2.0 | Community (`BotHarness/DeepSeekBot`), MIT | Community (`xmanrui/dsh-im`), MIT | Official (`deepseek-ai/deepseek-harness`), MIT |
+| **Core mental model** | One local window with a **Chief** bot and moderated group chats | Persistent **PersonaBots** that live across IM apps and background tasks | Remote control for your existing local DSH sessions from chat apps | JSON-RPC stdio protocol for driving DSH from external code |
+| **Long-term memory** | Markdown + SQLite FTS5 full-text search (`~/.dsh/bot`) | Git-versioned `SOUL.md` & `MEMORY.md` (`~/.dsh/botharness`) | Uses standard DSH session logs | Managed by the calling client / DSH session |
+| **Best for...** | Running a local multi-agent team + per-bot Playwright browser | Always-on digital colleagues in Feishu/Slack/WeChat with Git-auditable memory | Chatting with your desktop workspace from your phone | Building custom automation, CI pipelines, or IDE hosts |
+
+One final reminder applies across all community bot packages: **neither DS Bot nor Tobs is an official DeepSeek product.** Because they run inside your DeepSeek Harness process, they spend your configured model quota and operate with the workspace and tool permissions you grant them. Start new bots in read-only or workspace-scoped profiles first, and inspect their memory and tool approvals as you go.

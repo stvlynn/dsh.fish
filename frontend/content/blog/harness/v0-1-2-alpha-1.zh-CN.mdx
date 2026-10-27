@@ -1,84 +1,119 @@
 ---
 title: DeepSeek Harness v0.1.2-alpha.1
-description: 官方 API 请求会带上已启用插件的包名和版本，应用统一由 Profile 启动，ApiProxy 已移除，公网 WebFetch 默认开启。
+description: 为什么无头脚本突然在最终结果出来前“一声不吭”，子智能体如何告别昂贵的父模型继承，以及当 Profile 成为唯一启动入口后发生了什么。
 author: Steven Lynn
 date: 2026-08-27
 cover: /blog/covers/harness-v0-1-2-alpha-1.webp
 series: harness
 ---
 
-[v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) 是 2026 年 8 月 27 日发布的预览版。changelog 很长，因为好几条线同时动了：会话怎么启动、插件如何向 DeepSeek 表明身份、子代理怎么拉起、以及 headless 进程允许往哪里打日志。下面按这些行对照它们点名的代码来读，而不是复述一遍列表。
+设想这样一个场景：你把 DeepSeek Harness 升级到了 [v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1)（发布于 2026 年 8 月 27 日，Git 标签为 `dsh-v0.1.2-alpha.1`），像往常一样运行自动化脚本，结果终端屏幕一片空白。十秒过去了，二十秒过去了，正当以为进程卡死准备按 `Ctrl+C` 时，完整的最终回答突然一次性打印了出来。
 
-标签是 `dsh-v0.1.2-alpha.1`。`npx @deepseek-ai/dsh web` 仍然会解析到当前预览包；排查回归时请钉死这个 tag。
+进程并没有卡死。相反，`dsh-v0.1.2-alpha.1` 首次在**给人看的进度日志**与**给机器读的结果输出**之间画下了一条干净的分界线。这也是本次预发布版四大结构性演进之一：从会话如何启动、子智能体（Subagent）如何选模型，到请求头里携带哪些插件信息，都在这一版完成了定型。
+
+如果你平时使用 `npx @deepseek-ai/dsh web` 或为目录开发插件，不妨跟着我们从终端表现一路追查到底层协议。
 
 ![Harness v0.1.2 将请求 metadata 与 headless process output 分开。](/blog/diagrams/harness-request-path.svg)
 
-## 插件会出现在请求里
+## 为什么脚本突然“安静”了：`stderr` 与 `stdout` 的彻底分流
 
-官方 DeepSeek 适配器会把**每个已启用插件的包名和版本**附在出站请求上。部署侧可以关掉。同一条链路上还有一个**默认关闭、需显式打开**的 Session 日志增量上传。
+先从刚才那个“终端空白”的现象说起，因为它解决了一个长期困扰自动化开发者的痛点。
 
-这对目录同样成立。dsh.fish 上的一行是写入某个 named profile 的安装计划。这个版本之后，模型提供方能看见这些包里哪些真正加载了。你发布的 bundle 名字，就是官方适配器在用时离开本机的那个名字。
+在早期版本中，无头模式（Headless）会把所有内容混在标准输出（`stdout`）里打印：工具调用轨迹、中间思考进度、以及最终答案全挤在一条流里。如果你想把 `dsh` 的输出通过管道传给 `jq`，就不得不先写一堆脆弱的正则表达式去过滤中间日志。
 
-插件还可以**在模型设置页注册提供方登录控件**。这不是通用设置卡片，而是专门把 OAuth 或 token 登录放在内置提供方旁边。
+从 `dsh-v0.1.2-alpha.1` 开始，无头运行将两条输出流彻底分开：
 
-## 启动就是 Profile，包括 Python 和 ACP
+- **`stderr`（标准错误流，文件描述符 2）** 实时输出执行进度与工具调用轨迹。
+- **`stdout`（标准输出流，文件描述符 1）** 在任务完成前保持绝对安静，最后**只打印最终结果**。
 
-即使用 Python SDK 或 ACP 进入，应用也通过 `dsh` Profile 启动。Python SDK runtime 增加了 **Windows x64** 发行包。
-
-ACP（Agent Client Protocol）不再是半截实现。会话控制、模型设置、MCP、权限和取消都列为已补齐。如果之前卡在缺某个控制，用这个版本重新测——仍然是 preview，仍然没有稳定性承诺。
-
-## 子代理可以选自己的模型
-
-两件相关的事：
-
-- 在父任务已有的授权范围内，Agent 可以为子代理选择提供方、模型和推理力度。
-- 启动子代理时可以指定提供方、模型、推理力度和**最大输出长度**。
-- Claude Code 与 Codex 子代理使用**配置的模型**，不再默认继承父会话。
-
-第一项是策略：子代理不是父模型槽的克隆。后两项是你在 profile 里钉死它的方式。把 Claude Code 或 Codex 当 bundle 装进 hub profile 的，现在还应该写明这些子进程跑哪个模型。
-
-## 从树里拿掉的东西
-
-**ApiProxy 已移除。** changelog 写明迁移到 `@Remote` 网关已完成。仍在 import 旧调用路径的代码不会加载。
-
-**Code Mode 现名为 PTC mode。** 已有会话记录仍可读。截图里还写着 “Code mode” 的英文预设已经过时；运行时名字是 PTC。
-
-**公网 WebFetch 默认开启**，带 SSRF 防护，公网请求不再逐次审批。这和以前的「每次都问」相反。如果某个 profile 把那次审批当成闸门，对公网 URL 它已经不在了。
-
-**经网络访问 Web UI 时，启动链接必须带一次性 token。** 本机 loopback 上的 `dsh web` 不变；绑到网上的监听现在用链接本身鉴权。
-
-Headless 运行把进度打到 **stderr**。**stdout 只输出最终结果。** 从 stdout 里 grep 工具轨迹的脚本，在这一轮结束前会什么都看不到。
-
-## 兼容性检查很短，但不会留情
-
-把 Profile 迁到这个 preview 前，先在 package 和 automation 里查四个假设：`ApiProxy` 还存在、Code Mode 仍是公开名称、subagent 会继承父级 model、stdout 会带进度 event。四个假设的失败方式不同，所以一句“preview 把我的 script 弄坏了”很难定位问题。
-
-实用的迁移方式是保持 stdout 可被机器读取，把诊断信息送到别处：
+这意味着你现在可以用一行标准重定向，同时拿到干净的机器结果和实时进度日志：
 
 ```bash
 dsh --profile <profile-name> run "your task" >result.txt 2>progress.log
 ```
 
-然后分别重测需要网络的 WebFetch 和任何暴露到外部的 Web UI。公共 fetch 的新默认值与一次性 launch token 解决的是两个问题；把任意一个当成通用 security boundary 都是错误的。
+<BlogStructureMap
+  diagram="harness-request-path"
+  eyebrow="HTML 结构图 · 请求链路与输出分流"
+  title="v0.1.2-alpha.1 如何将会话启动、请求元数据与终端输出流解耦"
+  caption="所有入口统一由 Profile 启动，官方适配器请求携带已启用插件标识，无头模式则将 stderr 进度与 stdout 最终结果彻底分离。"
+  node1Title="1. 统一的 Profile 启动入口"
+  node1Body="Web UI、Headless、Python SDK 与 ACP 全部通过具名 Profile 启动；子智能体可独立配置更轻量的模型。"
+  node2Title="2. 官方适配器请求元数据"
+  node2Body="发往 DeepSeek 官方接口的请求默认附带已启用插件的包名与版本号，并提供需手动开启的会话日志流。"
+  node3Title="3. 干净的标准输出分流"
+  node3Body="Headless 会话将实时工具轨迹发往 stderr，让 stdout 仅保留最终答案以方便脚本管道消费。"
+/>
 
-## 这个 preview 仍需谨慎的地方
+## 子智能体终于不必“被迫继承”昂贵的父模型
 
-这是 alpha。ACP coverage 标成 complete，表示具名 control 已经存在，不表示所有 client 组合都有稳定兼容契约。Plugin identity 只属于官方 DeepSeek adapter，session-log upload 需要主动开启，deployment 也可以关闭 metadata header。请围绕这些事实建立 observability，不要假设每个 provider 看到的 request shape 都相同。
+解决了输出解析问题后，多步任务里的下一个瓶颈往往是成本与延迟。
 
-## 会话 UI 和存储
+在此之前，当主智能体派生一个子智能体（比如去翻阅某个子目录或汇总测试日志）时，子智能体默认直接克隆父会话的模型槽位。如果你的主会话正在跑高强度的重型推理模型，哪怕是打杂的小任务也会按最高规格消耗 Token 和等待时间。
 
-会话流会在每条已完成回答前折叠过程内容和 System prompt，回答后可展开精确 token 用量，正文宽度可拖。这些是 UI。对大历史更要紧的是存储：会话记录更省磁盘；截断的日志尾会自动修复，并警告受影响的会话。
+在 `v0.1.2-alpha.1` 中，子智能体获得了独立的模型选择权：
 
-macOS/Linux 上持久 PowerShell 不再过早启动。Linux 上持久 Bash 不再在管道中途返回空输出。Bash 拉起大量子进程时 macOS 宿主不再卡死。Profile 配置的 Agent Preset 目录启动时不再丢失；无法加载的 preset 会在切换前被标出来。
+1. **在父级授权范围内按需选型：** 主智能体可以在自己已获授权的供应商与密钥范围内，为子智能体指定不同的供应商、模型和推理强度（reasoning effort）。
+2. **启动时设置输出上限：** 调用方在派生子智能体时，可以直接指定供应商、模型、推理强度以及**最大输出长度（maximum output length）**。
+3. **Claude Code 与 Codex 子智能体支持固定模型：** 如果你在 Profile 中挂载了 Claude Code 或 Codex 作为子智能体，它们现在会读取各自配置的专属模型，而不再盲目继承父会话模型。
 
-## 安全说明
+对于 `dsh.fish` 上的配置作者来说，这意味着你可以在同一个 Profile 里实现“主模型深度规划 + 轻量 Flash 子模型并发执行”的高效组合。
 
-本 tag 更新了 Safety Notice：DeepSeek Harness **尚未接受安全审计**。沙箱、审批与权限控制**不能保证隔离**。这是官方文本，不是论坛传言。继续把 `danger-full-access` 当成它一直是的那样。不要把新的 WebFetch 默认理解成沙箱变严了。它没有。
+## 当插件启用时，哪些信息会随请求发出？
 
-## 本目录会怎么对待它
+当你把目录里的扩展包（Bundle）安装进 Profile 后，模型服务商知道你加载了哪些插件吗？
 
-dsh.fish 的安装计划仍然只写 `$DSH_HOME` 下的 named profile。它们不会打开 Session 日志上传，也不会发明 ApiProxy 回退。文档还在写 ApiProxy 的插件，应视为面向比这个 tag 更旧的树。
+从 `dsh-v0.1.2-alpha.1` 起，在使用**官方 DeepSeek 适配器**时，发出的 API 请求默认会附带当前 Profile 中**所有已启用插件的包名与版本号**。
 
-评分模型没变。变的是分数所描述的运行时：README 仍写 Code Mode、仍贴 ApiProxy 片段，相对 v0.1.2-alpha.1 是文档缺陷，不是另一个产品。
+这里有两个关键的边界设计：
 
-完整 changelog：[dsh-v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.1-rc.2...dsh-v0.1.2-alpha.1)。
+- **插件标识头默认开启，但允许关闭。** 私有化或注重边界的部署环境可以在配置中关闭该请求头。
+- **增量会话日志上传默认关闭（Opt-in）。** 同一通道还支持随请求流式上传增量会话日志，但默认保持**关闭**，除非你显式开启（`dsh.fish` 生成的安装计划绝不会开启此开关）。
+
+此外，插件作者还获得了一个实用的界面扩展点：插件现在可以**在“设置 → 模型（Models）”页面直接注册自定义的登录控件**，把自己的 OAuth 或 Token 登录卡片与内置供应商并排展示。
+
+点击下方交互式模拟检查器，逐步查看这四项核心变更在运行时的工作方式：
+
+<BlogMockUi
+  scene="harness-inspector"
+  eyebrow="交互式模拟 UI · HARNESS v0.1.2 运行检查器"
+  title="追踪 Profile 统一启动、子智能体模型路由、请求头与输出分流"
+  caption="点击左侧阶段（1–4），查看 v0.1.2-alpha.1 在运行时如何处理 Profile、子智能体、官方适配器请求头以及终端输出流。"
+  step1Title="1. 所有入口统一通过 Profile 启动"
+  step1Body="Web、Headless、Python SDK（新增 Windows x64 支持）与 ACP 均由具名 Profile 启动，并用 @Remote 网关全面替代 ApiProxy。"
+  step2Title="2. 子智能体独立选择轻量模型"
+  step2Body="使用重型推理模型的主智能体可派生带输出长度上限的 Flash 子智能体，并通过双向消息协同工作。"
+  step3Title="3. 官方适配器附带已启用插件标识"
+  step3Body="发往官方 DeepSeek 接口的请求携带启用插件的包名与版本；插件还可在模型设置页挂载专属 OAuth 登录卡。"
+  step4Title="4. 无头模式分离 stderr 与 stdout"
+  step4Body="实时工具调用轨迹走标准错误流（fd 2），标准输出流（fd 1）仅输出最终结果，直接兼容下游脚本管道。"
+/>
+
+## Python SDK 与 ACP 走入同一扇大门
+
+如果你只用浏览器界面（`dsh web`），你其实已经在用 Profile 了。`v0.1.2-alpha.1` 的重要变化在于，**所有其他调用方式也全部统一到了 Profile 体系下**：
+
+- **Python SDK** 现在同样通过 `dsh` Profile 启动，并且本版本新增了 **Windows x64** 预编译运行时轮子（wheel）。
+- **ACP（Agent Client Protocol）** 不再是半成品桩代码：会话控制、模型设置、MCP 挂载、权限审批和取消操作已全部补齐。如果你之前因为缺少某个控制接口而搁置了 ACP 集成，现在正是重新联调的节点。
+
+## 升级前必查的四项不兼容变更
+
+由于本版本一次性清理了多处旧接口，在迁移旧 Profile 或脚本前，请务必核对以下四项假设：
+
+| `v0.1.2-alpha.1` 之前的旧假设 | 现在的实际行为 | 迁移与修复方式 |
+| --- | --- | --- |
+| 插件代码仍然导入 `ApiProxy` | **无法加载。** 已全面迁移至 `@Remote` 网关。 | 将所有 `ApiProxy` 调用替换为 `@Remote` 网关接口。 |
+| 预设或文档仍使用 **Code Mode** 名称 | 正式更名为 **PTC mode**（`run_code`），旧会话历史仍可正常读取。 | 将配置与 README 中的 Code Mode 统一更新为 PTC mode。 |
+| 公网 `WebFetch` 每次都弹窗请求批准 | 公网 URL 获取**默认开启**（内置 SSRF 防护），不再逐次弹窗。 | 不要再把审批弹窗当作公网 HTTP 请求的拦截阀门。 |
+| 跨局域网直接裸连 `dsh web` | 通过网络访问 Web UI 必须在启动链接中携带**一次性令牌（one-time token）**。 | 本机回环（`127.0.0.1`）不受影响；跨机器访问请使用终端打印的带令牌完整 URL。 |
+
+## 界面体验打磨与安全声明（Safety Notice）更新
+
+除了底层协议演进，日常使用体验也有不少扎实的改进：
+
+- **更清爽的会话界面与更省空间的日志：** 每条已完成的回答默认折叠中间过程细节与 System 提示词，回答末尾提供可展开的 Token 统计，并支持拖拽调整对话列宽。磁盘上的会话记录体积更小，遇到截断的日志尾部时会自动修复并指明对应的会话。
+- **跨平台持久终端修复：** 修复了 macOS/Linux 上持久 PowerShell 过早启动、Linux 上持久 Bash 在管道中途返回空输出、以及 macOS 在 Bash 瞬间派生大量子进程时卡死的问题。
+
+最后，请留意本版本更新的 **Safety Notice（安全声明）**：官方明确写道，DeepSeek Harness **尚未经过安全审计**，沙箱、审批与权限机制**不保证绝对隔离**。公网 `WebFetch` 默认开启只是为了减少重复点击，绝不代表沙箱边界变得坚不可摧。请继续将敏感凭证保存在工作区之外，并谨慎对待 `danger-full-access`。
+
+完整变更对比：[dsh-v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.1-rc.2...dsh-v0.1.2-alpha.1)。

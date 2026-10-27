@@ -1,0 +1,111 @@
+---
+title: 把智慧體執行期變成「數位同事」：DeepSeek Bot 生態全景與技術解析
+description: DeepSeek Bot 並不是某個單一的官方儲存庫，而是以 DS Bot 與 Tobs 為代表的兩套社群多智慧體架構及 IM 橋接生態——它們在不分叉一行核心程式碼的前提下，把單工作階段 Harness 變成了持久在線的機器人團隊。
+author: Steven Lynn
+date: 2026-10-26
+cover: /blog/covers/deepseek-bot-ecosystem.webp
+series: notes
+---
+
+如果你最近常聽身邊的開發者提起在桌面上或者飛書、微信、Slack 裡跑 **DeepSeek Bot**，然後興沖沖地打開 [`deepseek-ai`](https://github.com/deepseek-ai) 官方 GitHub 組織去搜這個名字，你一定會撲個空。
+
+等一下——既然 DeepSeek 官方根本沒有發佈過名叫 DeepSeek Bot 的儲存庫，那大家每天在跑、在討論的到底是什麼？
+
+順著程式碼與套件名深挖下去，你會發現一個比「官方又發了個新軟體」有趣得多的工程故事：社群裡有兩個完全獨立的開源專案——[**DS Bot**](https://github.com/Fei2411/DS-Bot)（npm 套件名 `ds-bot`，其桌面端安裝包就叫 *DeepSeek Bot*）和 [**Tobs**](https://github.com/BotHarness/DeepSeekBot)（npm 套件名 `@botharness/tobs`，最初發佈時名為 *DeepSeekBot*）。它們**沒有分叉（Fork）哪怕一行 DeepSeek Harness 的核心程式碼**，僅僅作為標準的 Cordis 外掛擴充包（Bundle）掛載在 `dsh` 之上，就把一個單視窗程式碼工具變成了一整支全天候待命的數位同事團隊。
+
+搞清楚這兩個專案為什麼誕生、各自怎麼設計，以及它們與 [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im) 等聊天橋接器或官方 `dsh --profile acp` 協定有什麼區別，是理解 DeepSeek Harness **「一切皆外掛」** 架構最生動的一堂實戰課。
+
+![一個官方執行期底座，三種建構機器人的社群路徑。](/blog/diagrams/deepseek-bot-ecosystem.svg)
+
+## 先問一個根本問題：為什麼原生的 Harness 工作階段還不能算是一個「Bot」？
+
+當你在終端機輸入 `npx @deepseek-ai/dsh web` 時，你得到的是一個**工作階段（Session）**：一條僅追加的事件日誌，綁定一個本機工作區資料夾，每次圍繞一個具體任務跑迴圈。
+
+當你坐在電腦前重構程式碼時，這種設計乾淨俐落。但如果你想擁有一個「長期在線的數位助理」或者「多角色協作的機器人小組」，原生工作階段立刻就會露出四塊拼圖的空缺：
+
+1. **跨任務的持久身份與長期記憶：** 一般工作階段隨任務結束而歸檔；而一位「數位同事」需要在下週依然記得你的程式碼規範與專案背景。
+2. **多機器人群聊秩序：** 如果把 `@架構師`、`@程式設計師` 和 `@程式碼審查員` 放進同一個群聊，誰先開口？誰負責拍板？沒事可說的機器人怎麼保持安靜而不是互相客套死迴圈？
+3. **收件匣與背景任務解耦：** 當你在外面用手機給機器人發了一條複雜任務，它如何在不卡死聊天視窗的前提下，在背景開闢獨立工作區幹活並主動回報進度？
+4. **外部即時通訊（IM）接入：** 本機的 Harness 行程如何安全地接入飛書/Lark、微信、企微、釘釘、Slack 或 Discord？
+
+正因為 DeepSeek Harness 透過 Cordis 暴露了完備的 `ctx.agents`、`ctx.sessions` 與 `ctx.tools` 服務接縫，社群開發者意識到：**根本不需要重造一個智慧體底座，只要把上面這四塊拼圖寫成 Cordis 外掛裝進 Profile 就夠了。**
+
+<BlogStructureMap
+  diagram="deepseek-bot-ecosystem"
+  eyebrow="HTML 結構圖 · 生態分層與掛載關係"
+  title="DS Bot、Tobs (@botharness/tobs) 與 IM 橋接器如何掛載在 DeepSeek Harness 之上"
+  caption="三種社群方案全部透過 dsh plugin add 執行在官方 DeepSeek Harness 之上，但在身份建模、記憶儲存與外部聊天通道上採取了截然不同的架構。"
+  node1Title="1. DS Bot (Fei2411/DS-Bot)"
+  node1Body="將 DSH 變成多機器人協作應用：由總管 Chief 建立專家機器人，群管理員統籌發言，並用 SQLite FTS5 管家替代預設壓縮。"
+  node2Title="2. Tobs (@botharness/tobs)"
+  node2Body="將每個機器人建模為 PersonaBot，採用 Orchestrator -> Assignment 雙層工作階段、Git 版本化的 SOUL.md/MEMORY.md 與獨立 IM 身份。"
+  node3Title="3. IM 橋接與官方 ACP"
+  node3Body="@xmanrui/dsh-im 將 9 種聊天軟體直接橋接至宿主現有工作階段；官方 dsh --profile acp 則提供標準 JSON-RPC stdio 自動化介面。"
+/>
+
+## 路線 A：DS Bot（`Fei2411/DS-Bot`）—— 總管 Chief 帶領的本機多機器人團隊
+
+建立於 2026 年 10 月的 **DS Bot**（[Apache-2.0 授權](https://github.com/Fei2411/DS-Bot)，截至 10 月 25 日最新版本為 [`v0.2.2`](https://github.com/Fei2411/DS-Bot/releases/tag/v0.2.2)）既提供了自帶 `dsh` 執行期的獨立桌面安裝包（應用名即 **DeepSeek Bot**），也可以作為標準外掛 `ds-bot` 一行指令裝入你現有的 Harness `web` 或 `desktop` Profile：
+
+```bash
+npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add ds-bot
+npx @deepseek-ai/dsh@0.2.1-rc.2 web
+```
+
+### DS Bot 的核心技術設計
+
+DS Bot 沒有讓使用者去手寫複雜的設定檔來組建團隊，而是設計了一套非常符合直覺的協作機制：
+
+- **和總管 Chief 聊天就能組建團隊：** 系統內建的第一個主機器人叫 **Chief（總管）**。你只需要在對話裡告訴 Chief 你需要什麼樣的幫手，它就會呼叫 `create_bot` 與 `update_bot` 幫你建立專職機器人。每個機器人本質上是一個持久化的 DSH 工作階段，擁有獨立的角色指令、模型設定以及**只能由人類手動設定的權限檔位**（唯讀 Read only、工作區 Workspace 或完全存取 Full access）。
+- **有秩序的群聊機制（管理員、`@Name` 與 `[PASS]`）：** 在多機器人群聊裡，預設由**群管理員機器人**先行接話並按需透過 `@Name` 點名拉其他專家入場。每個成員在每個群裡都有各自隔離的隱藏工作階段（絕不洩露機器人的私聊記憶）；沒有補充意見的成員可以直接輸出 `[PASS]` 保持沉默，避免多模型無效洗版。
+- **用 SQLite FTS5 上下文管家替代預設壓縮：** DS Bot 關閉了 DSH 預設的工作階段截斷壓縮，轉而引入獨立的**上下文管家（Context Steward）**——當對話變長時自動提煉檢查點（Checkpoint）或交接摘要開啟新篇章，同時將歷史片段完整索引到本機 SQLite FTS5 全文檢索庫（`~/.dsh/bot/chat-index.sqlite`），供機器人隨時透過 `read_own_chat` 精準回溯。
+- **專屬 Playwright 瀏覽器與金鑰隔離（`v0.2.2`）：** 在桌面端，每個機器人擁有自己獨立的 Playwright 瀏覽器設定目錄（`read_browser` 會將網頁 DOM 轉為精煉的 Markdown 而非昂貴的截圖；遇到發文、上傳、下載或付款操作時強制交回人類審批）。當任務需要敏感憑證時，`request_secret` 會彈出安全卡片並將值保存在 `~/.dsh/bot/secrets.json`（權限 `600`），僅作為 `DSH_SECRET_<NAME>` 環境變數注入並自動遮罩，確保明文金鑰永不進入大模型上下文。
+
+## 路線 B：Tobs（`BotHarness/DeepSeekBot`）—— 擁有 Git 記憶與獨立 IM 身份的數位同事
+
+於 2026 年 9 月以 *DeepSeekBot* 之名啟動、並在 10 月正式更名為 [**Tobs**](https://tobs.app/en/) 的專案（儲存庫為 [`BotHarness/DeepSeekBot`](https://github.com/BotHarness/DeepSeekBot)，MIT 授權，npm 套件名 `@botharness/tobs@1.5.2`，已透過 `dsh-v0.2.1-rc.3` 適配驗證）切入了另一個核心場景：**如何讓機器人擁有可稽核的長期記憶，並以獨立同事的身份常駐在你的飛書、微信、QQ、Slack 或 Discord 裡？**
+
+你可以在 DeepSeek Harness 桌面版的 **Plugins → Add plugin** 中輸入 `@botharness/tobs@1.5.2` 安裝並啟用，隨後即可一鍵切入 **Bot mode**。
+
+### Tobs / BotHarness 的核心技術設計
+
+與 DS Bot「一個機器人對應一條長工作階段」不同，BotHarness 圍繞 **PersonaBot（人格化機器人）** 設計了雙層工作階段排程與檔案優先的 Git 記憶系統：
+
+1. **Orchestrator（排程工作階段）與 Assignment（委派任務工作階段）分離：** 每個 PersonaBot 只有一個常駐的 **Orchestrator Session**，專門負責監聽它的 **Bot Inbox（收件匣）**。當你透過群聊或外部 IM `@PersonaBot` 派發一項開發任務時，Orchestrator 不會在收件匣裡原地阻塞，而是建立或重用獨立的 **Assignment Session**（獨立的 DSH 根工作階段）在背景並行執行，完成後再向你回報。
+2. **Git 版本化的檔案級記憶（`SOUL.md` 與 `MEMORY.md`）：** 每個機器人的性格設定（`SOUL.md`）、長期記憶（`MEMORY.md`）與專題筆記全部以純 Markdown 檔案形式存放在 `$DSH_HOME/botharness/bots/<id>/` 下，並且**每一次記憶寫入都會自動提交到本機 Git 儲存庫**。如果某個機器人記錯了專案約定，你可以直接用 `git log` 查看它是哪天學歪的，用 `git revert` 一鍵回滾記憶，甚至用 `git push` 把這位培養好的「數位同事」複製到另一台電腦上。
+3. **獨立 IM 帳號綁定與免組網手機配對（Tobs Connect）：** 藉助專屬的 IM Provider 層，每個 PersonaBot 都能以獨立機器人帳號接入飛書/Lark、微信（支援私聊收發檔案）、QQ、Slack 與 Discord。`1.5.0+` 版本還加入了無需設定 Tailscale 的手機直連配對功能 **Tobs Connect**、內建管家機器人 **Tob**、桌面伴侶掛件（Window Companion）以及機器人市場（Bot Marketplace）。
+
+點擊下方互動式模擬介面，直觀對比 DS Bot、Tobs 與 IM 橋接器在 DeepSeek Harness 上的運作機制：
+
+<BlogMockUi
+  scene="deepseek-bot-arena"
+  eyebrow="互動式模擬 UI · DEEPSEEK BOT 生態架構對比台"
+  title="在 Cordis 之上對比 DS Bot、Tobs (@botharness/tobs) 與 IM 橋接方案"
+  caption="點擊左側步驟（1–4），查看不同社群專案如何在不修改 DeepSeek Harness 核心的前提下實現多機器人協作、Git 記憶與多端 IM 接入。"
+  step1Title="1. 零分叉底座：全部掛載於 dsh-base"
+  step1Body="無論是 DS Bot 還是 Tobs 均未分叉 DeepSeek Harness，而是透過 dsh plugin add 安裝並重用 ctx.agents、ctx.sessions 與 ctx.tools。"
+  step2Title="2. DS Bot：總管 Chief、[PASS] 與 FTS5 管家"
+  step2Body="透過與 Chief 對話建立專家團隊；群聊由管理員統籌 @Name 點名與 [PASS] 靜默；SQLite FTS5 全文索引替代粗暴截斷。"
+  step3Title="3. Tobs：排程/任務雙層工作階段與 Git 記憶"
+  step3Body="Orchestrator 收件匣工作階段將重任務派發給獨立的 Assignment 工作階段，並將 SOUL.md 與 MEMORY.md 的每次變更提交至 Git。"
+  step4Title="4. 輕量 IM 橋接 (@xmanrui/dsh-im) 與官方 ACP"
+  step4Body="若只需在手機聊天軟體裡遠端操作本機現有工作階段，可選用連接 9 大平台的 @xmanrui/dsh-im；程式化整合則首選官方 dsh --profile acp。"
+/>
+
+## 路線 C：如果我只需要手機遠端連入，或者用程式碼驅動呢？
+
+並不是所有人都需要一整套多機器人團隊系統。如果你的需求更聚焦，生態裡還有兩類更輕量的標準方案：
+
+- **輕量級 IM 通道橋接（`@xmanrui/dsh-im`、`dsh-lark-bot`、`dsh-lark`）：** 如果你只是想在離開電腦時，用飛書、微信、釘釘、企微、QQ、Slack、Telegram、Discord 或 WhatsApp 直接跟本機已經打開的 DeepSeek Harness 工作階段聊天，安裝社群高星外掛 [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im)（`dsh plugin --profile web add -w @xmanrui/dsh-im`）即可。它不額外發明一套機器人人格層，而是直接把九大聊天軟體橋接到你主機現有的工作階段與工作區上。
+- **官方原生程式化介面（`dsh --profile acp` 與官方 SDK）：** 如果你想在自己的業務系統或 IDE 裡驅動 Harness，根本不需要裝第三方機器人外掛——直接使用官方內建的 `dsh --profile acp`（基於 stdio 的 Agent Client Protocol JSON-RPC 服務）或官方 TypeScript/Python SDK（`dsh --profile sdk`）即可。
+
+## 四種方案橫向對比：哪一款最適合你？
+
+| 對比維度 | DS Bot (`ds-bot`) | Tobs (`@botharness/tobs`) | IM 橋接 (`@xmanrui/dsh-im`) | 官方 ACP (`dsh --profile acp`) |
+| --- | --- | --- | --- | --- |
+| **維護性質與開源授權** | 社群專案（`Fei2411/DS-Bot`），Apache-2.0 | 社群專案（`BotHarness/DeepSeekBot`），MIT | 社群專案（`xmanrui/dsh-im`），MIT | 官方內建（`deepseek-ai/deepseek-harness`），MIT |
+| **核心互動模型** | 單一桌面/網頁視窗內的 **Chief 總管** + 管理員群聊團隊 | 跨多端 IM 常駐、帶收件匣與背景委派任務的 **PersonaBot** | 將 9 大聊天軟體直接連入主機現有的本機工作階段 | 供外部程式呼叫的官方標準 JSON-RPC stdio 協定 |
+| **長期記憶機制** | Markdown + SQLite FTS5 全文檢索（`~/.dsh/bot`） | Git 版本化管理的 `SOUL.md` 與 `MEMORY.md`（`~/.dsh/botharness`） | 直接重用宿主 DSH 原生工作階段日誌 | 由呼叫方與原生 DSH 工作階段日誌管理 |
+| **最適合什麼場景？** | 想在一個視窗裡指揮多角色團隊 + 專屬 Playwright 瀏覽器自動化 | 想在飛書/微信/Slack 裡設定記憶可回滾、全天候待命的數位同事 | 想在手機上隨時遠端查看並操作電腦上的本機程式碼工作階段 | 在自研平台、CI 流水線或編輯器中整合 Harness |
+
+最後也請牢記一條重要的安全邊界：**DS Bot、Tobs 與各類 IM 橋接外掛均為社群獨立開發的開源作品，並非 DeepSeek 官方出品。** 它們執行在你的本機 DeepSeek Harness 行程中，消耗你設定的模型額度，並在你授予的工作區與權限範圍內讀寫檔案、執行指令。初次嘗試時，建議先為機器人分配唯讀（Read only）或受限工作區權限，養成隨時檢視工具審批與記憶變更的好習慣。

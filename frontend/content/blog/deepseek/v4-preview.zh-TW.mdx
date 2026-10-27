@@ -1,74 +1,102 @@
 ---
 title: DeepSeek-V4 預覽版，以及它給 Harness 帶來的變化
-description: 2026 年 4 月的 V4 公告把 1M 上下文做成預設。Harness 隨後跟上了 Flash-Vision、Files API 上傳，以及舊模型名的下線日期。
+description: 當上下文視窗一夜之間擴大到 1,000,000 Token，為什麼粗放的智慧體還是會撞牆？看 DeepSeek-V4 如何推動 Harness 介面卡、Files API 圖片重用與模型命名的演進。
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/deepseek-v4-preview.webp
 series: deepseek
 ---
 
-DeepSeek 於 2026 年 4 月 24 日發布 [DeepSeek-V4 預覽版](https://www.deepseek.com/news/v4-preview/)。那篇文章是第一手來源。本文不是轉載，而是截至 Harness v0.1.2-alpha.1，這條公告對目錄所索引的 agent 執行時做了什麼。
+當大模型的上下文視窗從 128K 一夜之間跳升到 **1,000,000 Token（1M）** 時，幾乎所有人都會產生同一個衝動：以後再也不用費心篩選檔案了，直接把整個程式碼儲存庫塞進提示詞，把所有截圖一股腦丟給模型，讓它自己去找答案！
+
+然而當你真正在程式碼工作階段裡這麼做時，到了第十五輪工具呼叫，回應延遲開始明顯拉長，重複上傳的截圖讓請求體急速膨脹，而真正引發 Bug 的那三行程式碼早已被淹沒在幾萬行無關日誌裡。
+
+2026 年 4 月 24 日，DeepSeek 發佈了 [DeepSeek-V4 Preview（V4 預覽版）](https://www.deepseek.com/news/v4-preview/)。公告最吸睛的數字無疑是「預設 1M 上下文視窗」；但對於一般使用者與外掛開發者來說，真正關鍵的是**隨後幾個月裡 DeepSeek Harness 在底層介面卡上做出的連續改造**——正是這些改造，才讓智慧體真正用好了 1M 視窗、透過 Files API 高效重用圖片，並平穩完成了舊模型名稱的退役交接。
 
 ![V4 公告之後，DeepSeek Harness adapter 分階段發生變化。](/blog/diagrams/v4-adapter-timeline.svg)
 
-## 公告實際寫了什麼
+## 兩款開源權重模型，同一個預設 1M 視窗
 
-兩個開源權重模型，官方服務上的預設上下文都是 **1M token**：
+我們先用最通俗的語言梳理一下 4 月份的 V4 公告到底發佈了什麼。
 
-| 模型              | 總參數 / 啟用參數 | 公告中的定位                                 |
-| ----------------- | ----------------- | -------------------------------------------- |
-| DeepSeek-V4-Pro   | 1.6T / 49B        | 程式設計、世界知識、數學——對標閉源           |
-| DeepSeek-V4-Flash | 284B / 13B        | 更快更便宜；「簡單 Agent 任務上與 Pro 相當」 |
+DeepSeek 沒有把長上下文做成一個額外收費的「長文本高價版」，而是依靠**逐 Token 壓縮（token-wise compression）與 DSA（DeepSeek 稀疏注意力，DeepSeek Sparse Attention）**，直接把 **1M Token 設為兩款 MoE 模型的預設標準視窗**：
 
-架構主張是 **token 維壓縮加上 DSA**（DeepSeek Sparse Attention）。1M 不是可選的長上下文 SKU，而是標準視窗。
+| 模型名稱 | 總參數 / 激活參數 | API `model` 標識 | 適用場景定位 |
+| --- | --- | --- | --- |
+| **DeepSeek-V4-Pro** | 1.6T 總參數 / 49B 激活 | `deepseek-v4-pro` | 複雜架構設計、跨多檔案疑難排錯、數學與深度推理（推薦開啟 `thinking: max`） |
+| **DeepSeek-V4-Flash** | 284B 總參數 / 13B 激活 | `deepseek-v4-flash` | 高頻工具呼叫、子智慧體並行任務與日常快速迭代，成本與延遲大幅降低 |
 
-API 的 `base_url` 不變。`model` 改為 `deepseek-v4-pro` 或 `deepseek-v4-flash`。兩個名字都支援思考 / 非思考。公告建議 Agent 場景用思考模式，強度 `max`。
+兩款模型均沿用原有的 API `base_url`，並同時支援思考（thinking）與非思考模式（在網頁端與 App 中對應**專家模式 Expert Mode** 與**極速模式 Instant Mode**）。對於智慧體（Agent）負載，官方明確建議將思考強度設為 `max`。
 
-**下線：** `deepseek-chat` 與 `deepseek-reasoner` 於 **2026 年 7 月 24 日 15:59 UTC** 停止。此前分別路由到 V4-Flash 的非思考與思考。過期之後這兩個字串是死名，不是別名。
+同樣需要畫重點的是舊名稱的退役時間表：老一代的 **`deepseek-chat` 與 `deepseek-reasoner` 已於 UTC 時間 2026 年 7 月 24 日 15:59 正式停止服務**。在此日期前它們曾臨時路由至 V4-Flash，而在那之後，這兩個字串已經徹底失效，不再作為別名保留。
 
-網頁與 App 以專家模式 / 極速模式暴露這一對。權重與技術報告從公告頁鏈出（Hugging Face / ModelScope、arXiv）。
+<BlogStructureMap
+  diagram="v4-adapter-timeline"
+  eyebrow="HTML 結構圖 · 介面卡四階段演進"
+  title="從 V4 模型發佈到 DeepSeek Harness 介面卡的四步落地"
+  caption="紙面上的 1M 上下文視窗，需要執行期配套原生圖片請求、Files API 快取重用與壓縮統計才能真正發揮威力。"
+  node1Title="1. V4 模型底座"
+  node1Body="藉助 DSA 稀疏注意力將 1M 上下文設為預設標配，由 V4-Pro（49B 激活）與 V4-Flash（13B 激活）分工協作。"
+  node2Title="2. Harness 介面卡改造"
+  node2Body="從 v0.1.0-rc.8 到 v0.1.2-alpha.1，官方介面卡陸續補齊了原生圖片輸入、Files API 上傳重用以及含圖片的上下文壓縮。"
+  node3Title="3. 邁向 V4.1 統一多模態"
+  node3Body="在 2026 年 9 月至 10 月的後續更新中，deepseek-flash 直接內建原生視覺，而 deepseek-v4-pro 繼續承擔重度推理。"
+/>
 
-## Harness 拿它做了什麼
+## DeepSeek Harness 是如何把模型能力變成執行期底座的？
 
-V4 公告在四月。八月人們實際跑的 harness 預覽已經把 V4 當活的家族：
+模型公告告訴你權重能做什麼，而智慧體執行期（Harness）必須把這些能力變成穩定可靠的工具呼叫。
 
-- **v0.1.1-rc.1** 在官方適配器上增加 `DeepSeek-V4-Flash-Vision-Exp`——影像輸入，實驗性，名字就寫著 Exp。
-- **v0.1.1-rc.2** 讓適配器優先走 **Files API** 上傳影像並複用已傳檔案，依模型要求縮放和轉格式。
-- **v0.1.0-rc.8** 已經為 DeepSeek 適配器打開原生圖片請求（`/goal`、`/plan`、`@` 引用檔案和工作階段）。
-- **v0.1.2-alpha.1** 把**已啟用外掛的套件名稱與版本**附在官方 DeepSeek 請求上，並提供可選的 Session 日誌上傳。
+順著 8 月份 `v0.1.2-alpha.1` 之前的版本脈絡往回看，你會看到官方介面卡分四個階段完成了對 V4 的深度適配：
 
-所以公告裡「與 Claude Code、OpenClaw、OpenCode 以及 DeepSeek 自研 coding agent 整合」不是貼在未改執行時旁邊的行銷句。隨後幾個月，vision、Files API 和外掛身分都成了這條 API 上的一等公民。
+1. **打通原生圖片請求（`v0.1.0-rc.8`）：** 在 `/goal`、`/plan` 以及 `@` 檔案與工作階段引用中正式啟用了原生圖片請求。
+2. **引入實驗性視覺模型（`v0.1.1-rc.1`）：** 官方介面卡新增 `DeepSeek-V4-Flash-Vision-Exp`（`deepseek-v4-flash-vision-exp`），讓智慧體可以直接看懂截圖與架構圖。
+3. **優先走 Files API 重用圖片並自動縮放（`v0.1.1-rc.2`）：** 不再每輪對話都重複上傳幾 MB 的 Base64 圖片資料，而是優先透過 **Files API** 上傳並在後續輪次重用檔案 ID，同時自動按模型要求縮放與轉換圖片格式。
+4. **外掛標識與圖片壓縮計費（`v0.1.2-alpha.1`）：** 在工作階段自動壓縮（Compaction）時將圖片納入預算統計，並在官方請求中附帶已啟用外掛的套件名與版本。
 
-實驗性視覺模型是單獨的 `model` 字串：`deepseek-v4-flash-vision-exp`。API 文件目前寫明 `deepseek-v4-flash` 對應 DeepSeek-V4-Flash-0731，`deepseek-v4-pro` 對應 DeepSeek-V4-Pro-0813——名字不變，快照更新。呼叫方式不變。
+*（給使用最新版本的讀者的提示：正如我們在後續文章《[DeepSeek-V4.1-Flash 與原生搜尋](/blog/deepseek/v4-1-flash-and-search)》中所介紹的，2026 年 9 月發佈的 `v0.1.5` 已將原生多模態視覺直接合入了 `deepseek-flash`，原先獨立的 `deepseek-v4-flash-vision-exp` 已完成歷史使命並自動路由過去；而 `deepseek-v4-pro`（`DeepSeek-V4-Pro-0813`）則繼續作為獨立的重度推理模型提供服務。）*
 
-## 1M 視窗改變的是預算，不是檢索的必要性
+## 為什麼擁有 1M 視窗後，依然不能放棄精準檢索？
 
-更大的上下文視窗會減輕截斷壓力，但不會讓整個儲存庫無差別傾倒變成免費。輸入仍有延遲與成本，重複檔案仍會與工具結果爭奪空間，長工作階段仍需要 compaction。外掛作者應把 1M 看成一筆更大的預算，而不是不用記帳的容量：篩選證據、保留關鍵決策，並替回答留下空間。
+很多初次接觸 1M 上下文的開發者容易掉進一個誤區：**視窗變大了，不等於塞進提示詞裡的冗餘內容是免費的。**
 
-Vision 還有第二筆預算。Files API 避免重複上傳同一素材，adapter 的 resize 與轉換路徑則讓圖片符合所選模型的輸入要求。兩者都不會判斷圖片是否相關。一個一次回傳十張近似截圖的工具，應該在回傳結果前先去重。
+即便模型能夠裝下 100 萬 Token 而不報錯截斷，你依然要面對三個現實物理規律：
 
-## 最小遷移檢查
+- **每一輪重讀歷史都要付出延遲和費用。** 智慧體一個任務往往要連續呼叫十幾次工具，歷史越臃腫，每一步的首字延遲（TTFT）和開銷就越高。
+- **無關雜訊會稀釋注意力。** 如果一個搜尋外掛不分青紅皂白把 8 萬 Token 的原始日誌倒進上下文，模型在後續每一輪都得在這堆草垛裡找針。
+- **視覺輸入同樣需要預算管理。** Files API 解決了「同一張圖不重複上傳」的頻寬問題，自動縮放解決了解析度超標問題，但它們無法替你判斷「連續十張幾乎一模一樣的網頁截圖」到底有沒有留存價值。優秀的外掛應當在傳回結果前先對圖片去重。
 
-檢查設定與範例裡的退役 model 字串，接著實際跑一遍外掛會產生的 modality：
+點擊下方互動式模擬介面，直觀查看多輪智慧體工作階段中 1M 上下文預算與 Files API 快取是如何協同工作的：
+
+<BlogMockUi
+  scene="v4-context-budget"
+  eyebrow="互動式模擬 UI · 1M 上下文預算與 FILES API"
+  title="在多輪工作階段中管理 1M 上下文視窗與 Files API 圖片快取重用"
+  caption="點擊左側步驟（1–4），觀察模型名稱遷移、Files API 檔案控制代碼重用、上下文壓縮預算以及 V4.1 演進的完整配合。"
+  step1Title="1. 替換已退役的舊模型名稱"
+  step1Body="告別已失效的 deepseek-chat 與 deepseek-reasoner，明確指定 V4/V4.1 模型名稱並按任務複雜度設定思考強度。"
+  step2Title="2. 透過 Files API 快取重用圖片"
+  step2Body="介面卡在首輪自動縮放圖片並上傳至 Files API 取得 file_id，後續輪次直接引用控制代碼，實現零重複位元組上傳。"
+  step3Title="3. 精細化管理 1M 上下文預算"
+  step3Body="提取精準程式碼切片並對截圖去重，讓工作階段壓縮（Compaction）保留關鍵決策，為輸出留出充足空間。"
+  step4Title="4. 銜接 9 月 V4.1-Flash 統一視覺"
+  step4Body="在 Harness v0.1.5+ 中，deepseek-flash 統一承載文本與原生視覺，deepseek-v4-pro 則繼續負責高難度深度推理。"
+/>
+
+## 一般使用者與外掛作者的四步遷移清單
+
+如果你正在設定自己的 Profile，或者在 `dsh.fish` 上維護外掛與技能（Skill），請對照以下表格完成檢查：
 
 ```text
-deepseek-chat       → deepseek-v4-flash
-deepseek-reasoner   → deepseek-v4-pro（明確選擇 thinking）
+已退役舊名稱（7月24日停用）   8月 V4 階段模型名         目前推薦模型名（2026年9月–10月）
+--------------------------   ------------------       ------------------------------------
+deepseek-chat             -> deepseek-v4-flash     -> deepseek-flash（文本 + 原生多模態視覺）
+deepseek-reasoner         -> deepseek-v4-pro       -> deepseek-v4-pro（DeepSeek-V4-Pro-0813）
 ```
 
-不要把這組對應機械套到 workload 上。Flash 與 Pro 的成本和能力目標不同，thinking intensity 也是獨立選擇。在 Profile 中固定預期 model，執行一項代表性 task，並在更新 README 前透過官方 adapter 驗證圖片與 file 行為。
+1. **立即清理 README 與設定範例中的 `deepseek-chat` 和 `deepseek-reasoner`。** 這兩個名字在 2026 年 7 月 24 日之後就已徹底停用。在 `dsh.fish` 的評分體系中，仍然教使用者設定失效模型名的文件會被判定為維護缺陷。
+2. **用「精選證據」代替「全庫傾倒」。** 把 1M 視窗用來保存跨檔案的核心架構上下文和關鍵 Diff，而不是放棄檢索策略。
+3. **把圖片當作一等公民工具結果。** 如果你的外掛會產出圖表、截圖或視覺對比，請確保傳回乾淨、去重後的檔案，以便官方介面卡透過 Files API 快取並在壓縮時準確計入預算。
+4. **把模型選擇權留給使用者的 Profile。** `dsh.fish` 的安裝計畫從不寫入 API 金鑰，也不會替使用者寫死計費模型。讓使用者根據任務需要自行在 `deepseek-v4-pro` 與 `deepseek-flash` 之間切換。
 
-## 外掛作者不該忽略的
-
-1. **不要再把 `deepseek-chat` / `deepseek-reasoner` 寫成呼叫方式。** 它們有下線日。四月還對的 README，在 2026 年 7 月 24 日就會錯。
-2. **1M 是官方適配器圍繞的視窗。** 假定 128k 裁剪、或把整倉塞進一次 prompt 卻沒有檢索策略的 skill，現在要麼浪費視窗，要麼以另一種方式溢位。
-3. **影像是一等的工具結果**，不是邊欄。外掛若產出截圖、圖表或 diff 圖，官方適配器會走 Files API 和 vision-exp。壓縮時要把它們算進去（v0.1.2-alpha.1 已經算了）。
-4. **官方適配器能告訴 DeepSeek 載入了哪些外掛。** 套件名丟人、誤導或衝突，現在會跟請求一起走。
-
-## 本目錄不會做什麼
-
-dsh.fish 不替你選模型。安裝計畫從不寫 API key。V4 公告裡的定價和高峰時段屬於 [DeepSeek API 文件](https://api-docs.deepseek.com/quick_start/pricing)，不屬於目錄列。
-
-目錄要做的是讓安裝計畫對準 V4 實際跑在裡面的執行時。外掛 README 還在寫 `export deepseek-chat`，那是可以打進維護分的文件缺陷，不是另一個產品。
-
-第一手來源：[DeepSeek-V4 預覽版](https://www.deepseek.com/news/v4-preview/)。英文：[V4 Preview](https://www.deepseek.com/en/news/v4-preview/)。
+官方一手資料：[V4 預覽版中文公告](https://www.deepseek.com/news/v4-preview/) · [DeepSeek-V4 Preview (English)](https://www.deepseek.com/en/news/v4-preview/) · [DeepSeek API 定價文件](https://api-docs.deepseek.com/quick_start/pricing)。

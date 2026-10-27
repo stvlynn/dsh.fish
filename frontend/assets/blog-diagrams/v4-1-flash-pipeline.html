@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>v4-1-flash-pipeline</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+  <style>
+    html, body { margin: 0; background: #faf9fc; }
+    body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    svg { display: block; width: min(100%, 960px); height: auto; margin: 0 auto; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="v41-title v41-desc">
+  <title id="v41-title">DeepSeek-V4.1-Flash KV cache compression and Search/Fetch pipeline</title>
+  <desc id="v41-desc">Text, images, and dynamic prompt or tool updates enter deepseek-flash with 1/4 HBM and 1/8 SSD KV cache footprint, while Web Search settings call the official /v1/tools/search and /v1/tools/fetch endpoints.</desc>
+  <defs>
+    <marker id="v41-arrow" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#68636f"/>
+    </marker>
+    <marker id="v41-arrow-accent" viewBox="0 0 8 6" refX="7" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7867d9"/>
+    </marker>
+  </defs>
+  <rect width="960" height="540" fill="#faf9fc"/>
+  <text x="56" y="56" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="24" font-weight="700">One model id for multimodal turns, KV cache hits, and web grounding</text>
+  <text x="56" y="84" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">DeepSeek-V4.1-Flash-1017 folds native vision into deepseek-flash and pairs with built-in Search and Fetch.</text>
+
+  <!-- Connectors -->
+  <path d="M 252,184 H 300 Q 308,184 308,192 V 224 Q 308,232 316,232 H 356" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#v41-arrow-accent)"/>
+  <path d="M 252,320 H 300 Q 308,320 308,312 V 280 Q 308,272 316,272 H 356" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#v41-arrow)"/>
+  <path d="M 616,232 H 660 Q 668,232 668,224 V 192 Q 668,184 676,184 H 708" fill="none" stroke="#7867d9" stroke-width="1.2" marker-end="url(#v41-arrow-accent)"/>
+  <path d="M 616,272 H 660 Q 668,272 668,280 V 312 Q 668,320 676,320 H 708" fill="none" stroke="#68636f" stroke-width="1.2" marker-end="url(#v41-arrow)"/>
+
+  <!-- Node 1: Multimodal Turn Input -->
+  <rect x="56" y="136" width="196" height="104" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="76" y="168" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Multimodal Input</text>
+  <text x="76" y="196" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Text + Files API images</text>
+  <text x="76" y="220" fill="#7867d9" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">vision-exp retired</text>
+
+  <!-- Node 2: Dynamic Mid-Session Updates -->
+  <rect x="56" y="268" width="196" height="104" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="76" y="300" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Dynamic Updates</text>
+  <text x="76" y="328" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">In-history system prompt</text>
+  <text x="76" y="352" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Live tool registration</text>
+
+  <!-- Node 3: Focal deepseek-flash (1017) -->
+  <rect x="356" y="148" width="260" height="208" rx="6" fill="#17151d" stroke="#7867d9" stroke-width="1.2"/>
+  <rect x="376" y="168" width="108" height="16" rx="4" fill="transparent" stroke="#a99dea" stroke-width="0.8"/>
+  <text x="430" y="180" fill="#a99dea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" text-anchor="middle" letter-spacing="0.08em">DEEPSEEK-FLASH</text>
+  <text x="376" y="212" fill="#ffffff" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">V4.1-Flash-1017 (552B)</text>
+  <text x="376" y="240" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Causal Encoder-Decoder MoE</text>
+  <text x="376" y="264" fill="#d8d4df" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">8B in / 16B out active</text>
+  <text x="376" y="292" fill="#a99dea" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12" font-weight="600">KV cache: 1/4 HBM · 1/8 SSD</text>
+  <text x="376" y="320" fill="#d8d4df" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Preserves cache across tool edits</text>
+
+  <!-- Node 4: Search & Fetch API -->
+  <rect x="708" y="136" width="196" height="104" rx="6" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="728" y="168" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">Search &amp; Fetch API</text>
+  <text x="728" y="196" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">POST /v1/tools/search</text>
+  <text x="728" y="220" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">POST /v1/tools/fetch</text>
+
+  <!-- Node 5: DeepSeek-V4-Pro Status -->
+  <rect x="708" y="268" width="196" height="104" rx="6" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="728" y="300" fill="#17151d" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="16" font-weight="600">DeepSeek-V4-Pro</text>
+  <text x="728" y="328" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">deepseek-v4-pro (0813)</text>
+  <text x="728" y="352" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Separate heavy reasoning SKU</text>
+
+  <!-- Legend strip -->
+  <line x1="56" y1="484" x2="904" y2="484" stroke="rgba(23,21,29,0.12)" stroke-width="0.8"/>
+  <text x="56" y="508" fill="#68636f" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="8" letter-spacing="0.14em">LEGEND</text>
+  <rect x="128" y="500" width="12" height="8" rx="2" fill="#17151d" stroke="#7867d9" stroke-width="1"/>
+  <text x="148" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Default Harness model (v0.1.5+)</text>
+  <rect x="356" y="500" width="12" height="8" rx="2" fill="#eeeafd" stroke="#7867d9" stroke-width="1"/>
+  <text x="376" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Built-in retrieval (v0.2.1-rc.2+)</text>
+  <rect x="588" y="500" width="12" height="8" rx="2" fill="#ffffff" stroke="#17151d" stroke-width="1"/>
+  <text x="608" y="508" fill="#68636f" font-family="IBM Plex Sans, ui-sans-serif, system-ui" font-size="12">Inputs &amp; sibling Pro model</text>
+</svg>
+</body>
+</html>

@@ -1,59 +1,99 @@
 ---
-title: 2026 年 8 月的 dsh.fish
-description: 产品文档做成 Fumadocs 分区、hub 插件上了 npm、两个 kind 退役，以及给 agent 用的 llms.txt。
+title: dsh.fish 2026 年 8 月更新日志
+description: 我们如何解决人类文档、CLI 安装计划、会话内插件与面向智能体的 Markdown 接口之间的“数据割裂”问题。
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/dsh-fish-2026-08.webp
 series: changelog
 ---
 
-这是本站第一篇 changelog。它只写到 2026 年 8 月 29 日已经上线的内容，不是路线图。未提交的工作不列。
+你是否遇到过这样的糟心体验：照着网页文档的步骤去装一个插件，结果发现命令行工具的参数完全对不上；或者让 AI 智能体去读网站的 `/llms.txt`，读出来的却是三周前早就过期的旧说明？
+
+一旦一个开发者中心同时服务于“浏览器里的人类读者”和“终端里的智能体”，**多端信息不一致（Split-Brain）**就会成为最常见的故障源：文档表格里硬编码的评分权重和后端接口对不上，已经废弃的插件分类还挂在侧边栏里，或者会话内插件的安装行为和网页端存在细微偏差。
+
+截至 2026 年 8 月 29 日，我们在 `dsh.fish` 上交付的所有功能都围绕着一条工程铁律展开：**无论是人类网页、CLI 客户端、会话内插件还是 AI 智能体，所有入口都必须读取同一份唯一真实数据源（Single Source of Truth）。** 下面带你一步步看清这次架构升级如何改变你的日常使用体验。
 
 ![目录从共享来源向人类界面、安装客户端、Web 与 agent 界面提供内容。](/blog/diagrams/hub-surfaces.svg)
 
-## 产品文档离开了单页
+## 产品文档告别单页标签卡，升级为六语言指南树
 
-`/docs` 不再是带 kind 标签页的一个 React 页面。它是 Fumadocs 分区：构建期编译 MDX、六种语言、栏内边栏、评分表走 `GET /api/v1/scoring` 而不是把权重粘在文里。指南覆盖 quickstart、概念、每种发布格式、CLI、hub 插件、提交、评分和 REST API。
+在最初的版本里，`/docs` 只是一个带分类标签页的单页 React 组件。当目录只需要两百字简介时这样就够了；但一旦用户需要一步步学习如何发布扩展包、如何使用 CLI、或者想搞清楚质量评分到底是怎么算出来的，单页结构就彻底捉襟见肘了。
 
-这棵树的搜索在 `/docs/search`，不在 `/api/search`——`/api/*` 是 Hono。Agent 可以把任意指南当 markdown 拉（`/docs/cli.md`，或 `Accept: text/markdown`）。`/docs/llms.txt` 从同一棵页面树生成。
+因此，我们将产品文档重构为基于 Fumadocs 的独立文档区，在构建期编译并完整覆盖全部六种语言（`en`、`zh-CN`、`zh-TW`、`ja`、`ko`、`ru`）：
 
-## hub 插件是 npm 包
+- **按任务组织的完整指南：** 涵盖快速上手（Quickstart）、核心概念、四种发布格式的专门教程、命令行工具（`@dsh-fish/cli`）、会话内插件（`@dsh-fish/hub`）、提交流程、评分机制与 REST API。
+- **实时拉取的评分权重表：** 文档中的评分表不再粘贴容易过期的静态数字，而是直接调用 `GET /api/v1/scoring` 实时渲染。
+- **独立的文档搜索路由：** 文档搜索运行在 `/docs/search`，将 `/api/*` 命名空间完全留给 Hono 后端接口。
 
-`@dsh-fish/hub` 发布到 npm，作为 Cordis 插件在会话里加载。它搜索目录、从浏览卡片安装、打开 README，用的安装计划和网站上看到的是同一份。设备登录已修好：浏览器里点授权后，插件轮询的 token 真的会被兑换。
+<BlogStructureMap
+  diagram="hub-surfaces"
+  eyebrow="HTML 结构图 · 唯一真实数据源"
+  title="同一套目录数据库与 MDX 源码树如何驱动四大交付表面"
+  caption="人类浏览器、终端 CLI、Harness 会话内插件与自主智能体全部读取同一套安装计划与构建期编译的文档树。"
+  node1Title="1. 唯一真实数据源"
+  node1Body="仅收录四类真实可加载组件的目录库，配合六语言构建期编译的 /docs 与 /blog MDX 源码树。"
+  node2Title="2. 人类与安装客户端"
+  node2Body="网站、npx @dsh-fish/cli 与 @dsh-fish/hub 解析完全一致的安装计划，并同步写入 $DSH_HOME/.dsh-fish-lock.json。"
+  node3Title="3. 面向智能体的原生协议"
+  node3Body="所有指南与博客均支持 .md 后缀与 Accept: text/markdown 协商，并由 /llms.txt 与 /blog/llms.txt 自动索引。"
+/>
 
-设置通过 harness 的插件设置客户端注册。发布钉在 npm 11 的 trusted publishing 上。
+## 不离开对话窗口直接安装插件：`@dsh-fish/hub` 上架 npm
 
-## 目录分类有意变小
+在浏览器里逛目录适合发现新工具，但当你已经沉浸在一个 DeepSeek Harness 会话中时，切出去复制安装命令往往会打断思路。
 
-`mcp-server` 和 `hook-bridge` 不再是 kind。那些 URL 301 到 `/browse`。旧的发布指南 301 到 `/docs/plugins`。剩下四种是 harness 真正加载的：bundle、skill、agent preset、profile。
+8 月份，我们将 **`@dsh-fish/hub`** 正式发布到了 npm。它是一个原生的 Cordis 插件，可以直接加载到正在运行的 Harness 会话里：
 
-分类与 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 对齐。主题落地页（`/for/...`）只覆盖一小份意图列表，少于三行时保持 `noindex`。
+1. **会话内搜索与一键安装：** 提供 `hub_search`、`hub_show`、`hub_install`、`hub_remove`、`hub_update` 等工具与浏览卡片，在会话内直接查看 README 并执行与网站端完全一致的安装计划。
+2. **修复设备授权登录（Device Grant）闭环：** 修复了浏览器端点击 `Authorize` 后的令牌兑换竞态问题，让插件和 CLI 轮询的 `$DSH_HOME/.dsh-fish-token.json` 能够稳定落盘。
+3. **接入原生插件设置中心：** 通过 Harness 的插件设置客户端注册配置，并采用 npm 11 可信发布（Trusted Publishing）保障供应链安全。
 
-## 面向 agent 的表面
+## 砍掉“目录幻觉”：为什么要让两个组件类型退役？
 
-源站 `/llms.txt`，指南 `/docs/llms.txt`，拼接版 `/docs/llms-full.txt`。`Accept: text/markdown` 的 404 返回短恢复地图，而不是应用壳。OpenAPI 和 `.well-known/api-catalog` 仍是进 JSON API 的机器入口。
+当我们把目录分类与 DeepSeek Harness 实际能加载的入口逐一核对时，发现早期的两个分类名——`mcp-server` 与 `hook-bridge`——其实属于“目录自己发明的概念”。
 
-搜索结果里的插件标题带上 summary。README 翻译在替换完成前保留上一份已完成正文，避免任务跑着时某个语言闪成空白。
+Harness 运行时并没有这两个名字的独立加载槽位；无论是 MCP 服务还是钩子，本质上都是封装在 **Bundle（扩展包）** 或 **Profile（配置栈）** 里的。保留运行时根本无法直接安装的分类，只会误导用户。
 
-## 为什么共享来源重要
+因此我们精简了分类体系，并配置了 `301` 永久重定向：
 
-看得见的成果是文档树、博客和可安装插件，底下那条工程约束更有价值：任何表面都不私存一份目录事实。网站、CLI 和 hub 插件解析同一份安装计划；文档搜索、Markdown 内容协商、`llms.txt`、Atom 和 sitemap 则从各自的 MDX 树生成。
+- 原有的 `/kind/mcp-server` 和 `/kind/hook-bridge` 自动 `301` 跳转至 `/browse`。
+- 旧发布指南自动跳转至 `/docs/plugins`。
+- 目录只保留 Harness 真正加载的**四种类型**：`bundle`、`skill`、`agent-preset`、`profile`，并将功能分类与 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 对齐。
 
-这消除了一个常见故障：页面说一套，agent 端点说另一套。代价是写作必须更严格。源树里缺少路由或 locale 文件时，不能在组件里塞一段文字糊过去；一致性检查和链接检查会直接失败。
+## 把 AI 智能体当作一等公民用户（`llms.txt` 与 Markdown 内容协商）
 
-## 可以怎么试
+当一个 AI 智能体访问技术网站时，如果服务器返回一堆夹杂着导航栏脚本的 HTML 外壳，不仅浪费 Token，还会干扰模型的提取准确度。
 
-按工作选择对应表面：
+现在，`dsh.fish` 上的每一个页面都原生支持 Markdown 交付。点击下方交互式模拟界面中的步骤 1–4，查看四个交付表面是如何保持零偏差同步的：
 
-- 想了解发布契约，浏览 `/docs`。
-- agent 需要同一份材料，获取 `/docs/llms.txt` 或 `.md` 路由。
-- 不打开网站也想拿到安装计划，运行 `npx @dsh-fish/cli`。
-- 希望计划留在 Harness 会话里，加载 `@dsh-fish/hub`。
+<BlogMockUi
+  scene="hub-omni-delivery"
+  eyebrow="交互式模拟 UI · 全表面同源交付"
+  title="从同一个数据源读取与安装插件的四种方式"
+  caption="点击左侧步骤（1–4），对比网页目录、终端 CLI、会话内 @dsh-fish/hub 插件以及智能体 Markdown 接口的协同工作流。"
+  step1Title="1. 四类标准组件与实时文档"
+  step1Body="浏览器渲染六语言产品文档，并从 GET /api/v1/scoring 实时拉取评分权重，彻底消除过期文案。"
+  step2Title="2. 终端 CLI 与设备授权认证"
+  step2Body="通过 npx @dsh-fish/cli find、show、add 先检视安装计划，再将变更精确记录到 $DSH_HOME/.dsh-fish-lock.json。"
+  step3Title="3. 会话内 @dsh-fish/hub 插件"
+  step3Body="在 DeepSeek Harness 对话中直接调用 hub_search 与 hub_install，无需切出工作区即可完成扩展安装与评分。"
+  step4Title="4. 原生 Markdown 与 llms.txt"
+  step4Body="智能体可直接抓取 /llms.txt、/docs/llms-full.txt、/blog/llms.txt，或在任意路径附带 Accept: text/markdown。"
+/>
 
-限制是有意的：本次发布没有博客搜索，`/api/search` 仍然是目录搜索，不是第二套内容索引。
+智能体或自动化脚本现在可以直接使用以下接口：
 
-## 这篇不是什么
+- **全景索引地图：** 根目录 `/llms.txt`、文档区 `/docs/llms.txt`（以及单文件全文拼接版 `/docs/llms-full.txt`）、博客区 `/blog/llms.txt` 与 `/blog/feed.xml`（Atom 订阅源）。
+- **原生 Markdown 内容协商：** 在任意文档或博客路径后加上 `.md`（如 `/docs/cli.md`、`/blog/index.md`），或在请求头中带上 `Accept: text/markdown`。即便访问了不存在的 404 路径，只要带有 `Accept: text/markdown`，系统也会返回一份精简的 Markdown 恢复导航图，而不是庞大的前端应用外壳。
+- **无闪烁的多语言 README 更新：** 当插件更新 README 触发后台重译时，系统会一直保留上一版已完成的翻译，直到新译文生成完毕，彻底消除了切换语言时的空白闪烁。
 
-它不是 DeepSeek Harness 的发版。Harness 版本在 [Harness 版本](/blog/harness)。它也不是每一笔 commit。设备授权竞态、sitemap 查询上限、ads.txt 都在 git 里；不是有人来这里要看的东西。
+## 我该选择哪个入口？
 
-下一篇 changelog 会写一组有边界的、用户能看见的变化，而不是把 log 倒出来。
+根据你手头正在做的事，选择最顺手的入口即可：
+
+- **想了解发布规范或评分细则：** 直接浏览 [`/docs`](/docs) 产品文档。
+- **想把文档喂给自己的 AI 智能体：** 让它读取 `/docs/llms.txt` 或 `/blog/llms.txt`。
+- **习惯在终端里干净利落地管理配置：** 运行 `npx @dsh-fish/cli show <id>` 与 `npx @dsh-fish/cli add <id> --profile web`。
+- **正在 DeepSeek Harness 会话里写代码：** 安装并启用 `@dsh-fish/hub`。
+
+*（如果你关心的是 DeepSeek Harness 运行时本身的版本演进，请前往 [Harness 版本](/blog/harness) 专栏，包括我们最新整理的 [v0.1.5 至 v0.2.1 里程碑深度解析](/blog/harness/v0-1-5-to-v0-2-1)。）*

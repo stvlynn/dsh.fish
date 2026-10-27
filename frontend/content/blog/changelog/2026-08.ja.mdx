@@ -1,59 +1,93 @@
 ---
 title: 2026 年 8 月の dsh.fish
-description: 製品ドキュメントを Fumadocs 区画にし、hub プラグインを npm に出し、二つの kind を退役させ、エージェント向け llms.txt を置いた。
+description: 人間向けのドキュメント、CLI のインストール計画、セッション内プラグイン、そして AI エージェント向けの Markdown エンドポイントの間で「情報の食い違い」をなくした仕組み。
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/dsh-fish-2026-08.webp
 series: changelog
 ---
 
-本サイト最初の changelog です。2026 年 8 月 29 日までに実際に載ったものだけを書きます。ロードマップではありません。未コミットの作業は列挙しません。
+Web のドキュメント通りにコマンドを打ったのに CLI のオプションが違っていたり、AI エージェントに `/llms.txt` を読ませたら 3 週間前の古い仕様を前提にコードを書かれたりしたことはないでしょうか。
+
+開発者向けのハブが「ブラウザで読む人間」と「ターミナルで動くエージェント」の両方を相手にし始めると、**窓口ごとの情報の食い違い（スプリットブレイン）**が最も起きやすい障害になります。ドキュメントの表に直書きされたスコア配分がいつの間にか API とズレる、廃止されたはずのプラグイン種別がサイドバーに残る、といった問題です。
+
+2026 年 8 月 29 日までに `dsh.fish` で公開したすべての機能は、1 つの設計原則に貫かれています。それは**「Web、CLI、セッション内プラグイン、そして AI エージェントのすべてが、ただ 1 つの情報源（Single Source of Truth）を参照する」**ということです。
 
 ![共有ソースから、人向け、インストールクライアント、Web、agent 向けの各面へカタログを配信する流れ。](/blog/diagrams/hub-surfaces.svg)
 
-## 製品ドキュメントは単一ページを出た
+## 1 枚のタブ画面から、6 言語の製品ドキュメントツリーへ
 
-`/docs` は kind タブ付きの一つの React ページではありません。Fumadocs 区画です。ビルド時に MDX をコンパイルし、六言語、欄内サイドバー、採点表は重みを本文に貼らず `GET /api/v1/scoring` を呼びます。ガイドは quickstart、概念、各公開形式、CLI、hub プラグイン、提出、採点、REST API を覆います。
+当初の `/docs` は、種類ごとのタブを切り替えるだけの 1 ページの React コンポーネントでした。しかし、公開手順や CLI の使い方、スコアの算出ロジックを段階的に学ぼうとすると、1 枚のページでは到底収まりません。
 
-この木の検索は `/docs/search` であり `/api/search` ではありません。`/api/*` は Hono です。エージェントは任意のガイドを markdown として取れます（`/docs/cli.md`、または `Accept: text/markdown`）。`/docs/llms.txt` は同じページ木から生成されます。
+そこで `/docs` を Fumadocs による独立したドキュメントセクションへと作り直し、ビルド時に 6 言語（`en`、`zh-CN`、`zh-TW`、`ja`、`ko`、`ru`）すべてをコンパイルする構成にしました。
 
-## hub プラグインは npm パッケージ
+- **目的別のガイド構成：** クイックスタート、基本概念、4 つの公開フォーマット別の手順、CLI（`@dsh-fish/cli`）、セッション内プラグイン（`@dsh-fish/hub`）、登録申請、スコア計算、REST API をそれぞれ独立したガイドとして整備しました。
+- **スコア配分のライブ取得：** ドキュメント内のスコア表は数値をベタ書きせず、`GET /api/v1/scoring` を直接呼び出して描画します。
+- **検索経路の分離：** ドキュメント検索は `/docs/search` で動作し、Hono バックエンドの `/api/*` とは明確に分離されています。
 
-`@dsh-fish/hub` は npm に公開され、Cordis プラグインとしてセッション内で載ります。カタログを検索し、閲覧カードからインストールし、README を開き、サイトと同じインストール計画を使います。デバイスログインは直しました。ブラウザで認可すると、プラグインがポーリングしている token が本当に兌換されます。
+<BlogStructureMap
+  diagram="hub-surfaces"
+  eyebrow="HTML 構造図 · 単一の情報源からの配信"
+  title="1 つのカタログ DB と 1 つの MDX ツリーが 4 つの窓口を動かす仕組み"
+  caption="ブラウザ、ターミナル CLI、Harness セッション内プラグイン、自律エージェントのすべてが、同じインストール計画と MDX ソースを参照します。"
+  node1Title="1. 単一の正規ソース"
+  node1Body="4 種類の構成単位を管理するカタログ DB と、6 言語でビルド時にコンパイルされる /docs・/blog の MDX ツリー。"
+  node2Title="2. 人間向け UI と CLI"
+  node2Body="Web サイト、npx @dsh-fish/cli、@dsh-fish/hub が同一のインストール計画を解決し、$DSH_HOME/.dsh-fish-lock.json に記録します。"
+  node3Title="3. エージェント向け配信"
+  node3Body="すべての記事とガイドが .md や Accept: text/markdown に対応し、/llms.txt と /blog/llms.txt から自動インデックスされます。"
+/>
 
-設定は harness のプラグイン設定クライアント経由で登録します。公開は npm 11 の trusted publishing にピンしています。
+## セッションを離れずに検索・導入できる `@dsh-fish/hub`
 
-## カタログ分類は意図して小さくなった
+ブラウザでカタログを眺めるのは便利ですが、すでに DeepSeek Harness のセッション内で作業しているときに、わざわざブラウザに戻ってコマンドをコピーするのは手間がかかります。
 
-`mcp-server` と `hook-bridge` は kind ではありません。それらの URL は `/browse` へ 301 します。古い公開ガイドは `/docs/plugins` へ 301 します。残る四種は harness が実際に載せるものです。bundle、skill、agent preset、profile。
+そこで npm に公開したのが **`@dsh-fish/hub`** です。Cordis プラグインとして稼働中のセッションに直接読み込めます。
 
-分類は [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) に揃えました。トピック落地（`/for/...`）は短い意図リストだけを覆い、行が三未満なら `noindex` のままです。
+1. **セッション内での検索・確認・導入：** `hub_search`、`hub_show`、`hub_install`、`hub_remove`、`hub_update` を使い、README の確認からインストール計画の適用までをチャットの中で完結できます。
+2. **デバイス認可（Device Grant）の確実な受け渡し：** ブラウザで `Authorize` を押した際に、プラグインや CLI がポーリングしているトークン（`$DSH_HOME/.dsh-fish-token.json`）が確実に引き換えられるよう競合状態を修正しました。
+3. **プラグイン設定の統合と npm 11 Trusted Publishing：** Harness のプラグイン設定クライアントを通じて設定を登録し、npm 11 の信頼済みパブリッシングに準拠しています。
 
-## エージェント向けの面
+## 「カタログ上の虚構」をなくす：2 つの種類を廃止した理由
 
-オリジンの `/llms.txt`、ガイドの `/docs/llms.txt`、連結版 `/docs/llms-full.txt`。`Accept: text/markdown` の 404 は短い回復地図を返し、アプリ殻ではありません。OpenAPI と `.well-known/api-catalog` は JSON API への機械入口のままです。
+初期の分類を DeepSeek Harness の実際の読み込み機構と照らし合わせた結果、`mcp-server` と `hook-bridge` の 2 つを廃止しました。
 
-検索結果のプラグインタイトルは summary を載せます。README 翻訳は置換が終わるまで前の完成本文を保ち、ジョブ実行中にロケールが空に点滅しないようにします。
+Harness にはそのような名前の単独の読み込みスロットは存在せず、MCP サーバーやフックは Bundle や Profile の一部として読み込まれるからです。存在しないスロットをカタログに並べるのをやめ、旧 URL（`/kind/mcp-server` など）は `/browse` へ、旧ガイドは `/docs/plugins` へ `301` リダイレクトしました。
 
-## 共有ソースが重要な理由
+現在のカタログは、Harness が実際に読み込む **4 種類（`bundle`、`skill`、`agent-preset`、`profile`）** のみを扱い、カテゴリも [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) と揃えています。
 
-見える成果はドキュメントツリー、ブログ、インストール可能なプラグインです。その下にある技術的な制約のほうが重要です。どの面もカタログの事実を独自に複製しません。Web サイト、CLI、hub プラグインは同じインストール計画を解決し、ドキュメント検索、Markdown ネゴシエーション、`llms.txt`、Atom、sitemap はそれぞれの MDX ツリーから生成されます。
+## AI エージェントを第一級の利用者として扱う（`llms.txt` と Markdown ネゴシエーション）
 
-これで、ページと agent 向けエンドポイントが違う説明をするという典型的な失敗を避けられます。その代わり執筆は厳格です。ソースツリーからルートやロケールファイルが欠けていれば、コンポーネントに文章を埋め込んで取り繕うことはできず、同等性チェックとリンクチェックが失敗します。
+AI エージェントがドキュメントを読むとき、ナビゲーション付きの巨大な HTML を返すのはトークンの無駄遣いです。
 
-## 試すこと
+下のインタラクティブ Mock UI で、4 つの窓口がどのように同じデータを提供しているかを確認してみてください。
 
-作業に合う面を使ってください。
+<BlogMockUi
+  scene="hub-omni-delivery"
+  eyebrow="インタラクティブ MOCK UI · マルチサーフェス配信"
+  title="同じ dsh.fish の情報源を読み取り・インストールする 4 つの方法"
+  caption="ステップ 1〜4 を切り替えて、Web カタログ、CLI、セッション内 @dsh-fish/hub、エージェント向け Markdown の連携を確認できます。"
+  step1Title="1. 4 種類の正規カタログとライブ文書"
+  step1Body="ブラウザでは 6 言語のガイドと GET /api/v1/scoring から取得した最新のスコア表を表示します。"
+  step2Title="2. デバイス認可対応のターミナル CLI"
+  step2Body="npx @dsh-fish/cli の find、show、add で計画を事前確認し、結果を $DSH_HOME/.dsh-fish-lock.json に記録します。"
+  step3Title="3. セッション内で動く @dsh-fish/hub"
+  step3Body="DeepSeek Harness のセッションから離れずに hub_search や hub_install で拡張機能を追加・評価できます。"
+  step4Title="4. エージェント向けの Markdown と llms.txt"
+  step4Body="/llms.txt、/docs/llms-full.txt、/blog/llms.txt の取得や、Accept: text/markdown による直接取得に対応しています。"
+/>
 
-- 公開契約を学ぶなら `/docs` を読む。
-- agent が同じ資料を必要とするなら `/docs/llms.txt` または `.md` ルートを取得する。
-- サイトを開かずインストール計画を確認するなら `npx @dsh-fish/cli` を実行する。
-- 計画を Harness セッション内に保つなら `@dsh-fish/hub` をロードする。
+エージェントやスクリプトからは、次のエンドポイントをそのまま利用できます。
 
-制約は意図的です。このリリースにブログ検索は含まれず、`/api/search` は二つ目のコンテンツ索引ではなく、カタログ検索のままです。
+- **全体マップ：** ルートの `/llms.txt`、ガイド用の `/docs/llms.txt`（および全文結合版の `/docs/llms-full.txt`）、ブログ用の `/blog/llms.txt` と `/blog/feed.xml`（Atom）。
+- **Markdown ネゴシエーション：** `/docs/cli.md` のように `.md` を付けるか、`Accept: text/markdown` ヘッダーを送ると Markdown が返ります。`Accept: text/markdown` 付きで 404 になった場合も、HTML シェルではなく簡潔なリカバリーマップを返します。
+- **ちらつきのない翻訳 README：** README の再翻訳中は直前の完了済み翻訳を表示し続けるため、言語を切り替えても本文が空になる瞬間がありません。
 
-## この記事が書かないこと
+## 場面に応じた使い分け
 
-DeepSeek Harness のリリースではありません。Harness の版は [Harness のリリース](/blog/harness) です。全コミットの一覧でもありません。デバイス認可の競合、sitemap のクエリ上限、ads.txt は git にあります。ここに来る理由ではありません。
+- **パッケージの公開方法やスコアの仕組みを知りたいとき：** [`/docs`](/docs) を開く。
+- **AI エージェントに仕様を読ませたいとき：** `/docs/llms.txt` または `/blog/llms.txt` を渡す。
+- **ターミナルだけで手早く確認・導入したいとき：** `npx @dsh-fish/cli show <id>` と `npx @dsh-fish/cli add <id> --profile web` を実行する。
+- **DeepSeek Harness のセッション内で完結させたいとき：** `@dsh-fish/hub` を読み込む。
 
-次の changelog は境界のある、利用者が見える変化の組を書き、ログのダンプにはしません。
+*（DeepSeek Harness ランタイム自体のバージョン更新については、[Harness のリリース](/blog/harness) シリーズ、および最新の [v0.1.5〜v0.2.1 マイルストーン解説](/blog/harness/v0-1-5-to-v0-2-1) をご覧ください。）*

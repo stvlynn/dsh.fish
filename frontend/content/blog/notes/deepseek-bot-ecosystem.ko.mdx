@@ -1,0 +1,105 @@
+---
+title: '에이전트 런타임을 디지털 동료로 바꾸기: DeepSeek Bot 생태계 심층 분석'
+description: DeepSeek Bot은 단일 공식 저장소가 아닙니다. DS Bot과 Tobs라는 두 가지 커뮤니티 아키텍처와 IM 브리지가 어떻게 DeepSeek Harness를 포크하지 않고 상주형 봇 팀으로 확장했는지 살펴봅니다.
+author: Steven Lynn
+date: 2026-10-26
+cover: /blog/covers/deepseek-bot-ecosystem.webp
+series: notes
+---
+
+최근 주변 개발자들이 데스크톱이나 Feishu(Lark), Slack, WeChat에서 **DeepSeek Bot**을 돌린다는 이야기를 듣고 공식 [`deepseek-ai`](https://github.com/deepseek-ai) GitHub 조직에 들어가 검색해 보면, 그런 이름의 저장소는 나오지 않습니다.
+
+그렇다면 수많은 개발자가 실행하고 있는 'DeepSeek Bot'의 정체는 무엇일까요?
+
+저장소와 패키지 이름을 따라가 보면 단일 앱보다 훨씬 흥미로운 구조가 나타납니다. 두 개의 독립된 오픈소스 프로젝트—[**DS Bot**](https://github.com/Fei2411/DS-Bot)(npm 패키지 `ds-bot`, 데스크톱 바이너리 이름이 *DeepSeek Bot*)과 [**Tobs**](https://github.com/BotHarness/DeepSeekBot)(npm 패키지 `@botharness/tobs`, 초기 명칭 *DeepSeekBot*)—가 **DeepSeek Harness(`dsh`) 코어 코드를 단 한 줄도 포크(Fork)하지 않고 표준 Cordis 플러그인 번들 형태로 멀티봇 플랫폼을 구축**한 것입니다.
+
+이 두 프로젝트가 왜 등장했는지, 그리고 [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im) 같은 경량 IM 브리지나 공식 `dsh --profile acp`와 어떻게 다른지 이해하는 것은 "모든 것은 플러그인이다"라는 원칙이 실제로 어떻게 작동하는지 보여주는 가장 좋은 사례입니다.
+
+![하나의 공식 런타임과 그 위에 봇을 구축하는 세 가지 커뮤니티 방식.](/blog/diagrams/deepseek-bot-ecosystem.svg)
+
+## 먼저, 왜 기본 DeepSeek Harness 세션은 그 자체로 '봇'이 아닐까요?
+
+`npx @deepseek-ai/dsh web`을 실행하면 얻게 되는 **세션(Session)**은 하나의 워크스페이스 폴더와 하나의 추가 전용 로그에 묶인 '단일 작업 단위'입니다.
+
+키보드 앞에 앉아 모듈을 리팩터링할 때는 이상적이지만, '상시 대기하는 디지털 동료'나 '역할별 전문 봇 팀'을 원한다면 네 가지 퍼즐 조각이 비어 있습니다.
+
+1. **작업을 넘어 유지되는 정체성과 장기 기억:** 일반 세션은 작업이 끝나면 닫히지만, 동료는 다음 주에도 우리 팀의 코드 규칙을 기억해야 합니다.
+2. **다중 봇 그룹 채팅 질서:** 세 명의 봇(`@Architect`, `@Coder`, `@Reviewer`)이 한 방에 있을 때 누가 먼저 말하고 누가 침묵할지 정하지 않으면 서로 인사만 주고받으며 토큰을 낭비하게 됩니다.
+3. **수신함과 백그라운드 작업 분리:** 자리에서 일어나 휴대폰으로 무거운 작업을 지시했을 때, 대화 창을 멈추지 않고 백그라운드에서 별도 작업 세션을 돌려 결과만 보고해야 합니다.
+4. **외부 메신저(IM) 연결:** 로컬 DSH 프로세스가 Feishu/Lark, WeChat, Slack, Discord, Telegram과 안전하게 대화할 통로가 필요합니다.
+
+DeepSeek Harness가 Cordis를 통해 `ctx.agents`, `ctx.sessions`, `ctx.tools`를 깔끔하게 열어 두었기 때문에, 커뮤니티 제작자들은 새 런타임을 만드는 대신 이 네 가지 계층을 Bundle로 만들어 `dsh-base` 위에 얹었습니다.
+
+<BlogStructureMap
+  diagram="deepseek-bot-ecosystem"
+  eyebrow="HTML 구조도 · 생태계 레이어 스택"
+  title="DS Bot, Tobs (@botharness/tobs), IM 브리지가 DeepSeek Harness 위에 올라가는 구조"
+  caption="세 가지 커뮤니티 접근 방식 모두 dsh plugin add로 공식 런타임 위에 설치되며, 정체성·기억·메신저 채널을 모델링하는 방식에서 차이가 납니다."
+  node1Title="1. DS Bot (Fei2411/DS-Bot)"
+  node1Body="Chief 봇과의 대화로 전문 봇을 만들고, 그룹 관리자가 발언 순서를 조율하며, SQLite FTS5 스튜어드가 장기 기억을 검색합니다."
+  node2Title="2. Tobs (@botharness/tobs)"
+  node2Body="각 봇을 PersonaBot으로 모델링하여 Orchestrator -> Assignment 2계층 세션과 Git 버전 관리되는 SOUL.md/MEMORY.md를 제공합니다."
+  node3Title="3. IM 브리지 및 공식 ACP"
+  node3Body="@xmanrui/dsh-im은 9개 메신저를 호스트의 기존 세션에 연결하며, dsh --profile acp는 공식 JSON-RPC stdio 자동화를 제공합니다."
+/>
+
+## 접근 A: DS Bot(`Fei2411/DS-Bot`) — Chief 봇과 그룹 채팅을 하나의 창에
+
+2026년 10월 공개된 **DS Bot**([Apache-2.0](https://github.com/Fei2411/DS-Bot), 10월 25일 기준 최신 [`v0.2.2`](https://github.com/Fei2411/DS-Bot/releases/tag/v0.2.2))은 DSH가 내장된 독립 데스크톱 앱(*DeepSeek Bot*)으로도, 기존 Harness `web`이나 `desktop` 프로필에 추가하는 `ds-bot` 플러그인으로도 쓸 수 있습니다.
+
+```bash
+npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add ds-bot
+npx @deepseek-ai/dsh@0.2.1-rc.2 web
+```
+
+### DS Bot의 내부 작동 방식
+
+- **총괄 봇 'Chief'와 대화하며 팀 구성:** 복잡한 설정 파일 대신 첫 번째 메인 봇인 **Chief**에게 필요한 역할을 말하면 `create_bot`, `update_bot`으로 전문가 봇을 만들어 줍니다. 각 봇의 권한 등급(`Read only`, `Workspace`, `Full access`)은 오직 사람만 설정할 수 있습니다.
+- **질서 있는 그룹 채팅(`@Name`과 `[PASS]`):** 그룹 채팅에서는 **그룹 관리자 봇**이 기본으로 먼저 답하고 필요할 때 `@Name`으로 다른 멤버에게 턴을 넘깁니다. 덧붙일 말이 없는 멤버는 `[PASS]`를 출력해 침묵을 지킵니다.
+- **SQLite FTS5 컨텍스트 스튜어드:** 기본 컴팩션을 끄는 대신 **컨텍스트 스튜어드**가 체크포인트나 인수인계 요약을 작성하고, 이전 대화 파트는 로컬 SQLite FTS5 데이터베이스(`~/.dsh/bot/chat-index.sqlite`)에 색인하여 `read_own_chat`으로 언제든 검색합니다.
+- **봇별 Playwright 브라우저와 시크릿 격리(`v0.2.2`):** 데스크톱에서는 봇마다 독립된 Playwright 프로필을 가지며 `read_browser`로 DOM을 깔끔한 Markdown으로 읽습니다(게시·업로드·결제는 반드시 사용자 승인 필요). 또한 `request_secret`으로 입력받은 민감 정보는 `~/.dsh/bot/secrets.json`(권한 600)에 저장되고 `DSH_SECRET_<NAME>` 환경 변수로만 주입되어 모델 컨텍스트에 노출되지 않습니다.
+
+## 접근 B: Tobs(`BotHarness/DeepSeekBot`) — Git 기억과 IM 정체성을 가진 디지털 동료
+
+9월에 *DeepSeekBot*으로 시작해 10월에 [**Tobs**](https://tobs.app/en/)로 이름을 바꾼 프로젝트([`BotHarness/DeepSeekBot`](https://github.com/BotHarness/DeepSeekBot), MIT, `@botharness/tobs@1.5.2`, `dsh-v0.2.1-rc.3` 검증 완료)는 또 다른 질문을 풉니다. **어떻게 하면 봇이 Git으로 감사(Audit) 가능한 기억을 가지고 우리 팀의 Slack, Feishu/Lark, WeChat, Discord 안에 동료처럼 상주하게 할 수 있을까?**
+
+DeepSeek Harness 데스크톱 앱에서 **Plugins → Add plugin → `@botharness/tobs@1.5.2`**를 추가하고 **Bot mode**를 열면 바로 사용할 수 있습니다.
+
+### Tobs / BotHarness의 내부 작동 방식
+
+1. **Orchestrator Session과 Assignment Session의 분리:** 각 **PersonaBot**은 자신의 **Bot Inbox**를 지키는 단 하나의 **Orchestrator Session**을 가집니다. 실제 작업 요청이 들어오면 수신함을 막지 않고 별도의 **Assignment Session**(독립된 DSH 루트 세션)을 띄워 백그라운드에서 작업을 처리한 뒤 결과를 보고합니다.
+2. **Git으로 버전 관리되는 파일 기억(`SOUL.md`와 `MEMORY.md`):** 봇의 성격(`SOUL.md`)과 장기 기억(`MEMORY.md`)은 `$DSH_HOME/botharness/bots/<id>/` 아래의 Markdown 파일로 저장되며, 수정될 때마다 로컬 **Git 저장소**에 커밋됩니다. 봇이 잘못된 가정을 기억했다면 `git log`로 원인을 찾고 `git revert`로 되돌리거나 `git push`로 다른 머신에 복제할 수 있습니다.
+3. **독립된 IM 정체성과 Tobs Connect:** 각 PersonaBot은 Feishu/Lark, Slack, Discord, QQ, WeChat에서 고유한 계정 정체성을 가집니다. `1.5.0+`부터는 Tailscale 없이 휴대폰을 연결하는 **Tobs Connect**와 스튜어드 봇 **Tob**, 데스크톱 Window Companion도 제공합니다.
+
+아래 인터랙티브 Mock UI에서 DS Bot, Tobs, IM 브리지의 구조를 비교해 보세요.
+
+<BlogMockUi
+  scene="deepseek-bot-arena"
+  eyebrow="인터랙티브 MOCK UI · DEEPSEEK BOT 생태계 아레나"
+  title="Cordis 위에서 작동하는 DS Bot, Tobs (@botharness/tobs), IM 브리지 비교"
+  caption="단계 1~4를 클릭해 각 프로젝트가 정체성, 장기 기억, 그룹 조율, 메신저 연동을 어떻게 구현했는지 살펴보세요."
+  step1Title="1. 포크 제로: 모두 dsh-base 위의 번들"
+  step1Body="DS Bot과 Tobs 모두 DeepSeek Harness를 포크하지 않고 dsh plugin add로 설치되어 ctx.agents, ctx.sessions, ctx.tools를 활용합니다."
+  step2Title="2. DS Bot: Chief, [PASS], FTS5 스튜어드"
+  step2Body="Chief가 전문가 봇을 생성하고 그룹 관리자가 @Name과 [PASS]로 발언을 조율하며 SQLite FTS5로 전체 대화를 색인합니다."
+  step3Title="3. Tobs: Orchestrator -> Assignment & Git 기억"
+  step3Body="Orchestrator가 백그라운드 Assignment 세션에 작업을 위임하고 SOUL.md와 MEMORY.md 변경 내역을 Git에 커밋합니다."
+  step4Title="4. IM 브리지 (@xmanrui/dsh-im) 및 공식 ACP"
+  step4Body="기존 호스트 세션에 9개 메신저만 연결하려면 @xmanrui/dsh-im을, 외부 프로그램에서 제어하려면 공식 dsh --profile acp를 선택합니다."
+/>
+
+## 접근 C: 휴대폰에서 기존 세션에 접속하거나 코드로 제어하고 싶다면?
+
+- **경량 IM 브리지(`@xmanrui/dsh-im`, `dsh-lark-bot`, `dsh-lark`):** 별도의 봇 페르소나 계층 없이 외출 중에 휴대폰 메신저로 내 컴퓨터의 기존 DSH 세션과 대화하고 싶다면 9개 채널(Feishu, WeChat, DingTalk, WeCom, QQ, Slack, Telegram, Discord, WhatsApp)을 지원하는 [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im)(`dsh plugin --profile web add -w @xmanrui/dsh-im`)이 가장 간편합니다.
+- **공식 프로그래밍 제어(`dsh --profile acp` 및 SDK):** 자체 오케스트레이터나 IDE 플러그인을 만든다면 공식 내장된 `dsh --profile acp`(stdio JSON-RPC)나 TypeScript/Python SDK(`dsh --profile sdk`)를 사용하세요.
+
+## 네 가지 선택지 한눈에 비교하기
+
+| 비교 항목 | DS Bot (`ds-bot`) | Tobs (`@botharness/tobs`) | IM 브리지 (`@xmanrui/dsh-im`) | 공식 ACP (`dsh --profile acp`) |
+| --- | --- | --- | --- | --- |
+| **관리 주체 및 라이선스** | 커뮤니티(`Fei2411/DS-Bot`), Apache-2.0 | 커뮤니티(`BotHarness/DeepSeekBot`), MIT | 커뮤니티(`xmanrui/dsh-im`), MIT | 공식(`deepseek-ai/deepseek-harness`), MIT |
+| **핵심 멘탈 모델** | 하나의 창 안에서 **Chief**와 그룹 채팅으로 협업 | 메신저와 백그라운드 작업을 오가는 상주형 **PersonaBot** | 9개 채팅 앱을 호스트의 기존 세션으로 직접 연결 | 외부 프로그램이 DSH를 구동하는 JSON-RPC 프로토콜 |
+| **장기 기억 방식** | Markdown + SQLite FTS5 전문 검색(`~/.dsh/bot`) | Git으로 버전 관리되는 `SOUL.md` & `MEMORY.md` | 기본 DSH 세션 로그 그대로 사용 | 호출 클라이언트 및 기본 세션 로그에서 관리 |
+| **추천 사용처** | 로컬 다중 에이전트 팀 + 봇별 Playwright 브라우저 | Feishu/Slack/WeChat에 상주하며 Git으로 기억을 감사하는 동료 | 휴대폰에서 데스크톱 워크스페이스 세션 원격 제어 | 커스텀 자동화, CI 파이프라인, IDE 통합 구축 |
+
+마지막으로 꼭 기억해야 할 안전 수칙입니다. **DS Bot과 Tobs, 그리고 IM 브리지들은 DeepSeek의 공식 제품이 아닌 독립 커뮤니티 프로젝트입니다.** 내 컴퓨터의 DSH 프로세스 안에서 돌아가며 내 API 쿼터를 소모하고 내가 부여한 권한으로 파일과 명령을 다룹니다. 처음에는 읽기 전용(`Read only`)이나 제한된 워크스페이스 권한으로 시작해 도구 승인과 기억 내역을 꼼꼼히 확인하세요.

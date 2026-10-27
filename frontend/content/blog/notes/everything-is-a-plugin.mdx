@@ -1,69 +1,115 @@
 ---
 title: Everything is a plugin
-description: DeepSeek Harness keeps a small core and loads the rest. dsh.fish is a catalog of those loadable units, not a second runtime.
+description: Why DeepSeek Harness has no monolithic core, how a Profile boots four kinds of building blocks through Cordis, and how dsh.fish turns installation into a readable plan.
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/everything-is-a-plugin.webp
 series: notes
 ---
 
-DeepSeek Harness’s own README leads with the sentence **everything is a plugin**. That is not a slogan for a marketplace. It is a description of the process: the core stays small, and every capability — tools, providers, approval rules, UI — arrives as a plugin listed in a profile. Cordis is the composition runtime underneath; the paper is [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
+Imagine you install an extension into your favorite code editor, and it quietly breaks your terminal or hijacks your model settings. When you try to debug it, you realize the editor is a giant black box and extensions are bolted onto the outside with duct tape.
 
-dsh.fish exists because that sentence has an operational consequence. If everything is a plugin, then “install this” is not one command. It is a plan: which profile, which packages, which files, which settings. This note is how those two facts fit together.
+Now imagine a different design. What if the application itself had almost nothing inside its core? What if the chat window, the bash tool, the model connection, and even the agent loop were all loaded the exact same way as a third-party extension?
+
+That is what [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) means when its README opens with a four-word premise: **everything is a plugin**. That sentence is not a marketing slogan for a marketplace. It is an architectural rule powered by [Cordis](https://github.com/cordiverse/cordis) (described in the paper [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)).
+
+Once you see how that rule works on disk, both DeepSeek Harness and this catalog (`dsh.fish`) suddenly click into place. Let us walk from the folder on your machine to the running agent session.
 
 ![A profile composes catalog artifacts into one permission-scoped Harness session.](/blog/diagrams/plugin-composition.svg)
 
 ## A profile is the unit that boots
 
-`$DSH_HOME` (default `~/.dsh`) holds user data. Under `profiles/<name>` sit the packages and patch files that define one setup. You choose a profile at launch with `--profile`. As of v0.1.2-alpha.1, the Web UI, the Python SDK, and ACP all start through a Profile. There is no side door that loads a different stack.
+Before we talk about plugins, let us look at what actually happens when you type `npx @deepseek-ai/dsh web` in your terminal.
 
-That is why every dsh.fish install plan names a profile. Writing a plugin into “the harness” without a profile would be writing it into nowhere.
+Where does the agent store its state? By default, DeepSeek Harness creates a home directory at `~/.dsh` (or whatever path you set in `$DSH_HOME`). Inside that folder sits a subdirectory called `profiles/`.
 
-## Four kinds, four load surfaces
+Think of a **profile** (`$DSH_HOME/profiles/<name>`) as a self-contained recipe for one version of your agent. It holds the npm packages and the configuration patches (`cordis.patch.yml`) that define which tools, models, and UI panels exist when the process starts.
 
-The hub does not invent types. It names the things the harness already loads:
+When you launch `dsh`, you are always booting a named profile:
 
-| Kind         | What the harness does with it                                                         |
-| ------------ | ------------------------------------------------------------------------------------- |
-| Bundle       | An npm package declaring `dsh.bundle` — `dsh plugin add` installs it into the profile |
-| Skill        | `SKILL.md` the model loads on demand                                                  |
-| Agent preset | Tools, prompt sections, and persona for one agent                                     |
-| Profile      | An ordered stack of bundles; a whole runnable composition                             |
+- `dsh web` boots the `web` profile (the browser interface on `http://127.0.0.1:3080`).
+- `dsh --profile headless` boots a one-shot CLI runner with no web server.
+- `dsh --profile sdk` and `dsh --profile acp` boot JSON-RPC and Agent Client Protocol servers for external programs.
 
-Retired kinds (`mcp-server`, `hook-bridge`) 301 away because they were catalog fiction: the harness never had a first-class load slot that matched those names. A registry that keeps a kind the runtime cannot install is advertising a product that does not exist.
+There is no hidden back door that loads a secret built-in stack. Every entry point starts from a profile. That is why you cannot simply "install a plugin into DeepSeek Harness" in the abstract. Writing a plugin without naming a profile would be writing it into nowhere.
 
-## An install plan is the document
+<BlogStructureMap
+  diagram="plugin-composition"
+  eyebrow="HTML STRUCTURE MAP · COMPOSITION PIPELINE"
+  title="From catalog artifact on disk to a running, permission-scoped session"
+  caption="Every artifact kind maps to a concrete location under $DSH_HOME, layers onto @deepseek-ai/dsh-base via Cordis patches, and runs inside your workspace permission boundary."
+  node1Title="1. Artifact & Install Plan"
+  node1Body="The catalog resolves a package or repository into explicit file and package steps recorded in .dsh-fish-lock.json."
+  node2Title="2. Cordis Layer Stack"
+  node2Body="Cordis merges dsh-base, profile bundles, and cordis.patch.yml into shared context services (ctx.tools, ctx.llm, ctx.sessions)."
+  node3Title="3. Permission-Scoped Session"
+  node3Body="The booted profile opens one workspace under workspace-write permissions and records turns in an append-only log."
+/>
 
-The website, the CLI (`npx @dsh-fish/cli`), and the hub plugin all print the same plan. A plan is a list of steps you can read before anything runs. A git package that must run a build script asks for a separate approval, because that script executes outside the agent sandbox.
+## Four building blocks, from simplest to fullest
 
-The plan is also why the catalog can be multilingual without translating identifiers. `dsh plugin add`, `SKILL.md`, and package names stay English in every locale. The chrome around them does not.
+If a profile is the recipe that boots, what are the ingredients you can put inside it?
 
-## What the core still owns
+If you browse `dsh.fish`, you will notice there are only four artifact kinds. We did not invent these categories for our database. They are the exact four load surfaces that DeepSeek Harness knows how to read:
 
-“Everything is a plugin” does not mean the core is empty. Sessions are still append-only event logs. A workspace is still the directory you hand the agent. Permissions are still named presets (`workspace-write` by default). The official DeepSeek adapter is still how keys stay on the machine.
+| Kind         | Start here if you want to...                                      | How DeepSeek Harness loads it                                                                 |
+| ------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Skill**        | Teach the model a repeatable workflow in plain Markdown           | Saved under `$DSH_HOME/skills/<name>/SKILL.md` and read by the model on demand                |
+| **Agent preset** | Define a specialized persona, prompt prefix/suffix, and toolset   | Configured via `agent.cordis.yml` (and packaged as a bundle in newer Harness releases)        |
+| **Bundle**       | Add new tools, UI panels, model adapters, or runtime hooks in code | An npm package with `dsh.bundle` in `package.json`, installed via `dsh plugin add`            |
+| **Profile**      | Share an entire ready-to-run stack of bundles with your team      | An ordered list of bundles (`dsh.profile.bundles`) applied on top of `@deepseek-ai/dsh-base`  |
 
-Plugins act with those permissions. That is the trust boundary the hub is for: you inspect what a plugin is, and what the plan will write, before the profile changes.
+Notice what is missing from that table. Earlier drafts of this catalog had entries for `mcp-server` and `hook-bridge`. We retired both and redirected their URLs with `301`s to `/browse`. Why? Because the harness never had a standalone load slot with those names. An MCP server or a hook is delivered *inside* a Bundle or a Profile. A catalog that advertises artifact types the runtime cannot actually load only confuses newcomers.
 
-## What happens when you install a bundle
+## Why installing is a readable plan, not a blind script
 
-The useful mental model is not “download a package.” It is **change a composition, then boot that composition**. The hub resolves an artifact into an explicit plan, the client applies those steps to one profile, and the next launch lets Cordis resolve the resulting package graph. Discovery and execution remain separate.
+In many ecosystems, installing an extension means copying a `curl | bash` one-liner and hoping for the best. Because DeepSeek Harness composes profiles from multiple layers, we took a different approach on `dsh.fish`.
 
-That separation buys you inspectability. You can review the target profile, package source, files, and build-script allowance before a third-party package gets a chance to run. It also creates a hard limitation: dsh.fish can describe what an install will change, but it cannot prove that arbitrary plugin code is safe. A high catalog score is maintenance evidence, not a sandbox certificate.
+Whether you look at a plugin on the website, query it from the terminal with `npx @dsh-fish/cli`, or search for it inside a live chat using `@dsh-fish/hub`, you get the exact same **install plan**.
 
-For a bundle, the shortest useful check is:
+Step through the interactive mock UI below to see how an install plan moves from inspection to a live Cordis session:
+
+<BlogMockUi
+  scene="profile-composer"
+  eyebrow="INTERACTIVE MOCK UI · PROFILE COMPOSER"
+  title="Stepping from an inspectable install plan to a booted Cordis session"
+  caption="Click any step (1–4) to inspect the commands, lockfile updates, and Cordis context services at each stage."
+  step1Title="Inspect the plan first"
+  step1Body="Run show to see the target profile, package source, and whether any build scripts are requested before touching disk."
+  step2Title="Apply to a named profile"
+  step2Body="The CLI runs dsh plugin add inside your chosen profile and records the exact digest in .dsh-fish-lock.json."
+  step3Title="Layer the Cordis config"
+  step3Body="At boot, Cordis stacks dsh-base, installed bundles, and cordis.patch.yml into reversible runtime services."
+  step4Title="Run inside workspace bounds"
+  step4Body="The Web UI or CLI starts with your new tools active, while workspace-write permissions and local keys stay under your control."
+/>
+
+You can try this three-step workflow in your own terminal whenever you evaluate a bundle:
 
 ```bash
-npx @dsh-fish/cli info <artifact-id>
-npx @dsh-fish/cli install <artifact-id> --profile <profile-name>
-dsh --profile <profile-name> web
+npx @dsh-fish/cli show <artifact-id>
+npx @dsh-fish/cli add <artifact-id> --profile web
+dsh --profile web
 ```
 
-Read the plan printed by the first two commands. In particular, stop if the source, profile, or requested build allowance is not what you expected.
+Why separate `show` from `add`? Because third-party code runs with your user privileges. If a git-sourced package needs to run a post-install build script, that script executes outside the agent's tool sandbox. The install plan surfaces that requirement up front and refuses to run build scripts unless you explicitly pass `--allow-build-scripts`.
 
-## What this catalog refuses to be
+## If everything is a plugin, what does the core still guard?
 
-It is not a second harness. It does not wrap Cordis. It does not re-implement PTC mode or `@Remote`. When Harness renames Code Mode to PTC mode, the catalog’s job is to stop documenting the old name, not to ship a compatibility shim.
+At this point, a reasonable question comes up: if tools, models, and UI panels are all plugins, what keeps the system coherent?
 
-It is also not the official docs. DeepSeek’s guide is [deepseek-harness.github.io](https://deepseek-harness.github.io/deepseek-harness/). dsh.fish docs teach you how to publish into the hub and how the score is computed. The two trees stay separate on purpose: one is the runtime, one is the registry.
+Even in a plugin-first runtime, four boundaries remain constant across every session:
 
-The plugin sentence is the join key. If a future Harness release adds a fifth load surface, that is a new kind here — or it is not indexed. There is no third option that invents a type the process cannot load.
+1. **The session log is append-only.** Every prompt, tool call, and response is recorded as a durable event sequence (`session.v4.jsonl.zstd`), guarded by a single-process lock (`SessionHandle`) so two processes never corrupt the same history.
+2. **The workspace is an explicit directory.** The agent only operates inside the project folder you hand it, and the Web UI composer stays locked until you pick one.
+3. **Permissions are named presets.** A new session starts in `workspace-write` mode by default. Plugins operate within that boundary unless you approve an action or deliberately switch to `danger-full-access`.
+4. **Your API keys stay on your machine.** Credentials live in `$DSH_HOME/.credentials.yaml` or your environment variables. `dsh.fish` never sees your keys or your model traffic.
+
+## Where the runtime ends and the catalog begins
+
+Keeping that boundary clear makes both tools easier to understand:
+
+- **DeepSeek Harness (`dsh`)** is the runtime that composes plugins via Cordis and runs your agent sessions. Its official documentation lives at [deepseek-harness.github.io](https://deepseek-harness.github.io/deepseek-harness/).
+- **`dsh.fish`** is the public catalog and install-plan resolver for the four loadable kinds (`bundle`, `skill`, `agent-preset`, `profile`). Our [product docs](/docs) explain how to package those artifacts and how our quality and maintenance scores are calculated.
+
+Whenever you look at a plugin on this site, ask one question: *which part of my profile composition is this changing?* Once you think in profiles and layers instead of black-box extensions, you are in full control of your agent.

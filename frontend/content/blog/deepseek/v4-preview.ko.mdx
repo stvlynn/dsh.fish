@@ -1,74 +1,102 @@
 ---
-title: DeepSeek-V4 프리뷰, 그리고 Harness가 따라간 것
-description: 2026년 4월 V4 발표는 1M 컨텍스트를 기본으로 만들었습니다. Harness는 이후 Flash-Vision, Files API 업로드, 옛 모델 이름의 종료일을 따라갔습니다.
+title: DeepSeek-V4 Preview, 그리고 Harness에 일어난 변화
+description: 컨텍스트 윈도우가 하루아침에 1,000,000 토큰으로 늘어났는데도 왜 단순한 에이전트는 금방 한계에 부딪힐까요? DeepSeek-V4가 Harness 어댑터, Files API 이미지 재사용, 모델 이름에 가져온 변화를 살펴봅니다.
 author: Steven Lynn
 date: 2026-08-29
 cover: /blog/covers/deepseek-v4-preview.webp
 series: deepseek
 ---
 
-DeepSeek는 2026년 4월 24일에 [DeepSeek-V4 프리뷰](https://www.deepseek.com/news/v4-preview/)를 냈습니다. 그 글이 1차 출처입니다. 여기는 전재가 아니라, Harness v0.1.2-alpha.1까지 그 발표가 이 카탈로그가 색인하는 agent 런타임에 무엇을 했는지를 쫓습니다.
+모델의 컨텍스트 윈도우가 128K에서 하루아침에 **1,000,000 토큰(1M)**으로 넓어졌다는 소식을 들으면 누구나 같은 유혹을 느낍니다. "이제 어떤 파일을 읽을지 고민할 필요 없겠다. 저장소 전체와 스크린샷을 전부 프롬프트에 밀어 넣고 모델이 알아서 찾게 하자!"
+
+하지만 실제 코딩 세션에서 그렇게 해 보면 15번째 턴쯤부터 응답 지연이 눈에 띄게 길어지고, 매번 다시 올라가는 스크린샷 때문에 요청 크기가 불어나며, 정작 버그를 일으킨 세 줄짜리 코드는 수만 줄의 로그 속에 파묻혀 버립니다.
+
+2026년 4월 24일 공개된 [DeepSeek-V4 Preview](https://www.deepseek.com/en/news/v4-preview/)에서 가장 눈길을 끈 숫자는 '기본 1M 컨텍스트'였습니다. 하지만 일반 사용자와 플러그인 제작자에게 진짜 중요했던 사건은 그다음에 일어났습니다. **DeepSeek Harness가 여름 내내 공식 어댑터를 손보며 1M 윈도우와 Files API 이미지 재사용, 그리고 구형 모델 이름 퇴역을 실제 런타임에 녹여낸 과정**입니다.
 
 ![V4 발표 이후 DeepSeek Harness adapter가 단계적으로 바뀐 흐름.](/blog/diagrams/v4-adapter-timeline.svg)
 
-## 발표가 실제로 쓴 것
+## 두 개의 오픈 웨이트 모델, 하나의 기본 1M 윈도우
 
-오픈 웨이트 모델 둘. 공식 서비스의 기본 컨텍스트는 둘 다 **1M 토큰**:
+먼저 4월 발표가 실제로 무엇을 내놓았는지 쉽게 짚어 보겠습니다.
 
-| 모델              | 총 파라미터 / 활성 | 발표에서의 위치                                        |
-| ----------------- | ------------------ | ------------------------------------------------------ |
-| DeepSeek-V4-Pro   | 1.6T / 49B         | 프로그래밍, 세계 지식, 수학 — 클로즈드 소스에 맞춤     |
-| DeepSeek-V4-Flash | 284B / 13B         | 더 빠르고 저렴. 「단순한 Agent 작업에서는 Pro와 동등」 |
+DeepSeek는 긴 컨텍스트를 별도 요금제로 파는 대신, **토큰 단위 압축(token-wise compression)과 DSA(DeepSeek Sparse Attention)**를 통해 두 오픈 웨이트 MoE 모델 모두에서 **1M 토큰을 기본 윈도우**로 제공했습니다.
 
-아키텍처 주장은 **토큰 차원 압축과 DSA**(DeepSeek Sparse Attention)입니다. 1M은 선택적 긴 컨텍스트 SKU가 아니라 표준 창입니다.
+| 모델 | 전체 / 활성 파라미터 | API `model` 문자열 | 적합한 작업 |
+| --- | --- | --- | --- |
+| **DeepSeek-V4-Pro** | 1.6T 전체 / 49B 활성 | `deepseek-v4-pro` | 복잡한 아키텍처 설계, 다중 파일 디버깅, 수학 및 심층 추론(`thinking: max` 권장) |
+| **DeepSeek-V4-Flash** | 284B 전체 / 13B 활성 | `deepseek-v4-flash` | 빠른 반복 작업, 서브에이전트 위임 작업, 저렴하고 빠른 일상 도구 루프 |
 
-API `base_url`은 그대로입니다. `model`은 `deepseek-v4-pro` 또는 `deepseek-v4-flash`. 둘 다 사고 / 비사고를 지원합니다. 발표는 Agent 장면에 사고 모드, 강도 `max`를 권합니다.
+두 모델 모두 기존 `base_url`을 그대로 쓰며 추론(thinking) 모드와 일반 모드를 모두 지원합니다(웹과 앱에서는 **Expert Mode / Instant Mode**로 표시됩니다). 에이전트 워크로드에서는 추론 강도를 `max`로 설정하는 것이 권장됩니다.
 
-**종료:** `deepseek-chat`과 `deepseek-reasoner`는 **2026년 7월 24일 15:59 UTC**에 멈춥니다. 그전까지 각각 V4-Flash의 비사고와 사고로 라우팅되었습니다. 만료 후 이 두 문자열은 별명이 아니라 죽은 이름입니다.
+그못지않게 중요한 것이 구형 모델 이름의 종료 일정이었습니다. **`deepseek-chat`과 `deepseek-reasoner`는 2026년 7월 24일 15:59 UTC에 공식 종료**되었습니다. 그전까지는 V4-Flash로 연결되는 임시 별칭 역할을 했지만, 종료일 이후로는 더 이상 작동하지 않는 죽은 문자열이 되었습니다.
 
-웹과 앱은 전문가 모드 / 극속 모드로 이 쌍을 노출합니다. 가중치와 기술 보고는 발표 페이지에서 링크됩니다(Hugging Face / ModelScope, arXiv).
+<BlogStructureMap
+  diagram="v4-adapter-timeline"
+  eyebrow="HTML 구조도 · 어댑터 4단계 진화"
+  title="V4 모델 발표가 DeepSeek Harness 어댑터를 바꾼 단계별 흐름"
+  caption="문서상의 1M 컨텍스트 윈도우를 실제 에이전트 세션에서 활용하려면 네이티브 이미지 처리, Files API 재사용, 컴팩션 예산 계산이 뒷받침되어야 합니다."
+  node1Title="1. V4 모델 패밀리"
+  node1Body="DSA 희소 어텐션을 통해 1M 토큰을 기본값으로 제공하고, V4-Pro(49B 활성)와 V4-Flash(13B 활성)로 역할을 분담합니다."
+  node2Title="2. Harness 어댑터 배관 공사"
+  node2Body="v0.1.0-rc.8부터 v0.1.2-alpha.1에 걸쳐 네이티브 이미지 요청, Files API 업로드 캐시, 이미지 포함 컴팩션이 차례로 추가되었습니다."
+  node3Title="3. 9월 V4.1 통합으로의 연결"
+  node3Body="2026년 9~10월에는 deepseek-flash가 네이티브 비전을 하나로 통합했고, deepseek-v4-pro는 고난도 추론 모델로 유지됩니다."
+/>
 
-## Harness가 한 일
+## DeepSeek Harness는 V4 발표를 어떻게 런타임 기능으로 바꿨을까?
 
-V4 발표는 4월입니다. 8월에 실제로 돌아가는 harness 프리뷰는 이미 V4를 살아있는 계열로 다룹니다.
+모델 발표가 가중치의 잠재력을 보여준다면, 에이전트 런타임은 이를 안정적인 도구 호출로 구현해야 합니다.
 
-- **v0.1.1-rc.1**은 공식 어댑터에 `DeepSeek-V4-Flash-Vision-Exp`를 추가 — 이미지 입력, 실험적, 이름에 Exp.
-- **v0.1.1-rc.2**는 어댑터가 **Files API**로 이미지를 올리고 이미 올린 파일을 재사용하게 하며, 모델 요구대로 크기와 형식을 맞춥니다.
-- **v0.1.0-rc.8**은 이미 DeepSeek 어댑터에서 네이티브 이미지 요청을 열었습니다(`/goal`, `/plan`, `@`로 파일과 세션 참조).
-- **v0.1.2-alpha.1**은 **활성화된 플러그인의 패키지 이름과 버전**을 공식 DeepSeek 요청에 붙이고, 선택적 Session 로그 업로드를 제공합니다.
+8월 `v0.1.2-alpha.1`까지 이어진 DeepSeek Harness의 릴리스 기록을 따라가 보면 공식 어댑터가 어떻게 V4를 흡수했는지 한눈에 보입니다.
 
-그래서 발표의 「Claude Code, OpenClaw, OpenCode, DeepSeek 자체 코딩 에이전트와의 통합」은 손대지 않은 런타임 옆에 붙인 마케팅이 아닙니다. 그 다음 몇 달 동안 vision, Files API, 플러그인 신원이 이 API의 일등이 되었습니다.
+1. **네이티브 이미지 요청 활성화(`v0.1.0-rc.8`):** `/goal`, `/plan`, 그리고 `@` 파일·세션 참조에서 네이티브 이미지 요청이 켜졌습니다.
+2. **실험적 비전 모델 추가(`v0.1.1-rc.1`):** 공식 어댑터에 `DeepSeek-V4-Flash-Vision-Exp`(`deepseek-v4-flash-vision-exp`)가 추가되어 스크린샷과 다이어그램을 직접 입력할 수 있게 되었습니다.
+3. **Files API 업로드 재사용 및 자동 리사이즈(`v0.1.1-rc.2`):** 매 턴마다 무거운 Base64 이미지를 다시 올리는 대신 **Files API**를 우선 사용하여 업로드된 파일 ID를 재사용하고, 모델 요구사항에 맞춰 자동으로 크기를 조절·변환합니다.
+4. **플러그인 식별 헤더 및 이미지 컴팩션 반영(`v0.1.2-alpha.1`):** 세션 컴팩션(요약 압축) 시 이미지 토큰을 함께 계산하고, 공식 요청에 활성 플러그인의 패키지 이름과 버전을 첨부합니다.
 
-실험적 비전 모델은 별도의 `model` 문자열입니다: `deepseek-v4-flash-vision-exp`. API 문서는 현재 `deepseek-v4-flash`를 DeepSeek-V4-Flash-0731, `deepseek-v4-pro`를 DeepSeek-V4-Pro-0813으로 적습니다. 이름은 같고 스냅샷이 갱신됩니다. 호출 방식은 그대로입니다.
+*(최신 버전을 쓰는 분들을 위한 참고: 후속 글인 [DeepSeek-V4.1-Flash와 네이티브 검색](/blog/deepseek/v4-1-flash-and-search)에서 다루듯, 2026년 9월 `v0.1.5`부터는 네이티브 비전이 `deepseek-flash`에 직접 통합되면서 별도의 `deepseek-v4-flash-vision-exp` 문자열은 은퇴했습니다. 한편 `deepseek-v4-pro`(`DeepSeek-V4-Pro-0813`)는 무거운 추론을 위한 별도 모델로 계속 제공됩니다.)*
 
-## 1M 창은 예산을 바꾸지만 검색의 필요성을 없애지 않습니다
+## 1M 윈도우가 생겨도 여전히 '선별과 검색'이 필요한 이유
 
-더 큰 컨텍스트 창은 잘림 압력을 낮추지만 저장소 전체를 무차별로 넣는 일을 공짜로 만들지는 않습니다. 입력에는 여전히 지연과 비용이 있고, 중복 파일은 도구 결과와 자리를 다투며, 긴 세션에는 여전히 compaction이 필요합니다. 플러그인 작성자는 1M을 회계가 필요 없는 공간이 아니라 같은 회계 문제를 가진 더 큰 예산으로 다뤄야 합니다. 증거를 고르고, 중요한 결정을 보존하고, 답변을 위한 여유를 남기십시오.
+처음 1M 컨텍스트를 접할 때 빠지기 쉬운 함정이 있습니다. **창이 넓어졌다고 해서 무분별하게 채워 넣은 컨텍스트가 공짜가 되지는 않는다**는 점입니다.
 
-Vision에는 두 번째 예산이 있습니다. Files API는 같은 자산을 반복 업로드하지 않게 하고, adapter의 resize와 변환 경로는 이미지를 선택한 모델이 받을 수 있게 만듭니다. 어느 단계도 이미지가 관련 있는지는 판단하지 않습니다. 거의 같은 스크린샷 열 장을 내보내는 도구라면 결과를 반환하기 전에 중복을 제거해야 합니다.
+100만 토큰이 잘리지 않고 들어간다 해도 다음 세 가지는 그대로입니다.
 
-## 최소 마이그레이션 점검
+- **매 턴마다 읽는 입력 토큰은 여전히 지연 시간과 비용을 발생시킵니다.** 에이전트는 한 작업을 위해 수십 번 루프를 돌기 때문에 히스토리가 비대해질수록 매 단계 응답이 느려집니다.
+- **불필요한 로그는 모델의 집중력을 떨어뜨립니다.** 검색 도구가 8만 토큰짜리 날것의 로그를 그대로 쏟아부으면 모델은 매 턴마다 건초더미에서 바늘을 찾아야 합니다.
+- **시각 입력에도 예산 관리가 필요합니다.** Files API가 중복 업로드를 막아 주고 자동 리사이즈가 해상도를 맞춰 주지만, '거의 똑같은 화면 스크린샷 10장'이 모두 필요한지는 판단해 주지 않습니다. 좋은 플러그인은 결과를 반환하기 전에 중복 이미지를 먼저 걸러냅니다.
 
-설정과 예제에서 폐기된 model 문자열을 찾은 다음, 플러그인이 실제로 만드는 modality를 실행해 봅니다.
+아래 인터랙티브 Mock UI에서 다단계 에이전트 턴 동안 1M 컨텍스트 예산과 Files API 캐시가 어떻게 작동하는지 직접 확인해 보세요.
+
+<BlogMockUi
+  scene="v4-context-budget"
+  eyebrow="인터랙티브 MOCK UI · 1M 컨텍스트 & FILES API"
+  title="다중 턴 세션에서 1M 컨텍스트 예산과 Files API 이미지 캐시 관리하기"
+  caption="1~4단계를 클릭해 모델 이름 마이그레이션, Files API file_id 재사용, 컴팩션 예산 관리, V4.1 연결 과정을 살펴보세요."
+  step1Title="1. 종료된 구형 모델 이름 교체"
+  step1Body="작동이 중단된 deepseek-chat / deepseek-reasoner 대신 명시적인 V4/V4.1 모델 ID와 추론 강도를 지정합니다."
+  step2Title="2. Files API로 이미지 캐시 재사용"
+  step2Body="첫 턴에 이미지를 리사이즈해 Files API에 올리고 file_id를 받아 두면, 이후 턴에서는 중복 전송 없이 즉시 참조합니다."
+  step3Title="3. 1M 윈도우 예산의 전략적 배분"
+  step3Body="핵심 코드 조각만 추리고 중복 스크린샷을 제거해 컴팩션 후에도 핵심 결정 사항과 충분한 출력 여유를 남깁니다."
+  step4Title="4. 9월 V4.1-Flash 통합으로 이어지기"
+  step4Body="Harness v0.1.5+부터는 deepseek-flash 하나로 텍스트와 네이티브 비전을 모두 처리하며, deepseek-v4-pro는 심층 추론을 맡습니다."
+/>
+
+## 사용자와 플러그인 제작자를 위한 마이그레이션 체크리스트
+
+프로필을 구성하거나 `dsh.fish`에 플러그인·스킬을 배포하고 있다면 아래 표를 기준으로 점검해 보세요.
 
 ```text
-deepseek-chat       → deepseek-v4-flash
-deepseek-reasoner   → deepseek-v4-pro (thinking은 명시적으로 선택)
+종료된 구형 이름(7/24 중단)     8월 V4 모델 이름          현재 권장 모델 이름(2026년 9~10월)
+--------------------------     ------------------       ------------------------------------
+deepseek-chat               -> deepseek-v4-flash     -> deepseek-flash(텍스트 + 네이티브 비전)
+deepseek-reasoner           -> deepseek-v4-pro       -> deepseek-v4-pro(DeepSeek-V4-Pro-0813)
 ```
 
-이 대응을 workload에 무조건 적용하지 마십시오. Flash와 Pro는 비용과 능력 목표가 다르고 thinking intensity도 별도 선택입니다. Profile에 의도한 model을 고정하고, 대표 task를 실행하고, README를 바꾸기 전에 공식 adapter에서 이미지와 file 동작을 확인하십시오.
+1. **README와 예제에서 `deepseek-chat`과 `deepseek-reasoner`를 지우세요.** 2026년 7월 24일 이후로 이 이름들은 작동하지 않습니다. `dsh.fish`에서는 이미 죽은 모델 이름을 안내하는 문서를 유지보수 결함으로 감점합니다.
+2. **저장소 통째 덤프 대신 정밀한 근거 수집으로 설계하세요.** 1M 윈도우는 긴 디버깅 세션 동안 핵심 아키텍처 맥락과 다중 파일 Diff를 유지하는 데 써야 합니다.
+3. **이미지를 일급 도구 결과로 다루세요.** 스크린샷이나 플롯을 생성하는 플러그인이라면 Files API 캐시와 컴팩션이 효율적으로 작동하도록 중복을 제거한 깔끔한 이미지를 반환하세요.
+4. **모델 선택권은 사용자의 Profile에 맡기세요.** `dsh.fish`의 설치 계획은 절대 API 키를 쓰거나 특정 과금 모델을 강제하지 않습니다.
 
-## 플러그인 저자가 무시하면 안 되는 것
-
-1. **`deepseek-chat` / `deepseek-reasoner`를 호출 방식으로 쓰지 마세요.** 종료일이 있습니다. 4월에 맞던 README는 2026년 7월 24일에 틀립니다.
-2. **1M이 공식 어댑터가 도는 창입니다.** 128k 잘라내기를 가정하거나, 검색 전략 없이 저장소 전체를 한 번의 prompt에 넣는 skill은 창을 낭비하거나 다른 방식으로 넘칩니다.
-3. **이미지는 일등 도구 결과**이지 사이드바가 아닙니다. 스크린샷, 차트, diff 그림을 내는 플러그인은 공식 어댑터가 Files API와 vision-exp를 탑니다. 압축할 때 세세요(v0.1.2-alpha.1은 셉니다).
-4. **공식 어댑터는 DeepSeek에 어떤 플러그인이 로드됐는지 말할 수 있습니다.** 창피하거나 오해를 사거나 충돌하는 패키지 이름은 이제 요청과 함께 나갑니다.
-
-## 이 카탈로그가 하지 않는 것
-
-dsh.fish는 모델을 골라 주지 않습니다. 설치 계획은 API 키를 쓰지 않습니다. V4 발표의 가격과 피크 시간은 [DeepSeek API 문서](https://api-docs.deepseek.com/quick_start/pricing)이지 카탈로그 행이 아닙니다.
-
-카탈로그가 할 일은 설치 계획을 V4가 실제로 도는 런타임에 맞추는 것입니다. 플러그인 README가 아직 `export deepseek-chat`을 쓰면, 유지보수 점수에 넣을 문서 결함이지 다른 제품이 아닙니다.
-
-1차 출처: [DeepSeek-V4 프리뷰](https://www.deepseek.com/news/v4-preview/). 영어: [V4 Preview](https://www.deepseek.com/en/news/v4-preview/).
+원문 출처: [DeepSeek-V4 Preview(영문)](https://www.deepseek.com/en/news/v4-preview/) · [V4 预览版(중문)](https://www.deepseek.com/news/v4-preview/) · [DeepSeek API 요금 안내](https://api-docs.deepseek.com/quick_start/pricing).
