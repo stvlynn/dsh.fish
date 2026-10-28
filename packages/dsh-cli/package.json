@@ -1,6 +1,6 @@
 {
   "name": "@dsh-fish/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Install dsh.fish artifacts from the command line — the same plan the website shows and the hub plugin executes.",
   "keywords": [
     "dsh",

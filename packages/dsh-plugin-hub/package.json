@@ -1,6 +1,6 @@
 {
   "name": "@dsh-fish/hub",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Search dsh.fish and install any harness artifact from inside your agent, authenticated with your hub account.",
   "keywords": [
     "dsh-plugin",

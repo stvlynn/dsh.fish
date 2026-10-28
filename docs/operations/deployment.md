@@ -502,8 +502,12 @@ host locale to catalog/detail, and shows the signed-in avatar on Account.
 `0.4.1` gives the README modal an opaque surface with a working Markdown
 renderer, and lets the settings section check npm and update `@dsh-fish/hub`
 itself. `0.4.2` marks host-supplied peers as optional so `dsh plugin add`
-does not print a pnpm missing-peer `WARN` on a successful install. Later
-releases should go through `publish-hub.yml`. On
+does not print a pnpm missing-peer `WARN` on a successful install. `0.5.0`
+targets DSH 0.2.1: it binds to the published harness packages instead of a
+local shim, resolves the profile from the host's `profileContext`, installs
+through the harness's own `PluginManager` so the Desktop profile is reachable,
+and adds the left-rail market entry. `@dsh-fish/cli` follows at `0.3.0` with
+the desktop refusal. Later releases should go through `publish-hub.yml`. On
 [npm access for @dsh-fish/hub](https://www.npmjs.com/package/@dsh-fish/hub/access),
 under **Trusted Publisher → GitHub Actions**, set:
 
