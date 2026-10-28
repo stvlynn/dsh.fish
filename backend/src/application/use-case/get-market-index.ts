@@ -214,11 +214,20 @@ function toMarketVersion(
  * A version string for an artifact whose only identity is a commit.
  *
  * DSH requires each version to be exact SemVer. A git-crawled row has no
- * published version, so the commit's leading hex digits become prerelease
- * identifiers — deterministic, unique per commit, and visibly not a release.
+ * published version, so the commit's leading hex digits become a prerelease
+ * identifier — deterministic, unique per commit, and visibly not a release.
+ *
+ * The `c` prefix is load-bearing, not decoration. SemVer forbids leading zeros
+ * in a numeric prerelease identifier, and a SHA that happens to be all digits
+ * (`042209259139…`) is parsed as numeric: `0.0.0-commit.042209259139` is
+ * rejected as "must be an exact SemVer version" and takes the whole index down
+ * with it, because DSH drops the entire document on the first violation. A
+ * leading letter makes the identifier alphanumeric, where leading zeros are
+ * legal. Roughly one commit in six starts with a digit, so this is not a rare
+ * edge: it surfaced on the 1,896th of 8,367 real plugins.
  */
 function semanticVersionForCommit(commit: string): string {
-  return `0.0.0-commit.${commit.slice(0, 12)}`
+  return `0.0.0-commit.c${commit.slice(0, 12)}`
 }
 
 /** ISO timestamp to the Unix seconds the format requires. */

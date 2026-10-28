@@ -5,6 +5,15 @@ import { githubSource, npmSource } from '../../domain/artifact/source-ref.js'
 import { buildMarketIndex, GetMarketIndex, toMarketPlugin } from './get-market-index.js'
 
 const UPDATED_AT = new Date('2025-06-01T12:00:00.000Z')
+
+/**
+ * Exact SemVer, including the prerelease leading-zero rule DSH enforces.
+ *
+ * Written out rather than imported: `semver` is not a dependency of this
+ * package, and the rule that matters here — a numeric identifier may not carry
+ * a leading zero — is the one regex expresses completely.
+ */
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 const FULL_COMMIT = 'a'.repeat(40)
 
 function bundle(
@@ -67,6 +76,35 @@ describe('toMarketPlugin', () => {
     expect(plugin?.homepage).toBe('https://dsh.fish/a/dsh-postgres-mcp')
   })
 
+  it('emits a SemVer-valid version for a commit that begins with digits', () => {
+    // SemVer forbids leading zeros in a numeric prerelease identifier, so a
+    // bare all-digit SHA prefix produces `0.0.0-commit.042209259139`, which DSH
+    // rejects — and it drops the whole index on the first bad version, not just
+    // the offending plugin. Roughly one commit in six starts with a digit.
+    // 10 + 30 = 40 hex characters, all digits, starting with a zero.
+    const digits = '0422092591' + '3988a1b2c3d4e5f60718293a4b5c6d'
+    expect(digits).toHaveLength(40)
+    const plugin = toMarketPlugin(
+      bundle('digit-sha', {
+        source: githubSource({ owner: 'acme', repo: 'digit' }),
+        sourceCommitSha: digits,
+      }),
+    )
+    expect(plugin?.versions[0]?.version).toBe('0.0.0-commit.c042209259139')
+    expect(SEMVER.test(plugin?.versions[0]?.version ?? '')).toBe(true)
+  })
+
+  it('emits a SemVer-valid version for a commit that begins with a letter', () => {
+    const plugin = toMarketPlugin(
+      bundle('alpha-sha', {
+        source: githubSource({ owner: 'acme', repo: 'alpha' }),
+        sourceCommitSha: 'a'.repeat(40),
+      }),
+    )
+    expect(plugin?.versions[0]?.version).toBe(`0.0.0-commit.c${'a'.repeat(12)}`)
+    expect(SEMVER.test(plugin?.versions[0]?.version ?? '')).toBe(true)
+  })
+
   it('pins a git bundle to its commit under a non-release version', () => {
     const plugin = toMarketPlugin(
       bundle('sidebar', {
@@ -83,7 +121,7 @@ describe('toMarketPlugin', () => {
     })
     // Not a published release: the commit is the only identity we have, and
     // the version must still be exact SemVer.
-    expect(plugin?.versions[0]?.version).toBe(`0.0.0-commit.${FULL_COMMIT.slice(0, 12)}`)
+    expect(plugin?.versions[0]?.version).toBe(`0.0.0-commit.c${FULL_COMMIT.slice(0, 12)}`)
     expect(plugin?.repository).toEqual({
       url: 'https://github.com/acme/sidebar',
       directory: 'packages/sidebar',
