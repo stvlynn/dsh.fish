@@ -19,6 +19,7 @@
     "check": "pnpm -r --parallel run typecheck && pnpm run lint && pnpm run test",
     "typecheck": "pnpm -r --parallel run typecheck && tsc -p e2e/tsconfig.json",
     "test": "pnpm -r run test && node --experimental-strip-types --test e2e/lib/worker-config.test.ts",
+    "test:dsh": "node --experimental-strip-types --test e2e/dsh/hub.e2e.test.ts",
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "format": "prettier --write .",
