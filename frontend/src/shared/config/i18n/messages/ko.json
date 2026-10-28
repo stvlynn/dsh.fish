@@ -84,6 +84,7 @@
   "browse.filters": "필터",
   "browse.kind": "유형",
   "browse.category": "분류",
+  "browse.facetLimit": "한 번에 최대 {limit}개까지 선택할 수 있습니다. 하나를 해제하면 다른 항목을 고를 수 있습니다.",
   "browse.topic": "사용 사례",
   "browse.verifiedOnly": "인증된 항목만",
   "browse.sort": "정렬",

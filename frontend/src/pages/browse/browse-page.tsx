@@ -1,5 +1,6 @@
-import { Form, useSearchParams } from 'react-router'
+import { data, Form, useSearchParams } from 'react-router'
 import type { Route } from './+types/browse-page'
+import { exceededFacet } from '@/entities/artifact/model/types'
 import { hubContext } from '@/shared/api/hub-context'
 import { settleTogether } from '@/shared/lib/settle-together'
 import { CatalogGrid } from '@/widgets/catalog-grid/catalog-grid'
@@ -61,6 +62,20 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const url = new URL(request.url)
   const { container } = context.get(hubContext)
   const query = url.searchParams.get('q') ?? ''
+
+  // A union of more facet values than the catalog allows is not a listing a
+  // person asked for; it is a step in an enumeration. Google's faceted
+  // navigation guidance asks for a real 404 here, and answering before the
+  // query starts is what makes refusing it free.
+  if (
+    exceededFacet({
+      kinds: url.searchParams.getAll('kind'),
+      categories: url.searchParams.getAll('category'),
+      topics: url.searchParams.getAll('topic'),
+    }) !== undefined
+  ) {
+    throw data({ message: translate(locale, 'notFound.body') }, { status: 404 })
+  }
 
   const [results, facets] = await settleTogether([
     container.useCases.searchArtifacts.execute({

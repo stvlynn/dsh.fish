@@ -1,5 +1,6 @@
 import type { Route } from './+types/robots'
 import { hubContext } from '@/shared/api/hub-context'
+import { localizedPath, LOCALE_CODES } from '@/shared/config/i18n'
 
 /**
  * `/robots.txt`.
@@ -10,6 +11,19 @@ import { hubContext } from '@/shared/api/hub-context'
  *
  * `/api/` is disallowed for the same reason: it answers JSON, and a crawler
  * enumerating it learns nothing the HTML pages do not already say.
+ *
+ * Filtered `/browse` views are disallowed, in every locale. They were
+ * `noindex, follow`, which keeps them out of results but invites every crawler
+ * to fetch them — and a catalog with repeatable facets mints millions of them,
+ * each a fresh database query. Google's faceted-navigation guidance is to
+ * prevent crawling such URLs in robots.txt when they need not be indexed. The
+ * pages worth ranking keep their own paths (`/browse`, `/kind/…`,
+ * `/category/…`, `/for/…`, `/a/…`) and the sitemap still lists every one. The
+ * bare `/browse` stays crawlable: the pattern requires a `?`.
+ *
+ * Each group repeats the rules it needs. A crawler obeys only the most specific
+ * group naming it, so a rule written once under `*` would not apply to the
+ * named search agents above it.
  *
  * Nothing here is a security boundary. robots.txt is a request, and the paths
  * it names are exactly the paths anyone can read in it.
@@ -25,6 +39,11 @@ export function loader({ context }: Route.LoaderArgs) {
   })
 }
 
+/** `Disallow` lines for filtered browse views in every locale. */
+function filteredBrowseRules(): string[] {
+  return LOCALE_CODES.map((locale) => `Disallow: ${localizedPath(locale, '/browse')}?`)
+}
+
 export function robotsText(baseUrl: string): string {
   return [
     ...['OAI-SearchBot', 'ChatGPT-User', 'Claude-SearchBot', 'Claude-User'].flatMap(
@@ -33,6 +52,7 @@ export function robotsText(baseUrl: string): string {
         'Allow: /',
         'Allow: /api/v1/catalog/snapshot',
         'Disallow: /api/',
+        ...filteredBrowseRules(),
         '',
       ],
     ),
@@ -45,6 +65,7 @@ export function robotsText(baseUrl: string): string {
     'User-agent: *',
     'Allow: /',
     'Disallow: /api/',
+    ...filteredBrowseRules(),
     '',
     '# Atom feeds live at /feed.xml and /<locale>/feed.xml; the IndexNow key',
     '# file at /indexnow-<key>.txt. Both are crawlable by design.',

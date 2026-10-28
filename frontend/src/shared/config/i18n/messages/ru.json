@@ -84,6 +84,7 @@
   "browse.filters": "Фильтры",
   "browse.kind": "Тип",
   "browse.category": "Категория",
+  "browse.facetLimit": "Не больше {limit} одновременно. Снимите один, чтобы выбрать другой.",
   "browse.topic": "Сценарий",
   "browse.verifiedOnly": "Только проверенные",
   "browse.sort": "Сортировка",

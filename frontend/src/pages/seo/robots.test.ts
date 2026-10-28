@@ -29,6 +29,26 @@ describe('robotsText', () => {
     expect(body).toContain('/blog/llms.txt')
   })
 
+  it('disallows filtered browse views in every locale and every group', () => {
+    // A crawler obeys only the most specific group naming it, so each group
+    // that allows crawling must carry the rule itself.
+    const groups = body.split('\n\n').filter((group) => group.includes('Allow: /\n'))
+    expect(groups.length).toBeGreaterThan(1)
+    for (const group of groups) {
+      expect(group).toContain('Disallow: /browse?')
+      expect(group).toContain('Disallow: /zh-CN/browse?')
+      expect(group).toContain('Disallow: /ja/browse?')
+    }
+  })
+
+  it('keeps the bare catalog and the canonical facet listings crawlable', () => {
+    // The pattern requires a `?`; `/browse`, `/kind/…`, `/category/…` stay open.
+    expect(body).not.toMatch(/Disallow: \/browse$/m)
+    expect(body).not.toContain('Disallow: /kind')
+    expect(body).not.toContain('Disallow: /category')
+    expect(body).not.toContain('Disallow: /for')
+  })
+
   it('points buyers at ads.txt', () => {
     expect(body).toContain('/ads.txt')
   })

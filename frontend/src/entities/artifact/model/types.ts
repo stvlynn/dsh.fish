@@ -121,3 +121,8 @@ export { ARTIFACT_KINDS, isArtifactKind } from '@dsh-fish/backend/domain/artifac
 export { CATEGORIES, isCategory } from '@dsh-fish/backend/domain/artifact/category.js'
 export { TOPICS, isTopic } from '@dsh-fish/backend/domain/artifact/topic.js'
 export type { TopicId } from '@dsh-fish/backend/domain/artifact/topic.js'
+export {
+  FACET_VALUE_LIMITS,
+  canAddFacetValue,
+  exceededFacet,
+} from '@dsh-fish/backend/domain/artifact/facet-bounds.js'

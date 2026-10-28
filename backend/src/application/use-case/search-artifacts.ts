@@ -5,6 +5,7 @@ import type {
 } from '../../domain/artifact/artifact-repository.js'
 import { artifactKind } from '../../domain/artifact/artifact-kind.js'
 import { category } from '../../domain/artifact/category.js'
+import { exceededFacet, FACET_VALUE_LIMITS } from '../../domain/artifact/facet-bounds.js'
 import type { SummaryTranslationRepository } from '../../domain/artifact/summary-translation.js'
 import { DomainError } from '../../domain/shared/error.js'
 import { pageRequest } from '../../domain/shared/pagination.js'
@@ -57,6 +58,18 @@ export class SearchArtifacts {
   ) {}
 
   async execute(input: SearchArtifactsInput): Promise<PageDto<ArtifactSummaryDto>> {
+    // Before any value is parsed or any row is read: an unbounded union of
+    // facets is how a crawler enumerates the catalog, and refusing it must cost
+    // nothing. Every caller — browse, the public API, hub_search, the CLI — goes
+    // through here, so the bound cannot be bypassed by choosing another door.
+    const exceeded = exceededFacet(input)
+    if (exceeded !== undefined) {
+      throw DomainError.invalid('Too many values combined for one filter.', {
+        facet: exceeded,
+        limit: FACET_VALUE_LIMITS[exceeded],
+      })
+    }
+
     const query: ArtifactQuery = {
       ...(input.text === undefined || input.text.trim() === ''
         ? {}

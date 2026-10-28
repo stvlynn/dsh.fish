@@ -84,6 +84,7 @@
   "browse.filters": "筛选",
   "browse.kind": "类型",
   "browse.category": "分类",
+  "browse.facetLimit": "最多同时选 {limit} 个，取消一个再选其他。",
   "browse.topic": "使用场景",
   "browse.verifiedOnly": "仅看已验证",
   "browse.sort": "排序",

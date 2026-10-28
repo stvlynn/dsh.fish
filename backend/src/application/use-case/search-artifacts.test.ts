@@ -140,3 +140,41 @@ describe('SearchArtifacts summary localization', () => {
     expect(result.items[0]?.summary).toBe('上一版摘要')
   })
 })
+
+describe('SearchArtifacts facet bounds', () => {
+  it('refuses an over-bound union before reading a row', async () => {
+    // This is the check that makes an enumeration step free: the repository —
+    // the database — must never see it.
+    const { repository, queries } = capturingRepository()
+
+    await expect(
+      new SearchArtifacts(repository, emptySummaryTranslations()).execute({
+        categories: ['ui', 'usage', 'theme', 'model'],
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', details: { facet: 'categories', limit: 3 } })
+    expect(queries).toHaveLength(0)
+  })
+
+  it('refuses before validating values, so unknown ids cost nothing either', async () => {
+    const { repository, queries } = capturingRepository()
+
+    await expect(
+      new SearchArtifacts(repository, emptySummaryTranslations()).execute({
+        kinds: ['not-a-kind', 'also-not', 'nor-this'],
+      }),
+    ).rejects.toMatchObject({ details: { facet: 'kinds' } })
+    expect(queries).toHaveLength(0)
+  })
+
+  it('runs a selection at the bound', async () => {
+    const { repository, queries } = capturingRepository()
+
+    await new SearchArtifacts(repository, emptySummaryTranslations()).execute({
+      categories: ['ui', 'usage', 'theme'],
+      kinds: ['bundle', 'skill'],
+    })
+
+    expect(queries[0]?.categories).toEqual(['ui', 'usage', 'theme'])
+    expect(queries[0]?.kinds).toEqual(['bundle', 'skill'])
+  })
+})

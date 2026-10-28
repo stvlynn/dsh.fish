@@ -84,6 +84,7 @@
   "browse.filters": "フィルター",
   "browse.kind": "タイプ",
   "browse.category": "カテゴリ",
+  "browse.facetLimit": "同時に選べるのは {limit} 件までです。1 件外すと別のものを選べます。",
   "browse.topic": "用途",
   "browse.verifiedOnly": "認証済みのみ",
   "browse.sort": "並び替え",

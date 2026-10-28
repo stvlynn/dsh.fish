@@ -15,7 +15,7 @@ canonical home of something.
 | `/category/:category`               | ✅ (page 1)          | The "what is it for" axis people search along.                                                                                                                                  |
 | `/for/:topic`                       | ✅ (page 1, ≥3 rows) | Curated workflow pages; thin and paginated variants remain `noindex, follow`.                                                                                                   |
 | `/browse` (bare)                    | ✅                   | The catalog itself.                                                                                                                                                             |
-| `/browse?…` any query               | ❌ `noindex, follow` | A view of a listing that already has a canonical home.                                                                                                                          |
+| `/browse?…` any query               | ❌ robots `Disallow` | A view of a listing that already has a canonical home. Also `noindex, follow` for crawlers that ignore robots.txt. Over-bound facet unions return 404.                          |
 | `/kind/…?offset=`                   | ❌ `noindex, follow` | Page two is a real page but not the page to land on for the term.                                                                                                               |
 | `/docs`                             | ✅                   | "How do I publish a dsh plugin" is a question people search.                                                                                                                    |
 | `/docs/…` (MDX pages)               | ✅                   | One URL per physical locale guide (`/docs/cli`, `/docs/publish/skill`, …). Retired `/docs/publish/mcp-server` and `/docs/publish/hook-bridge` 301 onto `/docs/plugins`. Generated from the Fumadocs source into `pages.xml`; fallback-only locales are not advertised. |
@@ -38,18 +38,37 @@ The catalog can mint effectively unlimited URLs: any combination of `kind`,
 `category`, `sort`, `verified`, `q` and `offset` is a distinct query string
 over the same rows. This is the classic way a directory burns its crawl budget.
 
-Three mechanisms, together:
+These mechanisms work together:
 
-1. **Any query at all makes `/browse` `noindex`.** The loader reports
+1. **robots.txt disallows filtered views.** Every crawling group carries
+   `Disallow: /browse?` and its locale-prefixed forms (`/zh-CN/browse?`, …),
+   following Google's faceted-navigation guidance: when filtered URLs need not
+   be indexed, prevent crawling them. The bare `/browse` stays crawlable — the
+   pattern requires a `?`. `noindex` alone did not reduce load: a crawler has to
+   fetch a page to read it.
+2. **Any query at all makes `/browse` `noindex`**, for crawlers that ignore
+   robots.txt. The loader reports
    `filtered: [...url.searchParams.keys()].length > 0`.
-2. **Filter links carry `rel="nofollow"`.** The canonical home of a single-facet
+3. **Facet unions are bounded.** At most 3 categories, 2 kinds and 2 topics may
+   be combined (`backend/src/domain/artifact/facet-bounds.ts`). A larger union
+   is a real 404 before any query runs. Once a facet is full, the filter rail
+   stops linking its other values, and their tooltip says why.
+4. **One URL per selection.** The rail writes parameters in a fixed order with
+   set-valued filters sorted and de-duplicated, so the same selection is one
+   cache key whatever order it was clicked in.
+5. **Filter links carry `rel="nofollow"`.** The canonical home of a single-facet
    listing is `/kind/<kind>` or `/category/<category>`, which the footer links
    and the sitemap carries. A combination filter is a view of it.
-3. **The single-facet listings get real paths**, so the terms worth ranking for
+6. **The single-facet listings get real paths**, so the terms worth ranking for
    have a stable, linkable, canonical document instead of a query string.
 
 Keyword links on a plugin page point at `/browse?q=<keyword>` and are
 `nofollow` for the same reason.
+
+`nofollow` and `noindex` are hints, not load control. Production traffic showed
+a crawler following the `nofollow` rail links one toggle at a time. Mechanisms 1
+and 3 stop compliant and non-compliant crawlers respectively. Admission
+(`docs/operations/vps-deployment.md#catalog-admission`) protects what remains.
 
 ## Locale quality gate
 

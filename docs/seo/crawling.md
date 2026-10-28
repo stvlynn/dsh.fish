@@ -3,7 +3,9 @@
 ## robots.txt
 
 Served from `frontend/src/pages/seo/robots.ts` at `/robots.txt`. It disallows
-`/api/` and names the sitemap index.
+`/api/` and filtered browse views (`/browse?` in every locale) and names the
+sitemap index. A crawler obeys only the most specific group that names it, so
+every group that allows crawling repeats both rules.
 
 Account pages remain crawlable even though they are `noindex, follow`. A search
 engine must fetch a page to read that directive; blocking `/dashboard`,

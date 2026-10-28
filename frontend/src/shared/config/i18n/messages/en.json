@@ -84,6 +84,7 @@
   "browse.filters": "Filters",
   "browse.kind": "Type",
   "browse.category": "Category",
+  "browse.facetLimit": "Up to {limit} at once. Clear one to pick another.",
   "browse.topic": "Use case",
   "browse.verifiedOnly": "Verified only",
   "browse.sort": "Sort",
