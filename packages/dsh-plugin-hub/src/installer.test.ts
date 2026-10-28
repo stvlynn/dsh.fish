@@ -446,3 +446,93 @@ describe('in-process package manager', () => {
     expect(failure?.message).toContain('ERR_PNPM_FETCH_404')
   })
 })
+
+describe('updateSelf', () => {
+  // DSH 0.2.1's `installBundle` refuses any package whose name is already a
+  // profile dependency unless it is removed first — it never compares versions,
+  // so a plain add can never upgrade. These pin the remove-then-add path that
+  // makes "Check for updates" work at all.
+  async function profileWith(installed: string, version: string): Promise<string> {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-update-'))
+    await mkdir(join(home, 'profiles/desktop'), { recursive: true })
+    await writeFile(
+      join(home, 'profiles/desktop/package.json'),
+      JSON.stringify({ dependencies: { [installed]: version } }),
+    )
+    return home
+  }
+
+  it('removes the installed copy before installing the new version', async () => {
+    const home = await profileWith('@dsh-fish/hub', '0.4.2')
+    const calls: string[][] = []
+    const installer = new PlanInstaller(client(), 'desktop', {
+      home,
+      packages: {
+        async add(spec) {
+          calls.push(['add', spec])
+          await writeFile(
+            join(home, 'profiles/desktop/package.json'),
+            JSON.stringify({ dependencies: { '@dsh-fish/hub': '0.5.0' } }),
+          )
+          return { exitCode: 0, output: 'installed' }
+        },
+        async remove(name) {
+          calls.push(['remove', name])
+          await writeFile(
+            join(home, 'profiles/desktop/package.json'),
+            JSON.stringify({ dependencies: {} }),
+          )
+          return { exitCode: 0, output: 'removed' }
+        },
+      },
+    })
+
+    await installer.updateSelf('@dsh-fish/hub@0.5.0')
+
+    expect(calls).toEqual([
+      ['remove', '@dsh-fish/hub'],
+      ['add', '@dsh-fish/hub@0.5.0'],
+    ])
+  })
+
+  it('installs directly when the package is not present yet', async () => {
+    const home = await profileWith('dsh-better-sidebar', '^0.28.0')
+    const calls: string[][] = []
+    const installer = new PlanInstaller(client(), 'web', {
+      home,
+      packages: {
+        async add(spec) {
+          calls.push(['add', spec])
+          return { exitCode: 0, output: 'installed' }
+        },
+        async remove(name) {
+          calls.push(['remove', name])
+          return { exitCode: 0, output: 'removed' }
+        },
+      },
+    })
+
+    await installer.updateSelf('@dsh-fish/hub@0.5.0')
+
+    expect(calls).toEqual([['add', '@dsh-fish/hub@0.5.0']])
+  })
+
+  it('reports a failed removal instead of pretending the upgrade ran', async () => {
+    const home = await profileWith('@dsh-fish/hub', '0.4.2')
+    const installer = new PlanInstaller(client(), 'desktop', {
+      home,
+      packages: {
+        async add() {
+          return { exitCode: 0, output: 'installed' }
+        },
+        async remove() {
+          return { exitCode: 1, output: 'ERR_PNPM_UNEXPECTED_STORE' }
+        },
+      },
+    })
+
+    await expect(installer.updateSelf('@dsh-fish/hub@0.5.0')).rejects.toMatchObject({
+      code: 'PACKAGE_REMOVE_FAILED',
+    })
+  })
+})

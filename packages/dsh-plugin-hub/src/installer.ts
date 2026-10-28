@@ -148,10 +148,34 @@ export class PlanInstaller {
     )
   }
 
+  /**
+   * Replace this plugin in the running profile with `spec`.
+   *
+   * `installBundle`/`dsh plugin add` refuse a package whose name is already a
+   * profile dependency, without consulting the requested version: DSH 0.2.1
+   * raises `already-installed` whenever the name is present and the profile has
+   * HMR. That makes an upgrade impossible through the add path alone, which is
+   * exactly what this method is for. Removal first clears the name, so the add
+   * is an install rather than a conflict.
+   *
+   * The profile is briefly without the plugin between the two calls. That is
+   * unavoidable through this API and is the same window a user gets by removing
+   * and re-adding by hand; the alternative — leaving the old version in place —
+   * means "check for updates" can never do anything.
+   *
+   * @param spec - package spec to install.
+   * @param signal - cancellation.
+   * @returns the applied step, reported as the replacement it is.
+   */
   async updateSelf(
     spec = '@dsh-fish/hub',
     signal: AbortSignal = AbortSignal.timeout(5 * 60_000),
   ): Promise<AppliedStep> {
+    const name = packageNameFromSpec(spec)
+    const installed = await this.dependencyNames()
+    if (name !== undefined && installed.has(name)) {
+      await this.removePackage(name, signal)
+    }
     const result = await this.addPackage({ type: 'add-package', spec }, signal)
     return result.step
   }

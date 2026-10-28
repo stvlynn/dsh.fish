@@ -532,16 +532,18 @@ function profileNameOf(ctx: Context): string | undefined {
   return typeof name === 'string' && name.trim() !== '' ? name : undefined
 }
 
+/** One change the host's plugin manager reports. */
+interface HostChangeResult {
+  application?: string
+  packageResult?: { exitCode?: number; output?: string; logPath?: string }
+  /** Why the change failed, when the manager knows. */
+  error?: { code?: string; diagnostic?: string }
+}
+
 /** The `PluginManager` surface this plugin drives. */
 interface HostPluginManager {
-  installBundle(
-    spec: string,
-    options?: { enabled?: boolean },
-  ): Promise<{ application?: string; packageResult?: { exitCode?: number; output?: string } }>
-  removeBundle(name: string): Promise<{
-    application?: string
-    packageResult?: { exitCode?: number; output?: string }
-  }>
+  installBundle(spec: string, options?: { enabled?: boolean }): Promise<HostChangeResult>
+  removeBundle(name: string): Promise<HostChangeResult>
 }
 
 /**
@@ -560,16 +562,22 @@ function packageManagerPort(ctx: Context): PackageManagerPort | undefined {
   const manager = ctx.get('pluginManager') as HostPluginManager | undefined
   if (manager === undefined || typeof manager.installBundle !== 'function') return undefined
 
-  const describe = (result: {
-    application?: string
-    packageResult?: { exitCode?: number; output?: string }
-  }): PackageChange => {
-    const output = result.packageResult?.output ?? ''
+  const describe = (result: HostChangeResult): PackageChange => {
     const failedApplication =
       result.application === 'failed' || result.application === 'cancelled'
+    // The manager reports several failures without a package-manager exit: a
+    // refused spec, a conflict, a restored profile. Its own diagnostic is the
+    // only description of those, and dropping it turned "already-installed"
+    // into a bare "exit status 1" that told the reader nothing.
+    const parts = [result.packageResult?.output ?? '']
+    if (result.error?.diagnostic !== undefined) parts.push(result.error.diagnostic)
+    else if (result.error?.code !== undefined) parts.push(result.error.code)
+    if (result.packageResult?.logPath !== undefined) {
+      parts.push(`Diagnostics: ${result.packageResult.logPath}`)
+    }
     return {
       exitCode: failedApplication ? 1 : (result.packageResult?.exitCode ?? 0),
-      output,
+      output: parts.filter((part) => part.trim() !== '').join('\n'),
     }
   }
 
