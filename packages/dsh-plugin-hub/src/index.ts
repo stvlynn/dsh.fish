@@ -16,7 +16,7 @@ import { Config, DEFAULT_CONFIG, type Config as HubConfig } from './config.js'
 import { HubClient, HubError } from './hub-client.js'
 import type { ArtifactReviews } from './hub-client.js'
 import { registerHttpApi } from './http.js'
-import { InstallRefused, PlanInstaller } from './installer.js'
+import { InstallRefused, PlanInstaller, type PackageChange, type PackageManagerPort } from './installer.js'
 import { resolveProfile } from './profile.js'
 import { renderArtifactReviews } from './review-text.js'
 import { clearToken, readToken } from './token-store.js'
@@ -36,8 +36,18 @@ const KINDS = [
 export function apply(ctx: Context, config: HubConfig = DEFAULT_CONFIG): void {
   const baseUrl = config.baseUrl.replace(/\/+$/, '')
   const client = new HubClient(baseUrl)
-  const profile = resolveProfile(config.targetProfile)
-  const installer = new PlanInstaller(client, profile)
+  // The host's own `profileContext` names the profile this process actually
+  // mounted; `resolveProfile` documents why nothing ambient outranks it.
+  const profile = resolveProfile(config.targetProfile, {
+    profileContext: profileNameOf(ctx),
+  })
+  // A running harness manages its own profile in-process, which is the only way
+  // to install into one the launcher will not hand to a child process — the
+  // Desktop profile, most importantly. Without it the installer falls back to
+  // spawning `dsh plugin …`, which is correct everywhere the launcher can reach.
+  const installer = new PlanInstaller(client, profile, {
+    packages: packageManagerPort(ctx),
+  })
 
   registerHttpApi(ctx, { client, installer, baseUrl, profile })
 
@@ -187,7 +197,10 @@ export function apply(ctx: Context, config: HubConfig = DEFAULT_CONFIG): void {
             id: item.artifactId,
             kind: item.kind,
             installedAt: item.installedAt,
-            files: item.files,
+            // The lockfile records paths as `readonly string[]`; a tool's
+            // canonical value is lossless JSON, whose arrays are mutable, so
+            // the row carries a plain copy rather than the record's view.
+            files: [...item.files],
             packages: item.packages.map((pkg) => pkg.name),
           })),
         }
@@ -502,6 +515,74 @@ function renderAccount(value: unknown): string {
 function renderRate(value: unknown): string {
   const reviews = value as ArtifactReviews
   return `Rating recorded.\n${renderArtifactReviews(reviews)}`
+}
+
+/**
+ * The profile name the host mounted, when the host exposes one.
+ *
+ * `profileContext` is provided by `dsh`'s profile boot and is the only signal
+ * that describes this process rather than the shell that started it. It is
+ * reached through `ctx.get` because it is an optional service: a composition
+ * that mounts this plugin without a launcher (a test, an embedded host) has
+ * none, and `resolveProfile` then falls back to the argv/environment chain.
+ */
+function profileNameOf(ctx: Context): string | undefined {
+  const host = ctx.get('profileContext') as { name?: unknown } | undefined
+  const name = host?.name
+  return typeof name === 'string' && name.trim() !== '' ? name : undefined
+}
+
+/** The `PluginManager` surface this plugin drives. */
+interface HostPluginManager {
+  installBundle(
+    spec: string,
+    options?: { enabled?: boolean },
+  ): Promise<{ application?: string; packageResult?: { exitCode?: number; output?: string } }>
+  removeBundle(name: string): Promise<{
+    application?: string
+    packageResult?: { exitCode?: number; output?: string }
+  }>
+}
+
+/**
+ * Adapt the host's `PluginManager` to the installer's package port.
+ *
+ * The manager is an optional service: a headless composition may mount none, in
+ * which case the installer spawns `dsh plugin …` exactly as before. It is read
+ * through `ctx.get` rather than declared in `inject` so that this plugin keeps
+ * loading in compositions that never provide it.
+ *
+ * `installBundle` reports a failed run through `packageResult.exitCode` instead
+ * of throwing, and a `cancelled`/`failed` application means the profile was
+ * restored — both are failures the installer must see, not silent no-ops.
+ */
+function packageManagerPort(ctx: Context): PackageManagerPort | undefined {
+  const manager = ctx.get('pluginManager') as HostPluginManager | undefined
+  if (manager === undefined || typeof manager.installBundle !== 'function') return undefined
+
+  const describe = (result: {
+    application?: string
+    packageResult?: { exitCode?: number; output?: string }
+  }): PackageChange => {
+    const output = result.packageResult?.output ?? ''
+    const failedApplication =
+      result.application === 'failed' || result.application === 'cancelled'
+    return {
+      exitCode: failedApplication ? 1 : (result.packageResult?.exitCode ?? 0),
+      output,
+    }
+  }
+
+  return {
+    async add(spec, signal) {
+      signal.throwIfAborted()
+      return describe(await manager.installBundle(spec, { enabled: true }))
+    },
+    async remove(name, signal) {
+      signal.throwIfAborted()
+      return describe(await manager.removeBundle(name))
+    },
+  }
 }
 
 export { HubError, InstallRefused }

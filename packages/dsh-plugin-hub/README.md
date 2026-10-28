@@ -17,13 +17,24 @@ whose bundled launcher is the one to run:
 dsh plugin --profile local-dsh add @dsh-fish/hub
 ```
 
+On DSH 0.2.x that is the whole install: the launcher reconciles
+`dsh.profile.bundles` itself after `pnpm add`, so the bundle is selected and
+mounts on the next start with no `cordis.patch.yml` edit. (DSH 0.1.x required
+the row to be added by hand.)
+
 The published package ships `lib/` already built, so this install runs no build
 script and needs no `allowBuilds` entry.
 
-`@deepseek-ai/cordis` and `@deepseek-ai/dsh-tools` are supplied by the harness
-at runtime. They are optional peers so pnpm does not warn when the profile
-tree cannot see the host copies — a `WARN` about missing peers is not a
-failed install.
+`@deepseek-ai/cordis`, `@deepseek-ai/dsh-tools` and the client packages are
+supplied by the harness at runtime. They are optional peers so pnpm does not
+warn when the profile tree cannot see the host copies — a `WARN` about missing
+peers is not a failed install.
+
+This plugin targets DSH `0.2.1-rc.2` and later. That is enforced by the
+launcher, not merely documented: a bundle whose `@deepseek-ai/dsh-*` peer
+requirements the running version does not satisfy is skipped at boot, leaving
+no `hub_*` tools behind. `dsh plugin add` reports such a package as
+`incompatible` with the exact command that would grant a version exemption.
 
 A git install is a development fallback and must name the subdirectory — the
 repository root is a private workspace, not this plugin:
@@ -61,11 +72,21 @@ Installs already recorded in `$DSH_HOME/.dsh-fish-lock.json` survive the rename.
 | `hub_reviews` | Community ratings: the site's 1–5 scale, average, distribution, comments. |
 | `hub_rate` | Rate an installed artifact 1–5 stars, optionally with a public comment. |
 
-## Settings section
+## In the browser client
 
-In a harness that serves a browser client, this bundle also adds a **dsh.fish**
-section to Settings, with Browse, Installed and Account. It is a second surface
-over the same installer, not a second installer: the browser half calls
+A harness that serves a browser client gets two ways in, both over the same
+installer:
+
+- **A dsh.fish icon in the left rail.** Clicking it swaps the main column to a
+  full-width market page with Discover, Installed and Account tabs. This is the
+  harness's own navigation pattern — the Plugins and Schedule panels work the
+  same way — so the market sits beside them rather than behind a settings
+  dialog. The page keeps a visited tab mounted, so a search survives checking
+  what is already installed, and offers a way back to the conversation.
+- **A dsh.fish section in Settings**, for readers who are already configuring
+  the harness.
+
+Neither is a second installer. The browser half calls
 same-origin routes under `/api/dsh-fish`, and those call the very
 `PlanInstaller` the tools use, writing the same
 `$DSH_HOME/.dsh-fish-lock.json`. So Installed lists exactly what `hub_list`
@@ -137,8 +158,21 @@ read. The same lockfile is shared with `@dsh-fish/cli`.
   name: '@dsh-fish/hub'
   config:
     baseUrl: https://dsh.fish   # a self-hosted deployment only changes this
-    targetProfile: current      # $DSH_PROFILE, else --profile, else web
+    targetProfile: current      # the booted profile, else --profile, else $DSH_PROFILE, else web
 ```
+
+`current` resolves to the profile this harness actually booted: the plugin asks
+the host's own `profileContext` service, which the launcher populates with the
+name it mounted. An inherited `$DSH_PROFILE` is only a fallback, because the
+launcher does not export it into the harness process — it is contributed to
+model shell calls instead — so a value in the environment describes some other
+shell, not this harness.
+
+`desktop` is the one profile this plugin cannot install into. The launcher
+reserves it for the DeepSeek Harness Desktop application, which refuses
+`dsh plugin --profile desktop …` from a terminal; `hub_install` answers with
+`PROFILE_MANAGED_ELSEWHERE` and names the profile instead of forwarding a
+package-manager failure. Install from inside the Desktop app, or target `web`.
 
 ## License
 

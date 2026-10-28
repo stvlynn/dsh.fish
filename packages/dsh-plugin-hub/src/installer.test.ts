@@ -237,3 +237,212 @@ describe('PlanInstaller', () => {
     ).rejects.toMatchObject({ code: 'NOT_INSTALLED' })
   })
 })
+
+describe('Electron-managed profile', () => {
+  // DSH 0.2.x refuses `dsh plugin --profile desktop …` to any process that is
+  // not the Desktop carrier. That fence belongs to the *spawned launcher*, so
+  // the installer refuses only when spawning is how it would have to work; a
+  // host that supplies an in-process manager can install there.
+  const desktopPlan = () =>
+    plan({
+      kind: 'bundle',
+      steps: [
+        {
+          type: 'add-package',
+          profile: 'desktop',
+          spec: 'dsh-hello@1.2.3',
+          requiresBuildAllowance: false,
+        },
+      ],
+    })
+
+  it('refuses to apply without running the package manager', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    const calls: string[][] = []
+    const installer = new PlanInstaller(client(), 'desktop', {
+      home,
+      run: async (_file, args) => {
+        calls.push([...args])
+        return { stdout: '', stderr: '' }
+      },
+    })
+
+    const failure = await installer
+      .apply(desktopPlan(), {
+        allowBuildScripts: false,
+        signal: new AbortController().signal,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error as InstallRefused,
+      )
+
+    expect(failure?.code).toBe('PROFILE_MANAGED_ELSEWHERE')
+    expect(failure?.message).toContain('desktop')
+    expect(failure?.message).toContain('Desktop')
+    expect(calls).toEqual([])
+  })
+
+  it('refuses to remove without running the package manager', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    const calls: string[][] = []
+    const installer = new PlanInstaller(client(), 'desktop', {
+      home,
+      run: async (_file, args) => {
+        calls.push([...args])
+        return { stdout: '', stderr: '' }
+      },
+    })
+
+    await expect(
+      installer.remove('example', { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'PROFILE_MANAGED_ELSEWHERE' })
+    expect(calls).toEqual([])
+  })
+
+  it('leaves every other profile installable', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    const calls: string[][] = []
+    const installer = new PlanInstaller(client(), 'web', {
+      home,
+      run: async (_file, args) => {
+        calls.push([...args])
+        return { stdout: 'ok', stderr: '' }
+      },
+    })
+
+    await installer.apply(desktopPlan(), {
+      allowBuildScripts: false,
+      signal: new AbortController().signal,
+    })
+    expect(calls[0]).toEqual(['plugin', '--profile', 'web', 'add', 'dsh-hello@1.2.3'])
+  })
+})
+
+describe('in-process package manager', () => {
+  const bundlePlan = () =>
+    plan({
+      kind: 'bundle',
+      steps: [
+        {
+          type: 'add-package',
+          profile: 'web',
+          spec: 'dsh-hello@1.2.3',
+          requiresBuildAllowance: false,
+        },
+      ],
+    })
+
+  it('installs through the host manager instead of spawning the launcher', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    await mkdir(join(home, 'profiles/web'), { recursive: true })
+    await writeFile(
+      join(home, 'profiles/web/package.json'),
+      JSON.stringify({ dependencies: { '@deepseek-ai/dsh-base': '1.0.0' } }),
+    )
+
+    const spawned: string[][] = []
+    const added: string[] = []
+    const installer = new PlanInstaller(client(), 'web', {
+      home,
+      run: async (_file, args) => {
+        spawned.push([...args])
+        return { stdout: '', stderr: '' }
+      },
+      packages: {
+        async add(spec) {
+          added.push(spec)
+          await writeFile(
+            join(home, 'profiles/web/package.json'),
+            JSON.stringify({
+              dependencies: { '@deepseek-ai/dsh-base': '1.0.0', 'dsh-hello': '1.2.3' },
+            }),
+          )
+          return { exitCode: 0, output: 'installed' }
+        },
+        async remove() {
+          return { exitCode: 0, output: 'removed' }
+        },
+      },
+    })
+
+    await installer.apply(bundlePlan(), {
+      allowBuildScripts: false,
+      signal: new AbortController().signal,
+    })
+
+    expect(added).toEqual(['dsh-hello@1.2.3'])
+    expect(spawned).toEqual([])
+    expect(listLocked(await readLock(home), 'web')[0]?.packages).toEqual([
+      { spec: 'dsh-hello@1.2.3', name: 'dsh-hello' },
+    ])
+  })
+
+  it('manages the desktop profile the launcher refuses to touch', async () => {
+    // The whole point of the port: a Desktop-hosted agent must be able to
+    // install into the profile the user is actually looking at.
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    const added: string[] = []
+    const installer = new PlanInstaller(client(), 'desktop', {
+      home,
+      run: async () => {
+        throw new Error('the launcher must not be spawned for a desktop profile')
+      },
+      packages: {
+        async add(spec) {
+          added.push(spec)
+          return { exitCode: 0, output: 'installed' }
+        },
+        async remove() {
+          return { exitCode: 0, output: 'removed' }
+        },
+      },
+    })
+
+    const outcome = await installer.apply(
+      plan({
+        kind: 'bundle',
+        steps: [
+          {
+            type: 'add-package',
+            profile: 'desktop',
+            spec: 'dsh-hello@1.2.3',
+            requiresBuildAllowance: false,
+          },
+        ],
+      }),
+      { allowBuildScripts: false, signal: new AbortController().signal },
+    )
+
+    expect(added).toEqual(['dsh-hello@1.2.3'])
+    expect(outcome.steps[0]?.applied).toBe(true)
+  })
+
+  it('reports a non-zero package result as a failed install', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-install-'))
+    const installer = new PlanInstaller(client(), 'web', {
+      home,
+      packages: {
+        async add() {
+          return { exitCode: 1, output: 'ERR_PNPM_FETCH_404' }
+        },
+        async remove() {
+          return { exitCode: 0, output: '' }
+        },
+      },
+    })
+
+    const failure = await installer
+      .apply(bundlePlan(), {
+        allowBuildScripts: false,
+        signal: new AbortController().signal,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error as InstallRefused,
+      )
+
+    expect(failure?.code).toBe('PACKAGE_INSTALL_FAILED')
+    expect(failure?.message).toContain('ERR_PNPM_FETCH_404')
+  })
+})

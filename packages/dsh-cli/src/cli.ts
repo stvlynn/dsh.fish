@@ -17,6 +17,7 @@ import {
   InstallRefused,
   PlanInstaller,
   clearToken,
+  isElectronManagedProfile,
   renderArtifactReviews,
 } from '@dsh-fish/hub/install'
 import { initSkill } from './init.js'
@@ -24,6 +25,20 @@ import { parseArgv, UsageError, type CliFlags, type CliRequest } from './parse-a
 import { resolveArtifact } from './resolve-source.js'
 
 const VERSION = readVersion()
+
+/** Commands that reach the package manager, and so need an addressable profile. */
+const PACKAGE_COMMANDS = new Set([
+  'add',
+  'a',
+  'install',
+  'i',
+  'remove',
+  'rm',
+  'r',
+  'update',
+  'upgrade',
+  'check',
+])
 
 const HELP = `
 Usage: dsh-fish <command> [options]
@@ -105,6 +120,22 @@ async function main(): Promise<void> {
   const client = new HubClient(request.flags.registry, CLI_CLIENT_ID)
   const installer = new PlanInstaller(client, request.flags.profile)
   const signal = processSignal()
+
+  // Commands that touch the package manager cannot address the Electron-managed
+  // profile, so say so before resolving anything over the network. The
+  // installer repeats this check for its other callers (the hub plugin), where
+  // the target profile is resolved rather than typed.
+  if (PACKAGE_COMMANDS.has(request.command) && isElectronManagedProfile(request.flags.profile)) {
+    console.error(
+      `The DeepSeek Harness Desktop application owns profile "${request.flags.profile}" and ` +
+        'does not let a separate process install into it. Run the install from inside that ' +
+        'app instead — ask its agent to use hub_install, or use the dsh.fish section in ' +
+        'Settings — where the harness manages its own profile. This CLI can target any ' +
+        'profile a terminal launcher owns, such as web.',
+    )
+    process.exitCode = 1
+    return
+  }
 
   try {
     switch (request.command) {

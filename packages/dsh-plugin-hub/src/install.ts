@@ -17,7 +17,19 @@ export type {
   ReviewSummary,
 } from './hub-client.js'
 export { renderArtifactReviews } from './review-text.js'
-export { InstallRefused, PlanInstaller, packageNameFromSpec, safeJoin } from './installer.js'
+export {
+  InstallRefused,
+  PlanInstaller,
+  PROFILE_MANAGED_ELSEWHERE,
+  packageNameFromSpec,
+  safeJoin,
+} from './installer.js'
+export {
+  ELECTRON_MANAGED_PROFILE,
+  isElectronManagedProfile,
+  profileFromArgv,
+  resolveProfile,
+} from './profile.js'
 export type {
   AppliedStep,
   CommandRunner,

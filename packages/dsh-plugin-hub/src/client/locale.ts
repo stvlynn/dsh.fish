@@ -77,6 +77,19 @@ const zh = {
   'update.failed': '检查或更新失败，请重试。',
   'plugin.about': '关于插件',
   'plugin.version': '版本 v{version}',
+  'panel.label': 'dsh.fish',
+  'market.title': 'dsh.fish 市场',
+  'market.subtitle': '浏览并安装 harness 构件，写入当前配置档 {profile}。',
+  'market.tab.browse': '浏览',
+  'market.tab.installed': '已安装',
+  'market.tab.account': '账号',
+  'market.browse.title': '发现构件',
+  'market.browse.subtitle': '来自 dsh.fish 的 bundle、profile、skill 与 agent 预设。',
+  'market.installed.title': '已安装',
+  'market.installed.subtitle': '通过 dsh.fish 装进这个配置档的构件。',
+  'market.account.title': '账号',
+  'market.account.subtitle': 'dsh.fish 账号、评分与更新。',
+  'market.close': '返回对话',
 } as const
 
 const en = {
@@ -150,6 +163,19 @@ const en = {
   'update.failed': 'Update check failed. Try again.',
   'plugin.about': 'About plugin',
   'plugin.version': 'Version v{version}',
+  'panel.label': 'dsh.fish',
+  'market.title': 'dsh.fish market',
+  'market.subtitle': 'Browse and install harness artifacts into profile {profile}.',
+  'market.tab.browse': 'Discover',
+  'market.tab.installed': 'Installed',
+  'market.tab.account': 'Account',
+  'market.browse.title': 'Discover artifacts',
+  'market.browse.subtitle': 'Bundles, profiles, skills and agent presets from dsh.fish.',
+  'market.installed.title': 'Installed',
+  'market.installed.subtitle': 'Artifacts dsh.fish put into this profile.',
+  'market.account.title': 'Account',
+  'market.account.subtitle': 'Your dsh.fish account, ratings and updates.',
+  'market.close': 'Back to conversation',
 } as const
 
 export const LOCALE_NS = 'settings.dshFish'

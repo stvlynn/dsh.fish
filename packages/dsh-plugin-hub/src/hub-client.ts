@@ -55,12 +55,24 @@ export interface DeviceCodeGrant {
   interval: number
 }
 
-export interface ReviewAuthor {
+/**
+ * The review shapes are `type` aliases rather than `interface`s on purpose.
+ *
+ * `ArtifactReviews` is the canonical value a tool returns, and DSH's
+ * `{ type: 'json' }` output schema types that value as `JsonValue`
+ * (`null | boolean | number | string | JsonValue[] | Record<string, JsonValue>`).
+ * TypeScript gives an interface no implicit index signature, so an interface of
+ * otherwise perfectly JSON-safe fields is *not* assignable to `JsonValue`; a
+ * structurally identical type alias is. Declaring them as aliases keeps the
+ * schema honest — every field here must be JSON, and adding a field that is not
+ * is still a compile error — instead of forcing a cast at the call site.
+ */
+export type ReviewAuthor = {
   name: string
   avatarUrl?: string
 }
 
-export interface ReviewItem {
+export type ReviewItem = {
   author: ReviewAuthor
   rating: number
   comment?: string
@@ -68,7 +80,7 @@ export interface ReviewItem {
   updatedAt: string
 }
 
-export interface ReviewSummary {
+export type ReviewSummary = {
   /** One-decimal mean; null while nobody has rated. */
   average: number | null
   count: number
@@ -81,7 +93,7 @@ export interface ReviewSummary {
  * the payload so a caller (human or agent) never has to guess what a rating
  * means on this site.
  */
-export interface ArtifactReviews {
+export type ArtifactReviews = {
   artifactId: string
   scale: { min: number; max: number }
   summary: ReviewSummary

@@ -164,3 +164,32 @@ export function DocIcon({ size = 14, ...props }: SVGProps<SVGSVGElement> & { siz
     </svg>
   )
 }
+
+/**
+ * The dsh.fish mark shown in the left rail.
+ *
+ * It sits beside the harness's own Plugins icon, so it must not read as a
+ * second copy of it: a storefront awning says "catalog" rather than "the
+ * things I already have".
+ */
+export function StorefrontIcon({ size = 18, ...props }: SVGProps<SVGSVGElement> & { size?: number }): JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M3 9l1.5-5h15L21 9" />
+      <path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" />
+      <path d="M5 12v8h14v-8" />
+      <path d="M9 20v-5h6v5" />
+    </svg>
+  )
+}

@@ -65,12 +65,21 @@ firsthand evidence, and tell its user when it leaves a rating.
 
 | Option | Description |
 |---|---|
-| `--profile, -p` | Harness profile (default `$DSH_PROFILE` or `web`). Local DSH boots `local-dsh`. |
+| `--profile, -p` | Harness profile (default `$DSH_PROFILE` or `web`). Local DSH boots `local-dsh`. `desktop` is refused: the Desktop application owns that profile. |
 | `--registry` | Hub origin (default `$DSH_FISH_URL` or `https://dsh.fish`). |
 | `--kind, -k` | Restrict `find` to one artifact kind. |
 | `--allow-build-scripts` | Permit a git package to run its prepare script. |
 | `--json` | Machine-readable output. |
 | `--yes, -y` | Skip confirmation prompts. Does not grant build scripts. |
+
+## The desktop profile
+
+DSH reserves the `desktop` profile for the DeepSeek Harness Desktop
+application, which rejects `dsh plugin --profile desktop …` from a terminal.
+The CLI checks this before doing any work and exits non-zero with the profile
+named, rather than forwarding a package-manager error that would read as a
+broken artifact. Install through the Desktop app, or target `web` (the stock
+launcher) or `local-dsh` ([Local DSH](https://github.com/stvlynn/local-dsh)).
 
 ## License
 

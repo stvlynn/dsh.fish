@@ -5,6 +5,196 @@
  * tokens with fallbacks for both light and dark themes so components and modals never
  * render as transparent or unstyled.
  */
+/**
+ * Storefront chrome for the main-column market page.
+ *
+ * Kept separate from the settings-section rules above on purpose: the section
+ * renders inside a settings modal at 760px, while the market owns the whole main
+ * column and must fill it. Sharing one block would mean either the section
+ * inherits full-bleed rules or the market inherits a max-width it cannot use.
+ *
+ * The page defines the same semantic tokens as `.dshFish`, because it is a
+ * separate React root in a different part of the tree and cannot inherit them.
+ */
+const marketStyles = String.raw`
+.dshFishMarket {
+  --dsh-bg-primary: var(--dsw-alias-bg-primary, #ffffff);
+  --dsh-bg-secondary: var(--dsw-alias-bg-secondary, #f4f4f6);
+  --dsh-bg-card: var(--dsw-alias-bg-card, #ffffff);
+  --dsh-bg-elevated: var(--dsw-alias-bg-elevated, #ffffff);
+  --dsh-border-l1: var(--dsw-alias-border-l1, #e4e4e7);
+  --dsh-border-l2: var(--dsw-alias-border-l2, #ebebee);
+  --dsh-text-primary: var(--dsw-alias-label-primary, #18181b);
+  --dsh-text-secondary: var(--dsw-alias-label-secondary, #52525b);
+  --dsh-text-tertiary: var(--dsw-alias-label-tertiary, #71717a);
+  --dsh-brand-primary: var(--dsw-alias-state-business-primary, #0070f3);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--dsh-text-primary);
+  background: var(--dsh-bg-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  .dshFishMarket {
+    --dsh-bg-primary: var(--dsw-alias-bg-primary, #18181b);
+    --dsh-bg-secondary: var(--dsw-alias-bg-secondary, #222226);
+    --dsh-bg-card: var(--dsw-alias-bg-card, #1f1f23);
+    --dsh-bg-elevated: var(--dsw-alias-bg-elevated, #242428);
+    --dsh-border-l1: var(--dsw-alias-border-l1, #3f3f46);
+    --dsh-border-l2: var(--dsw-alias-border-l2, #2e2e33);
+    --dsh-text-primary: var(--dsw-alias-label-primary, #f4f4f5);
+    --dsh-text-secondary: var(--dsw-alias-label-secondary, #a1a1aa);
+    --dsh-text-tertiary: var(--dsw-alias-label-tertiary, #71717a);
+  }
+}
+
+[data-theme="dark"] .dshFishMarket,
+.dark .dshFishMarket {
+  --dsh-bg-primary: var(--dsw-alias-bg-primary, #18181b);
+  --dsh-bg-secondary: var(--dsw-alias-bg-secondary, #222226);
+  --dsh-bg-card: var(--dsw-alias-bg-card, #1f1f23);
+  --dsh-bg-elevated: var(--dsw-alias-bg-elevated, #242428);
+  --dsh-border-l1: var(--dsw-alias-border-l1, #3f3f46);
+  --dsh-border-l2: var(--dsw-alias-border-l2, #2e2e33);
+  --dsh-text-primary: var(--dsw-alias-label-primary, #f4f4f5);
+  --dsh-text-secondary: var(--dsw-alias-label-secondary, #a1a1aa);
+  --dsh-text-tertiary: var(--dsw-alias-label-tertiary, #71717a);
+}
+
+.dshFishMarket__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 28px 14px;
+  border-bottom: 1px solid var(--dsh-border-l2);
+  flex: none;
+}
+.dshFishMarket__identity {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.dshFishMarket__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--dsh-brand-primary);
+  background: var(--dsh-bg-secondary);
+  flex: none;
+}
+.dshFishMarket__identityText {
+  min-width: 0;
+}
+.dshFishMarket__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.dshFishMarket__subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--dsh-text-secondary);
+}
+.dshFishMarket__close {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--dsh-text-secondary);
+  background: transparent;
+  border: 1px solid var(--dsh-border-l1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dshFishMarket__close:hover {
+  color: var(--dsh-text-primary);
+  background: var(--dsh-bg-secondary);
+}
+
+.dshFishMarket__tabsRow {
+  padding: 0 28px;
+  border-bottom: 1px solid var(--dsh-border-l2);
+  flex: none;
+}
+.dshFishMarket__tabs {
+  display: flex;
+  gap: 4px;
+}
+.dshFishMarket__tab {
+  padding: 10px 4px;
+  margin-bottom: -1px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsh-text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.dshFishMarket__tab + .dshFishMarket__tab {
+  margin-left: 16px;
+}
+.dshFishMarket__tab:hover {
+  color: var(--dsh-text-primary);
+}
+.dshFishMarket__tab--active {
+  color: var(--dsh-text-primary);
+  border-bottom-color: var(--dsh-brand-primary);
+}
+.dshFishMarket__tab:focus-visible {
+  outline: 2px solid var(--dsh-brand-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.dshFishMarket__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 28px 40px;
+}
+.dshFishMarket__pageHead {
+  margin-bottom: 16px;
+}
+.dshFishMarket__pageTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.dshFishMarket__pageSubtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--dsh-text-tertiary);
+}
+
+/* The panels were written for a settings column; give their content the full
+   main-column width instead of the section's 760px cap. */
+.dshFishMarket__panel > .dshFish {
+  max-width: none;
+}
+.dshFishMarket__panel[hidden] {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .dshFishMarket__header,
+  .dshFishMarket__tabsRow,
+  .dshFishMarket__body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+`
+
 export const styles = String.raw`
 /* Semantic tokens with solid fallbacks */
 .dshFish,
@@ -861,4 +1051,5 @@ export const styles = String.raw`
   clip-path: inset(50%);
   white-space: nowrap;
 }
+${marketStyles}
 `

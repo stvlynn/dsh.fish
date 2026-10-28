@@ -19,6 +19,10 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+// Module augmentation only: the harness webserver package adds `webServer` to
+// cordis's `Context`, so importing it is what makes `ctx.inject(['webServer'])`
+// typecheck. Nothing from it is called directly.
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import { HubError, type ArtifactSummary, type DeviceCodeGrant, type HubClient } from './hub-client.js'
 import { InstallRefused, type PlanInstaller } from './installer.js'
 import { clearToken, readToken } from './token-store.js'
