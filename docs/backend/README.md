@@ -9,7 +9,7 @@ This section defines how the backend is organized using **Domain-Driven Design (
 - [`infrastructure.md`](infrastructure.md) — persistence, external services, messaging, and configuration.
 - [`interfaces.md`](interfaces.md) — HTTP/CLI/event adapters, controllers, and input validation.
 - [`api-conventions.md`](api-conventions.md) — response format, error codes, and versioning.
-- [`public-api.md`](public-api.md) — public endpoints for third-party consumers, including the catalog snapshot sync contract.
+- [`public-api.md`](public-api.md) — public endpoints for third-party consumers: the catalog snapshot sync contract and the DSH plugin-market index.
 - [`database.md`](database.md) — database, migrations, and ID strategy.
 - [`logging.md`](logging.md) — logging, tracing, and masking.
 

@@ -152,15 +152,30 @@ never reads, which is how a registry ends up with an empty long tail.
   uses. It is published separately so `npx @dsh-fish/cli add <id>` works without
   a harness. Command names follow the skills CLI (`add`, `find`, `list`,
   `remove`, `update`, `init`).
-- The `@dsh-fish/hub` plugin binds to `@deepseek-ai/dsh-tools` as a peer dependency and
-  declares its types locally, because that package is not yet installable
-  standalone from npm during the harness's developer preview. When it publishes
-  completely, `packages/dsh-plugin-hub/src/harness.d.ts` should be deleted and
-  the real packages added as devDependencies. Host-supplied peers
-  (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-tools`, and the client inject
-  packages) are marked optional: `dsh plugin add` installs into an isolated
-  profile tree that never contains the harness copies, so a required peer
-  would print a pnpm `WARN` on every successful install.
+- The `@dsh-fish/hub` plugin binds to the harness packages as optional peers and
+  develops against them as exact-pinned devDependencies. Host-supplied peers
+  (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-tools`, and the client packages) stay
+  optional because `dsh plugin add` installs into an isolated profile tree that
+  never contains the harness copies, so a required peer would print a pnpm
+  `WARN` on every successful install.
+
+  The plugin used to declare those shapes locally in
+  `packages/dsh-plugin-hub/src/harness.d.ts`, because during the harness's
+  developer preview they were not installable standalone from npm. They are
+  now published at the same version as the launcher, so the shim is deleted and
+  the real declarations are used — which is what makes a drift between our types
+  and the harness's a compile error instead of a runtime surprise. DSH 0.2.x
+  also made this load-bearing: a bundle whose declared `@deepseek-ai/dsh-*`
+  peer requirements the running version does not satisfy is now *skipped at
+  boot*, so the peer ranges are an executable compatibility gate rather than
+  packaging metadata.
+
+  The same 0.2.x release removed `@deepseek-ai/dsh-client-runtime`. Client-side
+  services (`slots`, `locale`) are declared by `dsh-client-ui-renderer`,
+  `dsh-client-ui-slots`, `dsh-client-locale` and `dsh-client-ui-settings` as
+  module augmentations of cordis's own `Context`, so the browser half imports
+  `Context` from `@deepseek-ai/cordis` and lets those packages supply the
+  service faces.
 - D1 has no cross-statement transactions, so multi-table writes use `db.batch`,
   which D1 applies atomically. Better Auth's drizzle `consumeOne` is a same-table
   `DELETE … IN (SELECT …)` that D1 refuses; the Worker wraps it as find-then-delete

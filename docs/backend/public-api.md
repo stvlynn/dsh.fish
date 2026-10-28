@@ -5,6 +5,59 @@ registries — rather than for the site's own UI. All are anonymous, read-only,
 and versioned under `/api/v1`. For envelopes, status codes, and general rules
 see [`api-conventions.md`](api-conventions.md).
 
+## DSH plugin market index
+
+DeepSeek Harness can browse a plugin marketplace from inside the app: Settings →
+Plugins → Discover, "Manage indexes". An index is a JSON document in DSH's own
+**format 1**. dsh.fish publishes one, which makes the catalog installable from
+the harness without leaving the app.
+
+### `GET /api/v1/market/index.json`
+
+The public catalog projected into format 1. Same rows as the catalog snapshot,
+same `public, max-age=300` caching, so the two surfaces never disagree.
+
+```json
+{
+  "format": 1,
+  "title": { "en": "dsh.fish" },
+  "description": { "en": "DeepSeek Harness plugins, profiles and skills …" },
+  "metadata": { "categories": { "dev": { "title": { "en": "Dev" } } }, "labels": {}, "sortKeys": {} },
+  "plugins": [
+    {
+      "name": "dsh-hello-plugin",
+      "title": { "en": "dsh-hello-plugin" },
+      "description": { "en": "A bundle." },
+      "homepage": "https://dsh.fish/a/dsh-hello-plugin",
+      "metadata": { "category": "dev", "keywords": [], "labels": [], "sortKeys": {} },
+      "versions": [
+        {
+          "version": "1.2.3",
+          "publishTimestamp": 1748788800,
+          "source": { "type": "npm" },
+          "engines": { "dsh": ">=0.2.1-rc.2" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Register it in the harness with that URL. Two projections are deliberate and
+worth knowing before changing this endpoint:
+
+- **One version per artifact.** The catalog records one current version per row
+  (`latestVersion` for npm, the pinned commit for GitHub). Publishing older
+  releases we never verified would offer installs that were never tested.
+- **Bundles and profiles only.** DSH's format expresses package installs. Skills
+  and agent presets are files, and format 1 has no member for "write this file",
+  so listing them would advertise an install that cannot work. They stay
+  reachable through the `@dsh-fish/hub` plugin's own tools.
+
+A GitHub-sourced row is listed only when its commit is a full 40-hex SHA, because
+that is what the format requires to pin an install; a row crawled before the
+commit was known is withheld rather than offered unpinned.
+
 ## Catalog snapshot
 
 Third-party directories should not crawl the browse endpoints to mirror the

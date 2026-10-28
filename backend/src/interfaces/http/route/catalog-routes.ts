@@ -126,5 +126,20 @@ export function catalogRoutes() {
     })
   })
 
+  /**
+   * The public catalog as a DSH plugin-market index (format 1).
+   *
+   * This is what a harness adds under Settings -> Plugins -> Discover -> Manage
+   * indexes to browse and install dsh.fish artifacts from inside the app. The
+   * document is a projection of the same rows `/catalog/snapshot` serves, so
+   * the two never disagree; see `buildMarketIndex` for why skills and agent
+   * presets are absent (the market format can only express package installs).
+   */
+  routes.get('/market/index.json', async (context) => {
+    const index = await context.get('container').useCases.getMarketIndex.index()
+    context.header('Cache-Control', 'public, max-age=300')
+    return context.json(index)
+  })
+
   return routes
 }

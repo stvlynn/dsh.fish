@@ -7,6 +7,7 @@ import { AskArtifact } from '../application/use-case/ask-artifact.js'
 import { BackfillReadmeLocalization } from '../application/use-case/backfill-readme-localization.js'
 import { GetArtifactReviews } from '../application/use-case/get-artifact-reviews.js'
 import { GetCatalogSnapshot } from '../application/use-case/get-catalog-snapshot.js'
+import { GetMarketIndex } from '../application/use-case/get-market-index.js'
 import { DescribeScoring } from '../application/use-case/describe-scoring.js'
 import { IngestCatalog } from '../application/use-case/ingest-catalog.js'
 import { ReclassifyCatalog } from '../application/use-case/reclassify-catalog.js'
@@ -53,6 +54,7 @@ export interface Container {
     readonly getArtifactDetail: GetArtifactDetail
     readonly getArtifactReviews: GetArtifactReviews
     readonly getCatalogSnapshot: GetCatalogSnapshot
+    readonly getMarketIndex: GetMarketIndex
     readonly describeScoring: DescribeScoring
     readonly listCatalogFacets: ListCatalogFacets
     readonly refreshCatalogFacets: RefreshCatalogFacets
@@ -137,6 +139,7 @@ export async function createContainer(env: HubEnv, options: ContainerOptions): P
           artifacts,
           new KvCatalogSnapshotStore(env.KV, env.STORAGE_BACKEND === 'mysql' ? 'mysql-v1:' : ''),
         ),
+        getMarketIndex: new GetMarketIndex(artifacts),
         describeScoring: new DescribeScoring(),
         listCatalogFacets: new ListCatalogFacets(artifacts),
         refreshCatalogFacets: new RefreshCatalogFacets(artifacts),

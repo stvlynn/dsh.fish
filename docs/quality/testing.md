@@ -297,6 +297,56 @@ and FTS text search (`q=PostgreSQL`) return 200 against that seed.
 
 Install the browser once with `pnpm exec playwright install --with-deps chromium`.
 
+### The DSH plugin and CLI (`pnpm run test:dsh`)
+
+`e2e/dsh/` boots the built artifacts inside a real DeepSeek Harness. It exists
+because the unit tests can only prove the plugin's own logic: whether the
+published tarball actually loads is a property of DSH's loader, its bundle
+compatibility gate, and its client module system, none of which a mock can
+reproduce faithfully. So every step uses the harness's own code paths —
+`dsh plugin add` to install, `dsh-app-boot`'s `loadProfile` to compose,
+`profile-boot`'s `runProfile` to boot — and nothing is stubbed.
+
+The suite packs `packages/dsh-plugin-hub` with `npm pack` (so `files` in the
+manifest decides what is tested, not the working tree), installs the tarball
+into a throwaway `$DSH_HOME`, and asserts:
+
+- the tarball carries `lib/index.js`, `lib/install.js`, `lib/client.js` and
+  `cordis.patch.yml`, and `lib/client.js` opens with `window.__ModuleLoader__.load({`
+  — an ESM client bundle loads without registering and silently kills the
+  settings UI;
+- no manifest or built bundle names `@deepseek-ai/dsh-client-runtime`, which
+  DSH 0.2.x removed;
+- the built browser bundle registers both visible entry points — the
+  `sidebar.panellist` rail icon and the `dsh-fish-market` main-column page — so
+  a bundle that loads but appears nowhere fails here rather than silently;
+- the launcher adds the bundle to `dsh.profile.bundles` itself, so the
+  documented one-command install is true;
+- the composed tree contains the `hub` row with its patch config, and
+  `skippedBundles` is empty — a bundle whose `@deepseek-ai/dsh-*` peer ranges
+  do not satisfy the running version is skipped at boot, and this is the only
+  assertion that catches it;
+- all nine `hub_*` tools exist on the live `ctx.tools`;
+- `GET /api/dsh-fish/state` answers 200 with `profile` naming the profile that
+  booted, and an unknown route answers 404 — the settings section is a view
+  over these routes, so a broken route is a broken page;
+- the CLI builds, prints its version, lists an empty home as JSON, and refuses
+  `--profile desktop` before spawning a package manager.
+
+The suite needs a real `@deepseek-ai/dsh` installation: it resolves one from
+`DSH_FISH_DSH_PACKAGE` (a `@deepseek-ai/dsh` package directory) or the `dsh` on
+`PATH`, and fails loud when neither exists rather than skipping. It never
+touches `~/.dsh`; each run gets a `mkdtemp` sandbox that is removed afterwards
+behind a path guard. It does need the network, since installing the plugin's
+dependencies goes through pnpm. Build first:
+
+```sh
+pnpm --filter @dsh-fish/hub run build
+pnpm --filter @dsh-fish/cli run build
+pnpm run test:dsh
+```
+
+
 ## Design tokens
 
 `frontend/src/app/styles/palette.test.ts` parses `app.css` — it never restates a

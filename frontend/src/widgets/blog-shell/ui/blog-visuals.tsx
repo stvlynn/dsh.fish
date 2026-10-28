@@ -17,7 +17,6 @@ import {
   SearchIcon,
   SecureIcon,
   SessionCategoryIcon,
-  SkillIcon,
   ToolsCategoryIcon,
   VisionCategoryIcon,
   WorkflowCategoryIcon,

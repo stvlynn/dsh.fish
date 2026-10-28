@@ -25,6 +25,7 @@ const DISCOVERY_LINKS = [
   '</openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"',
   '</docs>; rel="service-doc"; type="text/html"',
   '</api/v1/catalog/snapshot>; rel="describedby"; type="application/json"',
+  '</api/v1/market/index.json>; rel="service-desc"; type="application/json"; title="DSH plugin market index"',
 ] as const
 
 function unlocalizedHtmlPath(pathname: string): string {
