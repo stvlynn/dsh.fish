@@ -32,3 +32,8 @@ playwright-report/
 blob-report/
 e2e/.generated-*.sql
 e2e/*-snapshots/*.png.diff.*
+
+# Local tool state: a single session-registry token some editors/agents drop in
+# the repo root. It is machine-local, never shared, and not part of any build —
+# but an untracked file blocks `pnpm publish` via its git-clean check.
+.srl
