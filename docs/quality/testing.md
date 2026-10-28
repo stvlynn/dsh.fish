@@ -134,6 +134,35 @@ readiness, signed-cookie/bearer continuity, OAuth initialization, device grants,
 multilingual SSR/search, PNG generation, streaming and graceful shutdown.
 Production probes are bounded; write fixtures use an isolated validation schema.
 
+### Catalog admission
+
+Unit tests pin the facet bound (`facet-bounds.test.ts`, and `SearchArtifacts`
+refusing before the repository is called). They also pin request classification
+(`admission-class.test.ts`, including the fetch metadata Chromium actually
+sends) and the lease lifecycle (`admission.test.ts`). A mocked store cannot show
+that the Lua script refills from Redis time, keeps the classes apart, lends only
+one way and holds one slot, so `admission.redis.test.ts` runs the real script.
+It is opt-in, and refuses any host that is not loopback because it flushes the
+database:
+
+```sh
+docker run -d --name dsh-admission-redis -p 127.0.0.1:56379:6379 redis:7.4-alpine
+ADMISSION_TEST_REDIS_URL=redis://127.0.0.1:56379 \
+  pnpm --filter @dsh-fish/frontend exec vitest run server/admission.redis.test.ts
+```
+
+`e2e/catalog-pagination/facet-bounds.spec.ts` covers the browser contract: the
+rail stops linking past the bound, an over-bound URL is a 404 (400 from the API),
+equal selections produce equal URLs, and a hydrated rail toggles by client
+navigation rather than a document load.
+
+Changes to admission capacity should be load-tested before release, with old and
+new code side by side. The harness used for the current values ran the production
+`nginx.conf`, real Redis 7.4, and a simulated one-core database sampling the
+production latency distribution. It drove the captured crawler requests plus
+simulated readers. Its results are recorded in
+[`vps-deployment.md`](../operations/vps-deployment.md#local-stress-results).
+
 ## End-to-end tests
 
 - Cover the most important user journeys only.

@@ -10,7 +10,7 @@ import { openNodeAdaSocket } from '@dsh-fish/backend/infrastructure/node/ada-soc
 import { LOCALE_CODES } from '@/shared/config/i18n'
 import { createSiteHandler } from './handle-request'
 import { withPublicCacheHeaders } from './cache-headers'
-import { withNodeAdmission } from './admission'
+import { ADMISSION_HEADER, withNodeAdmission } from './admission'
 import { catalogRequestPaused, pausedResponse } from '@dsh-fish/backend'
 
 const runtime = await createNodeRuntime(process.env, LOCALE_CODES)
@@ -59,6 +59,9 @@ app.use('*', async (c, next) => {
         method: c.req.method,
         path: c.req.path,
         status: c.res.status,
+        ...(c.res.headers.has(ADMISSION_HEADER)
+          ? { admission: c.res.headers.get(ADMISSION_HEADER) }
+          : {}),
         durationMs: Math.round(performance.now() - started),
       }),
     )
