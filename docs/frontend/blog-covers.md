@@ -37,6 +37,7 @@ Each post gets a distinct recipe rather than changing only the accent color:
 | `v0-1-5-to-v0-2-1`       | Session core branching into Sidebar, SSH, and plugin index | Teal    |
 | `v4-1-flash-and-search`  | Four history strips compressing into a 1/4 HBM KV + Search | Crimson |
 | `deepseek-bot-ecosystem` | An orchestrator block arcing to persistent bot identities  | Indigo  |
+| `super-agent`            | Trigger strips converging on one router, one reply out     | Mustard |
 
 ## Prompt template
 
