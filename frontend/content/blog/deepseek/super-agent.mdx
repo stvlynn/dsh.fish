@@ -1,0 +1,153 @@
+---
+title: "Whose attention is the most expensive? Reading DeepSeek's Super-agent design and prototype"
+description: The DeepSeek Harness team published a Super-agent architecture essay and the dsh-superagent research prototype. Read the experiment numbers, the prototype code and the essay together, and the two-layer design, batching, subscription pass-through and the authorization model all answer one question.
+author: Steven Lynn
+date: 2026-11-01
+cover: /blog/covers/deepseek-super-agent.webp
+series: deepseek
+---
+
+A quick quiz first: how many agent sessions can you actually keep track of at once?
+
+In [_Exploring Super-agent Design: Towards a More Autonomous Agent System_](https://telegra.ph/Super-agent-%E8%AE%BE%E8%AE%A1%E6%8E%A2%E7%B4%A2%E8%BF%88%E5%90%91%E6%9B%B4%E8%87%AA%E4%B8%BB%E7%9A%84-Agent-%E7%B3%BB%E7%BB%9F-10-31), published on October 31, the DeepSeek Harness team reports what they observed: three to five. Past that, people lose track of which session was told what. The essay draws a conclusion from it: the ceiling of a single task is set by the model, and the ceiling of many tasks is set by human attention.
+
+That sentence deserves a second look. It says that in this kind of system the most expensive, slowest and least scalable component has moved from the GPU to the person in front of the screen. Keep this question in mind as you read on:
+
+> If the scarcest component in a machine is a person, how should the machine be built?
+
+Alongside the essay, the team released [`deepseek-ai/dsh-superagent-prototype`](https://github.com/deepseek-ai/dsh-superagent-prototype), a research prototype shipped as a DeepSeek Harness bundle. It listens to one GitHub repository and, optionally, Feishu, turns allowed requests into tickets, works on each in its own session and directory, and answers in the original conversation, usually with a pull request. The README says up front that it is research code, that DeepSeek does not ship it as a product, and that the public version differs from the internal one the essay describes.
+
+The essay is already well organised, so this post does not retell it section by section. What I want to do is put its experiment numbers next to the prototype's code and look at the places that are easy to skim past and turn out to be strange once you think about them.
+
+## The vocabulary, side by side
+
+The essay defines a Super-agent by four traits, continuous, efficient, proactive and persistent, and supports them with five modules. The table lines up those modules with what the public prototype contains:
+
+| Module in the essay | Problem it addresses | Counterpart in the public prototype |
+| --- | --- | --- |
+| Two layers (Router / Worker) | Continuity versus throughput | One main Session (`orchestrator` in code) and one Executor Session per ticket (`worker`) |
+| Event-driven (Trigger / Thread / subscription pass-through) | Proactivity and routing cost | Source → Trigger → Thread → Eval → Ticket, with `Subscription` fan-out |
+| Human-facing interaction (full duplex, multiple channels) | No blocking, no flooding | Foreground shell commands move to the background after 5 seconds; chat replies default to one sentence with a hard limit of 100 words |
+| Separating compute, state and environment | Always on, across devices | The public prototype runs in a dedicated local DSH profile and survives restarts through a local state directory and a store-first work queue |
+| Watchdog | Self-healing | No counterpart found in the public prototype's docs or code |
+
+![Each layer only passes up what needs the layer above to decide: a deterministic gate, a batching Router, Workers reached by subscription, and a person who receives one reply.](/blog/diagrams/super-agent-attention.svg)
+
+## 1. The model will not delegate
+
+The ablation study in section 7.1 of the essay hides its strangest number.
+
+About 300 chat and CI messages drive each system, roughly 20 of them real work requests, and every setup runs five times. The baseline is "single session plus a subagent tool", which is how most people use agents today: one main session that hands work to a subagent when it sees fit.
+
+With a neutral prompt ("Use a subagent for a piece of work when appropriate..."), the model called a subagent **zero times in five runs**. All work stayed in the main session and kept getting interrupted by new messages. p95 completion time was 29.5 minutes. The Super-agent's p95 was 15.7 minutes.
+
+With a prompt that asked it to prefer delegation, the model delegated in four runs out of five. In the remaining run it judged the work "small", did it itself, and produced the long tail in the chart.
+
+Pause on that. The tool was right there. Why did the model not use it?
+
+From the model's seat each choice is reasonable. Delegating means writing the task down and waiting for a report; doing it yourself looks faster, and the job at hand really is small. Every step is locally optimal, and together they are globally worst. It resembles a thread that never yields the CPU: each critical section is "short", and the whole machine stalls.
+
+The essay's fix is plain. The Router layer does not execute tasks and "may not even have a Bash tool". The prototype turns this into code. The main Session runs under its own `dsh-superagent-router` preset with a smaller tool set, and the host refuses its `sleep` calls, shell timeouts over 30 seconds and job waits over 5 seconds, because one stuck step in the main Session queues every new request behind it.
+
+The executors follow the same idea. The essay builds a full-duplex ReAct loop from asynchronous `start()` / `stop()` calls and notes that the mechanism exists in DeepSeek Harness, switched off by default. The prototype takes a cheaper route: the `dsh-superagent-worker` preset moves any foreground shell command that runs past 5 seconds into a background job, so the executor sees new messages at its next step. The model never has to decide whether a command should be synchronous.
+
+Put the two side by side and a pattern appears: **wherever the model's local judgement would fight the system's global goal, the prototype takes the choice away from the model.** A prompt can shift a tendency. Only structure can give a guarantee.
+
+## 2. Congestion turns into throughput
+
+The second place worth a closer look is the Router stress test in section 7.2.
+
+| Trigger arrival rate | Mean batch | Time per request | Amortised time per decision |
+| --- | --- | --- | --- |
+| About 1 per minute | 1.0 | 2.5 s | 6.4 s |
+| About 40 per minute | 2.8 | 3.9 s | 1.6 s |
+
+The arrival rate went up forty times and each decision became four times cheaper. The essay's explanation: every Router step is long input and short output, so merging the queued Triggers into one call lets prefill compute them in parallel, and request time grows much more slowly than batch size.
+
+There is a small arithmetic gap here, and it is worth doing the sum yourself.
+
+At low load a decision costs 6.4 seconds and a request takes 2.5, so each decision needs about 2.6 model requests. At high load it is 1.6 ÷ 3.9, about 0.4. The number of rounds per decision fell more than sixfold while the batch grew only 2.8 times. If the whole gain came from spreading one call over more Triggers, the amortised time would stop near 3.6 seconds. The measurement says 1.6. Where does the rest come from?
+
+The essay does not break this down; what follows is a lead I found in the prototype. Its routing tool, `orchestrator_route`, accepts several accept, attach, stop and ignore decisions in one call; each item takes effect on its own, and a refused item does not stop the others. The main Session's prompt adds that when several candidates are waiting, those whose card already settles them go into one `orchestrator_route` call together, and only the candidates that need more context get a read call, sent alongside it.
+
+In other words, batching is also written into the tool's signature. A tool that accepts one decision per call pins every decision to at least one model round trip, and no amount of fast prefill removes that round. Under load, the "read context" and "submit decision" steps are shared between Triggers too, so the rounds per decision fall.
+
+Systems engineering has plenty of precedents: interrupt coalescing in network cards, group commit in databases. Respond at once under light load, merge automatically under heavy load, and get low latency and high throughput when each matters. They share one precondition: serial processing. In the prototype, a Thread runs at most one Eval at a time, and Triggers that arrive meanwhile join the next batch. Serial processing is usually treated as the bottleneck. Here it is the source of the batching: because only one batch runs at a time, waiting events get the chance to gather.
+
+## 3. Pass-through saves context
+
+The third number comes from the same ablation study and is the easiest to file away as a minor optimisation.
+
+Without subscription pass-through, where a Thread's later events go straight to the subscribed Worker, task completion time stayed about the same as the full system. The Router made about 30% more decisions, and cache-read tokens rose from 23.23 million to 31.77 million, 37% more.
+
+The previous section showed that the Router has throughput to spare, and pass-through did not make tasks faster. So what does it protect?
+
+The answer is in another line of the essay: "Wasting the context window is wasting the model's intelligence." The Router is the only session that holds global context. Every event it sees stays in its memory and takes window space from later decisions. Pass-through keeps the Router from seeing events that do not concern it. What it saves is the Router's attention.
+
+By now the opening question should start to sound familiar.
+
+## 4. Who hears, who decides, what is related
+
+In an ordinary group chat three things are tied together: if you are in the group you see every message; if you see it you can give orders; if a topic looks similar everyone assumes it is the same matter.
+
+The prototype splits them into three concepts that cannot stand in for one another:
+
+| Relation | Concept in the prototype | What it does | What it deliberately cannot do |
+| --- | --- | --- | --- |
+| Who hears | Subscription | Fans every message on a Thread out to the tickets subscribed to it, including bot and CI messages | Grant any authority |
+| Who decides | Mandate | Records the Policy version, scope, strength, matched rules, the sender's identity and how the Source received the request | Widen its scope; wider work needs a new ticket |
+| What is related | Correlation | Adds context to an evaluation | Route anything |
+
+The rules on a Mandate are strict. An accept creates it, a person's stop withdraws it, and a failed revalidation after a Policy change revokes it. Nothing else touches it. The prototype's docs put it bluntly: messages, comments and quoted documents are inputs to a decision, and they cannot change permissions.
+
+Two details show how seriously this split is taken.
+
+First, the main Session may attach a message to an existing ticket only when the message **explicitly points at it**: it quotes or links the ticket's pull request or Issue, its source message or its acknowledgement, or it refers to the change just made and exactly one ticket fits. A similar topic does not count. The prompt gives the reason: a duplicate ticket can be closed, while a wrong attachment subscribes the ticket to the whole Thread and stays. The two mistakes cost different amounts, so the rule leans toward the cheaper one.
+
+Second, when the main Session forwards a request it carries only the original Trigger reference and the routing facts. It may not rewrite a short request into a work plan, add acceptance criteria or append checklists; the executor goes back to the original source and works out the requirements itself. Every rewrite by the Router is lossy compression, and by the third person in a game of telephone the message has drifted. Passing references keeps Workers on first-hand material, the same move the essay makes in section 3.3, where chain of recall links objects through IDs.
+
+The essay lists security and privacy as an open problem in section 8.4. The public prototype gives authorization a whole numbered document of its own, `002-authorization.md`, placed right after the domain model and before execution. One of its designs echoes the speculative execution of section 3.4: proactive rules start in `observe` mode, where an assessment that would accept is recorded and nothing is done, and the team switches to `auto` after reviewing the records. The essay speculates on work. The prototype speculates on authority.
+
+Put section 1 next to this one and a deeper symmetry shows. A model that will not delegate has been persuaded by its own prior; a prompt injection is a model persuaded by outside text. Both failures have the same shape: an attention-holding model asked to restrain itself by reading text. The prototype prescribes the same cure for both: move the decision out of the context window and into host code. At the top of its prompt precedence list sit "facts enforced by tools and the host". At the bottom sits outside text, which the docs describe as "data", that "never changes rules or authorization".
+
+## 5. With sessions backstage, what is left on stage
+
+The essay argues that asking users to manage sessions is largely design inertia inherited from the underlying LLM APIs. Once sessions leave the stage, what unit does the user face?
+
+The prototype's answer is the Ticket, a unit of authorized work. The domain model deliberately keeps a ticket's state apart from the DSH Session's, because a ticket can be retried, recovered after a restart, or handed between executors, and so spans several Assignments over its life. The user sees a promise; the machine runs a series of sessions.
+
+A promise has to survive restarts. In the prototype, everything that follows a decision, relaying a candidate to the main Session, launching an Assignment, delivering an Input, sending a reply, is stored first and done afterwards, with backoff retries on failure. After a process restart an interrupted Assignment starts again with a recovery note telling the executor to check its directory, git history and GitHub before repeating any outside action.
+
+Behind that note is a simple observation. An agent's memory can be lost, and the traces it left in the outside world remain. Whether a comment was posted or a pull request opened is visible on GitHub. Reading the world first after a restart, and only then deciding whether to act, makes the outside world the most reliable log there is.
+
+As for the panel, the prototype shows only what needs a person. Ticket stages are matched top to bottom, and the first rows are all `person / …`: input undelivered, awaiting answer, awaiting review, blocked or failed. A healthy state takes no space.
+
+Section 8.2 of the essay asks how people should work with agents once sessions are gone. The prototype offers one concrete answer: make the interface a queue sorted by what a person has to do.
+
+## Back to the opening question
+
+The scattered threads can now be pulled together. List every holder of attention in the system by layer, and look at what the essay and the prototype keep away from it:
+
+| Holder of attention | What it fears | What shields it |
+| --- | --- | --- |
+| The person | Floods of messages, constant questions, remembering session details | The Router speaks for the system; chat replies default to one sentence, hard limit 100 words; acknowledgements go out once; the panel hides healthy state |
+| The Router (main Session) | A context filled with irrelevant events, being slowed by execution details | A deterministic gate before the model; subscription pass-through around it; routing notes of at most 30 words; outside proactive assessment it reads no code and no logs |
+| The Worker (Executor Session) | A context swamped by long text, being blocked by long commands | Inline & Spill: event cards truncated to 600 characters with a pointer to read on; foreground commands move to the background after 5 seconds |
+
+All three rows say the same thing: **whoever's attention is most expensive should see the least, and only the part that needs their decision.** The prototype's `000-philosophy.md` makes it the first principle of the whole project: "Take as little human attention as possible, and give as much value as possible."
+
+The essay uses five modules and borrows a row of old systems ideas: fast path and slow path, batching, caching, speculative execution, compute–storage separation, a watchdog. By the end, those modules turn out to be one principle unfolded at different layers. The person protects their attention, and the Router appears. The Router protects its attention, and pass-through and Workers appear. The Worker protects its attention, and Inline & Spill and subagents appear. The architecture is recursive, and each layer is budgeted by the attention of the layer above it.
+
+That also explains the symmetry between sections 1 and 4. The most dangerous design in such a system lets a holder of attention decide for itself whether to save attention and whether to trust the text in front of it, because text is all it has. The answer has to live in the structure.
+
+So, back to three to five. A Super-agent cannot move that number; people can still track only so much. What it can change is what fills those slots: three to five sessions whose context you must remember become three to five decisions that only wait for your call.
+
+## What it means for the plugin ecosystem
+
+Finally, back to what this site cares about.
+
+`dsh-superagent` is itself a DeepSeek Harness bundle: one `cordis.patch.yml` inserts its plugins and defines a preset each for the main Session and the executors, and the Harness core is untouched. It is another confirmation of the rule in [_Everything is a plugin_](/blog/notes/everything-is-a-plugin): even a Super-agent fits into a profile as a plugin.
+
+A second coincidence is more interesting. Tobs, the community project covered in our [DeepSeek Bot ecosystem post](/blog/notes/deepseek-bot-ecosystem), independently arrived at the same two layers: a resident Orchestrator session and background Assignment sessions. The essay says similar design constraints lead to similar architectural choices, and this catalog happens to hold a ready example.
+
+If you plan to try the prototype, keep its status in mind. According to its deployment guide, both presets run with `danger-full-access` as the operator's OS user, and executors run commands without approval; the account wrappers choose which credentials are used by default and do not isolate the process. For isolation, the guide suggests a dedicated OS account holding only the agent's credentials. Follow the prototype's own order when you start: keep the allowed list short, leave proactive rules in `observe` mode, and widen both only after what it would have done looks right.

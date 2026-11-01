@@ -14,6 +14,7 @@ const POSTS = [
   '/blog/harness/v0-1-5-to-v0-2-1',
   '/blog/deepseek/v4-preview',
   '/blog/deepseek/v4-1-flash-and-search',
+  '/blog/deepseek/super-agent',
   '/blog/changelog/2026-08',
   '/blog/notes/everything-is-a-plugin',
   '/blog/notes/deepseek-bot-ecosystem',
