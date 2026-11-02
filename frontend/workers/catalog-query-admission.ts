@@ -14,10 +14,20 @@ export interface CatalogQueryAdmissionEnv {
 export function isExpensiveCatalogRequest(request: Request): boolean {
   if (request.method !== "GET" && request.method !== "HEAD") return false;
   const url = new URL(request.url);
-  const { path } = splitLocalePath(url.pathname.replace(/\.(?:data|md)$/, ""));
+  // React Router decodes static path segments and matches them without case
+  // sensitivity. The guard must cover /%62rowse.data and /BROWSE.data too,
+  // otherwise a URL spelling change skips admission before the same query.
+  let pathname: string;
+  try {
+    pathname = decodeURI(url.pathname);
+  } catch {
+    // Malformed escapes are rejected by routing before a catalog loader runs.
+    return false;
+  }
+  const { path } = splitLocalePath(pathname.replace(/\.(?:data|md)$/i, ""));
   // Facet landing pages apply their path filter even without a query string.
-  if (/^\/(?:kind|category|for|topic)\/[^/]+\/?$/.test(path)) return true;
-  if (!/^\/(?:browse|artifacts|api\/v1\/artifacts)\/?$/.test(path))
+  if (/^\/(?:kind|category|for|topic)\/[^/]+\/?$/i.test(path)) return true;
+  if (!/^\/(?:browse|artifacts|api\/v1\/artifacts)\/?$/i.test(path))
     return false;
   return ["q", "category", "topic", "kind", "verified"].some((key) =>
     url.searchParams.getAll(key).some((value) => value.trim() !== ""),

@@ -1,0 +1,16 @@
+[
+  {
+    "action": "block",
+    "description": "Block the catalog scraper ASN already rejected by the application",
+    "enabled": true,
+    "expression": "(http.host eq \"dsh.fish\" and ip.src.asnum eq 214483 and not cf.client.bot)",
+    "ref": "2feb4dfb8f384ea08906bdcbb9b51458"
+  },
+  {
+    "ref": "dsh_filtered_browse_challenge",
+    "description": "Challenge filtered browse document URLs in all locales; preserve API, data and Markdown clients",
+    "expression": "(http.host eq \"dsh.fish\" and (http.request.uri.path wildcard \"*/browse\" or http.request.uri.path wildcard \"*/browse/\") and http.request.uri.query ne \"\" and not (lower(http.request.headers[\"accept\"][0]) contains \"markdown\") and not cf.client.bot)",
+    "action": "managed_challenge",
+    "enabled": true
+  }
+]

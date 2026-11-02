@@ -120,24 +120,93 @@ the total rate did not help against it either; at 6/s the database was busy 51%
 of the time and readers' page loads were still refused. The remedy for that
 crawler is at the edge (below), not more capacity.
 
-### Edge rules (operator, Cloudflare dashboard)
+### Origin cache and queueing
 
-Cloudflare Free/Pro rate-limiting rules count per IP only, so they cannot see a
-crawl spread across hundreds of addresses. Use these instead:
+Costly reads are refused rather than queued. Admission allows about two per
+second and a crawl sends ten times that, so a queue in front of the one-core
+database would only grow until every waiter timed out. The origin nginx cache
+keeps the refusal away from readers (`deploy/docker/nginx.conf`):
 
-- **Bot Fight Mode** (Free) or **Super Bot Fight Mode** → challenge "definitely
-  automated" (Pro).
-- **Custom rule**, action *Managed Challenge*:
-  `http.request.uri.path wildcard "*/browse" and http.request.uri.query ne "" and not http.cookie contains "better-auth"`.
-  A person solves the challenge once per session; a headless crawler stops. A
-  signed-in reader carries Better Auth's default session cookie
-  (`__Secure-better-auth.session_token` over HTTPS) and is not challenged.
-  `wildcard` is available on every plan; regex `matches` is not used because it
-  needs Business. Test the expression in the dashboard's rule preview before
-  enabling it.
-- **Cache Rules**: keep "Sort query string" on, so equal selections share an edge
-  cache key; the filter rail already writes parameters in one canonical order.
+- `proxy_cache_lock on` coalesces concurrent misses on one URL into a single
+  upstream request. This is the only queue, it is per key, and its timeout
+  bounds it.
+- `proxy_cache_background_update on` uses finite response-header windows:
+  `stale-while-revalidate=30` and `stale-if-error=300`. Unconditional
+  `proxy_cache_use_stale` flags stay off because they override those bounds.
+  An expired public response can be served immediately while refreshing for
+  30 seconds, or during an upstream failure/admission refusal for at most
+  300 seconds after expiry. Continuous access does not extend either window;
+  `inactive=10m` is idle eviction, not a freshness bound. Removals and policy
+  changes therefore cannot resurrect an old cached success indefinitely.
+  A never-cached URL still receives the original error.
+- `proxy_cache_min_uses` stays at 1. Requiring two requests before storing was
+  measured to be worse, because the first admitted response for a popular page
+  is the scarce one. Over three runs, readers revisiting popular pages under the
+  captured crawl got 80–91% with it versus 93–95% without. Crawler entries do not
+  crowd the cache: production entries average ~140 KB, so 256 MB holds about
+  1,800 pages, and over-bound unions are 404s and are never stored.
+
+Measured with the same harness, adding a reader population that revisits eight
+popular listings. Page lifetime was shortened to 10 s so expiry happened within
+each 60 s run. Old is the previous app and nginx; new is the facet bound and
+admission classes; queue is new plus the nginx changes above.
+
+| Scenario | Revisited pages (old / new / queue) | Page loads | In-page |
+| --- | --- | --- | --- |
+| No crawler | 92% / 84% / 94% | 96% / 89% / 82% | 94% / 98% / 99% |
+| Captured crawler | 10% / 71% / **90%** | 9% / 70% / 75% | 23% / 97% / 98% |
+| Bound-aware crawler | 30% / 15% / 38% | 13% / 23% / 14% | 16% / 95% / 97% |
+
+These tables record the initial prototype experiments. The final bounded stale
+policy was re-tested with the same fixture and a fresh isolated Redis: captured
+crawler replay yielded 99.0% in-page search success and 94.6% revisited-page
+success (60 seconds, 25 crawler requests/s, six readers). The database in this
+pressure harness is simulated from measured latency, not a real MySQL stress
+benchmark. Seven real-Redis tests separately verify lease ownership/concurrency,
+and eleven Docker/nginx checks verify cache coalescing, bounded age, removals,
+privacy changes and upstream-error recovery.
+
+Against a crawler that sends only unique within-bound URLs, the origin cache
+helps little. A forged data-fetch client still competes in the interactive
+share; the edge rule protects the observed document crawler, not all attacks.
+
+### Edge rules (Cloudflare, zone `dsh.fish`, Free plan)
+
+Cloudflare Free rate limiting counts per IP only, so it cannot see a crawl
+spread across hundreds of addresses. Managed with the `cf` CLI:
+
+- **Custom rule** in the zone's `http_request_firewall_custom` entrypoint
+  (ruleset "dsh.fish edge protection"), action *Managed Challenge*:
+  The versioned expression matches filtered `/browse` and `/browse/` in any
+  locale, excluding requests that advertise Markdown and verified bots.
+  - It protects document-like requests to those paths, including direct HTML
+    HTTP clients. It is not a browser-authentication test and does not protect
+    every possible catalog transport.
+  - `/browse.data`, `/browse.md`, `/api/` and Markdown negotiation remain
+    unchallenged. A challenge page breaks data fetches; preserving these
+    boundaries keeps React Router, the palette, plugin and CLI working.
+  - An arbitrary application cookie is not an exemption: Cloudflare cannot
+    validate Better Auth sessions, and a fabricated cookie must not bypass
+    protection. A browser that passes the challenge uses Cloudflare's own
+    clearance for the configured challenge TTL (30 min).
+  - The existing ASN block rule stays first.
+- **Bot Fight Mode is not enabled.** It cannot be scoped or skipped by any rule,
+  and Cloudflare documents that it may challenge API traffic. This site's API
+  clients are non-browser HTTP clients: the `@dsh-fish/hub` plugin, the CLI,
+  DeepSeek Harness fetching the market index, and agents reading `llms.txt`.
+  Turning it on risks breaking them with no exemption available. Super Bot Fight
+  Mode (Pro) supports skip rules and would be the way to add it.
+- **Sort query string** for the cache key is not editable on the Free plan. The
+  filter rail writes parameters in one canonical order instead.
+
+The rule list is versioned in
+[`deploy/cloudflare/http_request_firewall_custom.json`](../../deploy/cloudflare/http_request_firewall_custom.json).
+That directory's README has the validate, apply and rollback commands.
 
 The exact public `/api/v1/artifacts` endpoint also uses a 15-second anonymous
 origin cache. Cookie/authorization requests bypass it; other API endpoints and
-SSE stay uncached. Public listing updates can therefore take 15 seconds to appear.
+SSE stay uncached. Fresh catalog JSON lasts 15 seconds; failed refreshes may
+reuse it for another 300 seconds. HTML/Markdown freshness is 300 seconds.
+`pnpm run test:origin-cache` exercises the actual nginx image/configuration,
+including concurrent miss coalescing, continuous access beyond stale expiry,
+removals, credential isolation, formats and recovery.

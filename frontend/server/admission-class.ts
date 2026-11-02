@@ -1,5 +1,6 @@
 import { isExpensiveCatalogRequest } from '../workers/catalog-query-admission'
 import { exceededFacet } from '@/entities/artifact/model/types'
+import { splitLocalePath } from '@/shared/config/i18n'
 
 /**
  * Which share of the catalog's query capacity a request draws from.
@@ -39,14 +40,22 @@ export type AdmissionDecision =
 /** Decide, from the request alone, whether and how a catalog query is admitted. */
 export function admissionDecision(request: Request): AdmissionDecision {
   if (!isExpensiveCatalogRequest(request)) return { kind: 'bypass' }
-  const { searchParams } = new URL(request.url)
-  const overBound =
+  const { pathname, searchParams } = new URL(request.url)
+  const { path } = splitLocalePath(pathname.replace(/\.(?:data|md)$/, ''))
+  const catalogApi = path === '/api/v1/artifacts'
+  const browse = path === '/browse' || path === '/browse/'
+  // Only bypass a handler that actually rejects this selection. Canonical
+  // /kind, /category and /for loaders use their path filter and ignore query
+  // facets, so query noise must never remove their database admission.
+  // Markdown browse validates kinds/categories, but does not consume topics.
+  const rejectedWithoutQuery =
+    (catalogApi || browse) &&
     exceededFacet({
       kinds: searchParams.getAll('kind'),
       categories: searchParams.getAll('category'),
-      topics: searchParams.getAll('topic'),
+      ...(catalogApi ? { topics: searchParams.getAll('topic') } : {}),
     }) !== undefined
-  if (overBound) return { kind: 'bypass' }
+  if (rejectedWithoutQuery) return { kind: 'bypass' }
   return { kind: 'admit', class: admissionClass(request) }
 }
 

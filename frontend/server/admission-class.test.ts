@@ -25,6 +25,40 @@ describe('admissionDecision', () => {
     ).toEqual({ kind: 'bypass' })
   })
 
+  it.each(['/kind/skill', '/category/git', '/for/code-review', '/ja/kind/skill.data', '/category/git.md'])(
+    'does not bypass a path-filtered loader that ignores query facets: %s',
+    (path) => {
+      const noise = '?category=ui&category=usage&category=theme&category=model'
+      expect(admissionDecision(request(path + noise, NAVIGATE))).toEqual({
+        kind: 'admit',
+        class: 'document',
+      })
+    },
+  )
+
+  it.each(['/BROWSE.data?q=git', '/%62rowse.data?q=git', '/Kind/skill.data'])(
+    'admits router aliases rather than letting raw path spelling bypass the guard: %s',
+    (path) => {
+      expect(admissionDecision(request(path, FETCH))).toEqual({ kind: 'admit', class: 'interactive' })
+    },
+  )
+
+  it('does not bypass on topics that the markdown browse handler ignores', () => {
+    expect(admissionDecision(request('/browse.md?q=git&topic=a&topic=b&topic=c', NAVIGATE))).toEqual({
+      kind: 'admit',
+      class: 'document',
+    })
+  })
+
+  it.each(['/browse', '/ja/browse.data', '/browse.md'])(
+    'bypasses only a browse union that its actual handler rejects: %s',
+    (path) => {
+      expect(admissionDecision(request(path + '?kind=skill&kind=bundle&kind=profile', NAVIGATE))).toEqual({
+        kind: 'bypass',
+      })
+    },
+  )
+
   it('admits a costly query within bounds under its class', () => {
     expect(admissionDecision(request('/browse?q=git', NAVIGATE))).toEqual({
       kind: 'admit',

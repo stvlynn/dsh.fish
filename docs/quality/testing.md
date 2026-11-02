@@ -163,6 +163,15 @@ production latency distribution. It drove the captured crawler requests plus
 simulated readers. Its results are recorded in
 [`vps-deployment.md`](../operations/vps-deployment.md#local-stress-results).
 
+`pnpm run test:origin-cache` is an opt-in Docker regression suite. Pull
+`nginx:1.28-alpine` first; the suite does not change production configuration.
+It copies the real origin config into a unique ephemeral container and replaces
+only the upstream transport and simulated trusted proxy. It verifies per-URL
+miss coalescing, finite stale windows under continuous access, warm-to-404 and
+privacy-policy transitions, upstream refusal/recovery, credential bypass,
+representation isolation and uncached API/data responses. Temporary containers
+and files are cleaned even on test failure.
+
 ## End-to-end tests
 
 - Cover the most important user journeys only.

@@ -63,6 +63,10 @@ describe("expensive public catalog request classification", () => {
     "/browse.md?q=search",
     "/zh-CN/for/code-review.md",
     "/browse/?category=git",
+    "/BROWSE.data?q=git",
+    "/%62rowse.data?q=git",
+    "/Kind/skill.data",
+    "/ja/%63ategory/git.data",
   ])("requires admission for %s", (path) => {
     expect(isExpensiveCatalogRequest(request(path))).toBe(true);
     expect(isExpensiveCatalogRequest(request(path, "HEAD"))).toBe(true);
